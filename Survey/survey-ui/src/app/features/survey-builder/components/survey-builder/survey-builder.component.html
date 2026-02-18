@@ -1,0 +1,159 @@
+<div class="container">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ survey?.title }}</h1>
+      <p *ngIf="survey?.description">{{ survey?.description }}</p>
+    </div>
+    <div class="header-actions">
+      <button mat-button routerLink="/surveys">
+        <mat-icon>arrow_back</mat-icon>
+        Back to Surveys
+      </button>
+      <button mat-raised-button [routerLink]="['/surveys', surveyId, 'preview']">
+        <mat-icon>visibility</mat-icon>
+        Preview
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-spinner">
+    <mat-spinner></mat-spinner>
+  </div>
+
+  <div *ngIf="!loading" class="builder-layout">
+    <!-- Left Panel: Survey Questions -->
+    <div class="questions-panel">
+      <mat-card>
+        <div class="panel-header">
+          <h2>Survey Questions ({{ surveyQuestions.length }})</h2>
+          <div class="status-controls">
+            <mat-form-field appearance="outline">
+              <mat-label>Status</mat-label>
+              <mat-select [(value)]="survey!.status" (selectionChange)="updateSurveyStatus($event.value)">
+                <mat-option value="Draft">Draft</mat-option>
+                <mat-option value="Active">Active</mat-option>
+                <mat-option value="Paused">Paused</mat-option>
+                <mat-option value="Archived">Archived</mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+        </div>
+
+        <div *ngIf="surveyQuestions.length === 0" class="empty-state">
+          <mat-icon>add_circle_outline</mat-icon>
+          <p>No questions added yet. Select questions from the question bank to get started.</p>
+        </div>
+
+        <div cdkDropList (cdkDropListDropped)="onDrop($event)" class="question-list">
+          <div *ngFor="let question of surveyQuestions; let i = index"
+               class="question-item"
+               cdkDrag>
+            <div class="drag-handle" cdkDragHandle>
+              <mat-icon>drag_indicator</mat-icon>
+            </div>
+            <div class="question-content">
+              <div class="question-header">
+                <span class="question-number">{{ i + 1 }}.</span>
+                <span class="question-text">{{ question.questionText }}</span>
+                <mat-icon *ngIf="question.isModified" matTooltip="Modified from original" class="modified-icon">edit</mat-icon>
+              </div>
+              <div class="question-meta">
+                <span class="question-type">{{ getQuestionTypeLabel(question.questionType) }}</span>
+                <mat-checkbox [(ngModel)]="question.isRequired" (change)="toggleRequired(question)">
+                  Required
+                </mat-checkbox>
+              </div>
+              <div *ngIf="question.options && question.options.length > 0" class="question-options">
+                <ul>
+                  <li *ngFor="let option of question.options">{{ option.optionText }}</li>
+                </ul>
+              </div>
+            </div>
+            <div class="question-actions">
+              <button mat-icon-button (click)="removeQuestion(question.id)" matTooltip="Remove" color="warn">
+                <mat-icon>delete</mat-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </mat-card>
+    </div>
+
+    <!-- Right Panel: Question Bank -->
+    <div class="question-bank-panel">
+      <mat-card>
+        <div class="panel-header">
+          <h2>Question Bank</h2>
+          <button mat-icon-button (click)="showFilters = !showFilters"
+                  [matTooltip]="showFilters ? 'Hide Filters' : 'Show Filters'">
+            <mat-icon>{{ showFilters ? 'filter_list_off' : 'filter_list' }}</mat-icon>
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div *ngIf="showFilters" class="bank-filters">
+          <mat-form-field appearance="outline" class="filter-field">
+            <mat-label>Search questions</mat-label>
+            <input matInput [(ngModel)]="searchText" (ngModelChange)="applyFilters()" placeholder="Search by text or tags...">
+            <mat-icon matPrefix>search</mat-icon>
+            <button *ngIf="searchText" mat-icon-button matSuffix (click)="searchText = ''; applyFilters()">
+              <mat-icon>close</mat-icon>
+            </button>
+          </mat-form-field>
+
+          <div class="filter-row">
+            <mat-form-field appearance="outline" class="filter-field-half">
+              <mat-label>Question Type</mat-label>
+              <mat-select [(ngModel)]="filterType" (ngModelChange)="applyFilters()">
+                <mat-option value="">All Types</mat-option>
+                <mat-option *ngFor="let type of questionTypes" [value]="type">
+                  {{ getQuestionTypeLabel(type) }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="filter-field-half">
+              <mat-label>Category</mat-label>
+              <mat-select [(ngModel)]="filterCategory" (ngModelChange)="applyFilters()">
+                <mat-option [value]="null">All Categories</mat-option>
+                <mat-option *ngFor="let cat of categories" [value]="cat.id">
+                  {{ cat.name }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+
+          <div *ngIf="hasActiveFilters()" class="filter-summary">
+            <span>{{ filteredQuestions.length }} of {{ availableQuestions.length }} questions</span>
+            <button mat-button color="primary" (click)="clearFilters()">
+              <mat-icon>clear</mat-icon>
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        <div class="available-questions">
+          <mat-card *ngFor="let question of filteredQuestions" class="bank-question">
+            <div class="bank-question-content">
+              <strong>{{ question.questionText }}</strong>
+              <div class="bank-question-meta">
+                <small class="question-type">{{ getQuestionTypeLabel(question.questionType) }}</small>
+                <small *ngIf="question.categoryName" class="question-category">{{ question.categoryName }}</small>
+                <small *ngIf="question.tags" class="question-tags">{{ question.tags }}</small>
+              </div>
+            </div>
+            <button mat-icon-button (click)="addQuestion(question.id)" matTooltip="Add to Survey" color="primary">
+              <mat-icon>add_circle</mat-icon>
+            </button>
+          </mat-card>
+
+          <div *ngIf="filteredQuestions.length === 0" class="bank-empty">
+            <mat-icon>search_off</mat-icon>
+            <p *ngIf="hasActiveFilters()">No questions match your filters.</p>
+            <p *ngIf="!hasActiveFilters()">No questions available in the question bank.</p>
+          </div>
+        </div>
+      </mat-card>
+    </div>
+  </div>
+</div>

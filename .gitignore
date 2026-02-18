@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+.vscode/*.code-workspace
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+secrets.json
+appsettings.*.json
+.env

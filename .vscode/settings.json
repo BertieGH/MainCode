@@ -1,0 +1,9 @@
+{
+    "files.exclude": {
+        "**/bin": true,
+        "**/obj": true
+    },
+    "csharp.format.enable": true,
+    "editor.formatOnSave": true,
+    "csharp.suggestNamespaces": true
+}

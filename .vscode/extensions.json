@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "ms-dotnettools.csharp",
+        "ms-mssql.mssql",
+        "humao.rest-client",
+        "eamodio.gitlens",
+        "ms-azuretools.vscode-docker"
+    ]
+}

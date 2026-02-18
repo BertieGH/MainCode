@@ -1,0 +1,45 @@
+.full-width {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.options-section {
+  margin-top: 24px;
+  padding: 16px;
+  background-color: #f9fafb;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+
+  h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+}
+
+.option-row {
+  margin-bottom: 12px;
+}
+
+.option-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.option-field {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.add-option-btn {
+  margin-top: 8px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 24px;
+}
