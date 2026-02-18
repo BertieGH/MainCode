@@ -379,11 +379,10 @@ INSERT INTO ResponseAnswers (ResponseId, SurveyQuestionId, AnswerText, SelectedO
 (3, 4, 'Good product quality', NULL),
 (3, 5, 'Customer service needs improvement', NULL);
 
--- Seed default admin user (password: Admin123!)
+-- Seed default admin user (password: Bertie#1964)
 -- BCrypt hash generated with cost factor 11
--- IMPORTANT: Change this password after first login in production
 INSERT INTO Users (Username, Email, PasswordHash, Role, IsActive, IsDeleted) VALUES
-('admin', 'admin@surveyhub.com', '$2a$11$rZsFQYL6kHzMQjHEkOxOPe8JMqnXGT0JaS5ZGk0fR5VJ.qMPY7pO2', 'Admin', TRUE, FALSE);
+('admin', 'admin@surveyhub.com', '$2a$11$X/KamRoxn1/fObMn2vkXA.LyS8W3di6za4r2YfL0b7P2MbjzcJROi', 'Admin', TRUE, FALSE);
 
 -- =====================================================
 -- VERIFICATION QUERIES

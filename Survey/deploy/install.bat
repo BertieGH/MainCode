@@ -76,7 +76,7 @@ echo.
 echo  Starting SurveyHub...
 echo  App URL:     http://localhost:5000
 echo  Swagger:     http://localhost:5000/swagger
-echo  Admin login: admin / Admin123!
+echo  Admin login: admin / Bertie#1964
 echo.
 echo  Press Ctrl+C to stop the server.
 echo ============================================

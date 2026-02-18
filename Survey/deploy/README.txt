@@ -18,7 +18,7 @@ ACCESS
 ------
 - App URL:     http://localhost:5000
 - Swagger API: http://localhost:5000/swagger
-- Admin login: admin / Admin123!
+- Admin login: admin / Bertie#1964
 
 IMPORTANT: Change the admin password after first login!
 
