@@ -119,6 +119,7 @@ public class SurveyBuilderService : ISurveyBuilderService
             throw new NotFoundException("SurveyQuestion", surveyQuestionId);
 
         await _surveyQuestionRepository.DeleteAsync(surveyQuestion);
+        await _unitOfWork.SaveChangesAsync();
 
         // Re-order remaining questions
         var remainingQuestions = await _surveyQuestionRepository.GetQuestionsBySurveyAsync(surveyId);
