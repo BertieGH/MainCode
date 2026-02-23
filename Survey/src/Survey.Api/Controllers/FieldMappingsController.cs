@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Survey.Application.Services;
 using Survey.Core.DTOs.FieldMapping;
@@ -6,6 +7,7 @@ namespace Survey.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class FieldMappingsController : ControllerBase
 {
     private readonly IFieldMappingService _fieldMappingService;
@@ -53,6 +55,7 @@ public class FieldMappingsController : ControllerBase
     /// <param name="dto">Field mapping data</param>
     /// <returns>Created field mapping</returns>
     [HttpPost]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<FieldMappingDto>> CreateMapping(CreateFieldMappingDto dto)
@@ -71,6 +74,7 @@ public class FieldMappingsController : ControllerBase
     /// <param name="dto">Updated field mapping data</param>
     /// <returns>Updated field mapping</returns>
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -87,6 +91,7 @@ public class FieldMappingsController : ControllerBase
     /// <param name="id">Field mapping ID</param>
     /// <returns>No content</returns>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteMapping(int id)
@@ -102,6 +107,7 @@ public class FieldMappingsController : ControllerBase
     /// <param name="dto">Sample CRM data</param>
     /// <returns>Test result with mapped data and validation errors</returns>
     [HttpPost("test")]
+    [Authorize(Roles = "Admin,Manager")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<ActionResult<TestMappingResultDto>> TestMappings(TestMappingDto dto)
     {

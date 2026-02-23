@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Survey.Application.Services;
 using Survey.Core.DTOs.SurveyBuilder;
@@ -7,6 +8,7 @@ namespace Survey.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class SurveysController : ControllerBase
 {
     private readonly ISurveyService _surveyService;
@@ -46,8 +48,10 @@ public class SurveysController : ControllerBase
     /// Create new survey
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Create([FromBody] CreateSurveyDto dto)
     {
+        dto.CreatedBy = User.Identity?.Name;
         var survey = await _surveyService.CreateSurveyAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = survey.Id }, survey);
     }
@@ -56,6 +60,7 @@ public class SurveysController : ControllerBase
     /// Update survey metadata (title, description)
     /// </summary>
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateSurveyDto dto)
     {
         var survey = await _surveyService.UpdateSurveyAsync(id, dto);
@@ -66,6 +71,7 @@ public class SurveysController : ControllerBase
     /// Delete survey
     /// </summary>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Delete(int id)
     {
         await _surveyService.DeleteSurveyAsync(id);
@@ -76,6 +82,7 @@ public class SurveysController : ControllerBase
     /// Update survey status (Draft, Active, Paused, Archived)
     /// </summary>
     [HttpPatch("{id}/status")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateSurveyStatusDto dto)
     {
         var survey = await _surveyService.UpdateSurveyStatusAsync(id, dto.Status);
@@ -86,9 +93,10 @@ public class SurveysController : ControllerBase
     /// Duplicate an existing survey
     /// </summary>
     [HttpPost("{id}/duplicate")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Duplicate(int id, [FromBody] DuplicateSurveyDto dto)
     {
-        var survey = await _surveyService.DuplicateSurveyAsync(id, dto.NewTitle);
+        var survey = await _surveyService.DuplicateSurveyAsync(id, dto.NewTitle, User.Identity?.Name);
         return CreatedAtAction(nameof(GetById), new { id = survey.Id }, survey);
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Survey.Application.Services;
 using Survey.Core.DTOs.QuestionBank;
@@ -6,6 +7,7 @@ namespace Survey.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class QuestionCategoriesController : ControllerBase
 {
     private readonly IQuestionCategoryService _categoryService;
@@ -43,6 +45,7 @@ public class QuestionCategoriesController : ControllerBase
     /// Create new question category
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Create([FromBody] CreateQuestionCategoryDto dto)
     {
         var category = await _categoryService.CreateCategoryAsync(dto);
@@ -53,6 +56,7 @@ public class QuestionCategoriesController : ControllerBase
     /// Update question category
     /// </summary>
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateQuestionCategoryDto dto)
     {
         var category = await _categoryService.UpdateCategoryAsync(id, dto);
@@ -63,6 +67,7 @@ public class QuestionCategoriesController : ControllerBase
     /// Delete question category
     /// </summary>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Delete(int id)
     {
         await _categoryService.DeleteCategoryAsync(id);

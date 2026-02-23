@@ -109,7 +109,7 @@ public class SurveyService : ISurveyService
         return _mapper.Map<SurveyDto>(survey);
     }
 
-    public async Task<SurveyDto> DuplicateSurveyAsync(int id, string newTitle)
+    public async Task<SurveyDto> DuplicateSurveyAsync(int id, string newTitle, string? createdBy = null)
     {
         var originalSurvey = await _surveyRepository.GetSurveyWithQuestionsAsync(id);
         if (originalSurvey == null)
@@ -122,7 +122,7 @@ public class SurveyService : ISurveyService
             Status = SurveyStatus.Draft,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            CreatedBy = originalSurvey.CreatedBy
+            CreatedBy = createdBy ?? originalSurvey.CreatedBy
         };
 
         await _surveyRepository.AddAsync(newSurvey);

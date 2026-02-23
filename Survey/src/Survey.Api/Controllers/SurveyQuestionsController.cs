@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Survey.Application.Services;
 using Survey.Core.DTOs.SurveyBuilder;
@@ -6,6 +7,7 @@ namespace Survey.Api.Controllers;
 
 [ApiController]
 [Route("api/surveys/{surveyId}/[controller]")]
+[Authorize]
 public class SurveyQuestionsController : ControllerBase
 {
     private readonly ISurveyBuilderService _surveyBuilderService;
@@ -29,6 +31,7 @@ public class SurveyQuestionsController : ControllerBase
     /// Add question from Question Bank to survey
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> AddQuestion(int surveyId, [FromBody] AddQuestionToSurveyDto dto)
     {
         var question = await _surveyBuilderService.AddQuestionToSurveyAsync(surveyId, dto);
@@ -39,6 +42,7 @@ public class SurveyQuestionsController : ControllerBase
     /// Modify question in survey (customize text or options)
     /// </summary>
     [HttpPut("{questionId}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> ModifyQuestion(
         int surveyId,
         int questionId,
@@ -52,6 +56,7 @@ public class SurveyQuestionsController : ControllerBase
     /// Remove question from survey
     /// </summary>
     [HttpDelete("{questionId}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> RemoveQuestion(int surveyId, int questionId)
     {
         await _surveyBuilderService.RemoveQuestionFromSurveyAsync(surveyId, questionId);
@@ -62,6 +67,7 @@ public class SurveyQuestionsController : ControllerBase
     /// Reorder questions in survey
     /// </summary>
     [HttpPatch("reorder")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> ReorderQuestions(int surveyId, [FromBody] ReorderQuestionsDto dto)
     {
         var questions = await _surveyBuilderService.ReorderQuestionsAsync(surveyId, dto);

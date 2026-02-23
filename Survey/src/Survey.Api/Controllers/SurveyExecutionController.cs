@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Survey.Application.Services;
 using Survey.Core.DTOs.SurveyExecution;
@@ -6,6 +7,7 @@ namespace Survey.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class SurveyExecutionController : ControllerBase
 {
     private readonly ISurveyExecutionService _surveyExecutionService;

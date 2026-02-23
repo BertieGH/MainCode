@@ -12,5 +12,5 @@ public interface ISurveyService
     Task<SurveyDto> UpdateSurveyAsync(int id, UpdateSurveyDto dto);
     Task DeleteSurveyAsync(int id);
     Task<SurveyDto> UpdateSurveyStatusAsync(int id, SurveyStatus status);
-    Task<SurveyDto> DuplicateSurveyAsync(int id, string newTitle);
+    Task<SurveyDto> DuplicateSurveyAsync(int id, string newTitle, string? createdBy = null);
 }

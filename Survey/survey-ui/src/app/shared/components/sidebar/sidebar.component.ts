@@ -11,6 +11,7 @@ interface NavItem {
   route: string;
   badge?: string;
   adminOnly?: boolean;
+  roles?: string[];
 }
 
 interface NavSection {
@@ -233,9 +234,9 @@ export class SidebarComponent implements OnInit, OnDestroy {
     {
       title: 'Main',
       items: [
-        { icon: 'dashboard', label: 'Dashboard', route: '/analytics/dashboard' },
+        { icon: 'dashboard', label: 'Dashboard', route: '/analytics/dashboard', roles: ['Admin', 'Manager'] },
         { icon: 'quiz', label: 'Question Bank', route: '/question-bank' },
-        { icon: 'assignment', label: 'Surveys', route: '/surveys' },
+        { icon: 'assignment', label: 'Build Survey', route: '/surveys' },
         { icon: 'category', label: 'Categories', route: '/question-bank/categories' },
       ]
     },
@@ -248,13 +249,13 @@ export class SidebarComponent implements OnInit, OnDestroy {
     {
       title: 'Analytics',
       items: [
-        { icon: 'bar_chart', label: 'Analytics', route: '/analytics' },
+        { icon: 'bar_chart', label: 'Analytics', route: '/analytics', roles: ['Admin', 'Manager'] },
       ]
     },
     {
       title: 'System',
       items: [
-        { icon: 'sync_alt', label: 'CRM Mappings', route: '/field-mapping' },
+        { icon: 'sync_alt', label: 'CRM Mappings', route: '/field-mapping', roles: ['Admin', 'Manager'] },
         { icon: 'people', label: 'User Management', route: '/users', adminOnly: true },
       ]
     }
@@ -282,10 +283,15 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   private updateFilteredSections(): void {
     const isAdmin = this.currentUser?.role === UserRole.Admin;
+    const userRole = this.currentUser?.role;
     this.filteredSections = this.navSections
       .map(section => ({
         ...section,
-        items: section.items.filter(item => !item.adminOnly || isAdmin)
+        items: section.items.filter(item => {
+          if (item.adminOnly && !isAdmin) return false;
+          if (item.roles && (!userRole || !item.roles.includes(userRole))) return false;
+          return true;
+        })
       }))
       .filter(section => section.items.length > 0);
   }

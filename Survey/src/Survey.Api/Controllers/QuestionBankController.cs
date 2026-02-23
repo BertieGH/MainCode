@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Survey.Application.Services;
 using Survey.Core.DTOs.QuestionBank;
@@ -6,6 +7,7 @@ namespace Survey.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class QuestionBankController : ControllerBase
 {
     private readonly IQuestionBankService _questionBankService;
@@ -49,8 +51,10 @@ public class QuestionBankController : ControllerBase
     /// Create new question template
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Create([FromBody] CreateQuestionBankDto dto)
     {
+        dto.CreatedBy = User.Identity?.Name;
         var question = await _questionBankService.CreateQuestionAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = question.Id }, question);
     }
@@ -59,6 +63,7 @@ public class QuestionBankController : ControllerBase
     /// Update question template (creates new version)
     /// </summary>
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateQuestionBankDto dto)
     {
         var question = await _questionBankService.UpdateQuestionAsync(id, dto);
@@ -69,6 +74,7 @@ public class QuestionBankController : ControllerBase
     /// Soft delete question template (sets IsActive = false)
     /// </summary>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Delete(int id)
     {
         await _questionBankService.DeleteQuestionAsync(id);

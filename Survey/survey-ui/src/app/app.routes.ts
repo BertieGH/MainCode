@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { MainLayoutComponent } from './shared/components/main-layout/main-layout.component';
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
+import { managerGuard } from './core/guards/manager.guard';
 
 export const routes: Routes = [
   {
@@ -21,7 +22,7 @@ export const routes: Routes = [
     children: [
       {
         path: '',
-        redirectTo: 'analytics/dashboard',
+        redirectTo: 'surveys',
         pathMatch: 'full'
       },
       {
@@ -41,11 +42,13 @@ export const routes: Routes = [
       },
       {
         path: 'analytics',
+        canActivate: [managerGuard],
         loadChildren: () => import('./features/analytics/analytics.routes')
           .then(m => m.analyticsRoutes)
       },
       {
         path: 'field-mapping',
+        canActivate: [managerGuard],
         loadChildren: () => import('./features/field-mapping/field-mapping.routes')
           .then(m => m.fieldMappingRoutes)
       },
@@ -59,6 +62,6 @@ export const routes: Routes = [
   },
   {
     path: '**',
-    redirectTo: 'analytics/dashboard'
+    redirectTo: 'surveys'
   }
 ];
