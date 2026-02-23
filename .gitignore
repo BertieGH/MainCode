@@ -9,3 +9,6 @@ obj/
 secrets.json
 appsettings.*.json
 .env
+node_modules/
+.claude/
+swagger_temp.json
