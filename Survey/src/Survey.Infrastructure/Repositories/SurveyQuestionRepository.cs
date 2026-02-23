@@ -39,4 +39,10 @@ public class SurveyQuestionRepository : Repository<SurveyQuestion>, ISurveyQuest
 
         return maxOrder ?? -1;
     }
+
+    public async Task DeleteByIdAsync(int id)
+    {
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM SurveyQuestions WHERE Id = {id}");
+    }
 }

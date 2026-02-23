@@ -70,7 +70,7 @@
               </div>
             </div>
             <div class="question-actions">
-              <button mat-icon-button (click)="removeQuestion(question.id)" matTooltip="Remove" color="warn">
+              <button mat-icon-button (click)="$event.stopPropagation(); removeQuestion(question.id)" matTooltip="Remove" color="warn">
                 <mat-icon>delete</mat-icon>
               </button>
             </div>

@@ -118,8 +118,8 @@ public class SurveyBuilderService : ISurveyBuilderService
         if (surveyQuestion == null || surveyQuestion.SurveyId != surveyId)
             throw new NotFoundException("SurveyQuestion", surveyQuestionId);
 
-        await _surveyQuestionRepository.DeleteAsync(surveyQuestion);
-        await _unitOfWork.SaveChangesAsync();
+        // Use direct SQL delete to bypass EF Core change tracker issues
+        await _surveyQuestionRepository.DeleteByIdAsync(surveyQuestionId);
 
         // Re-order remaining questions
         var remainingQuestions = await _surveyQuestionRepository.GetQuestionsBySurveyAsync(surveyId);

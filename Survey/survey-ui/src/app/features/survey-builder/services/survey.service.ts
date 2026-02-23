@@ -66,6 +66,6 @@ export class SurveyService {
   }
 
   reorderQuestions(surveyId: number, dto: ReorderQuestions): Observable<SurveyQuestion[]> {
-    return this.api.put<SurveyQuestion[]>(`surveys/${surveyId}/surveyquestions/reorder`, dto);
+    return this.api.patch<SurveyQuestion[]>(`surveys/${surveyId}/surveyquestions/reorder`, dto);
   }
 }

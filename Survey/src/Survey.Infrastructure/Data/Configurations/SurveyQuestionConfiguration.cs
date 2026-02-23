@@ -37,5 +37,10 @@ public class SurveyQuestionConfiguration : IEntityTypeConfiguration<SurveyQuesti
             .WithOne(o => o.SurveyQuestion)
             .HasForeignKey(o => o.SurveyQuestionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(sq => sq.ResponseAnswers)
+            .WithOne(ra => ra.SurveyQuestion)
+            .HasForeignKey(ra => ra.SurveyQuestionId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
