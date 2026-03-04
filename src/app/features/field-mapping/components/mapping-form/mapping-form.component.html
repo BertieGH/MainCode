@@ -1,0 +1,65 @@
+<h2 mat-dialog-title>
+  {{ mode === 'create' ? 'Create Field Mapping' : 'Edit Field Mapping' }}
+</h2>
+
+<mat-dialog-content>
+  <form [formGroup]="form" class="mapping-form">
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>CRM Field Name</mat-label>
+      <input matInput formControlName="crmFieldName" placeholder="e.g., Clients.Name">
+      <mat-icon matPrefix>input</mat-icon>
+      <mat-error *ngIf="form.get('crmFieldName')?.hasError('required')">
+        CRM field name is required
+      </mat-error>
+      <mat-error *ngIf="form.get('crmFieldName')?.hasError('maxlength')">
+        Maximum 100 characters
+      </mat-error>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Survey Field Name</mat-label>
+      <input matInput formControlName="surveyFieldName" placeholder="e.g., ClientName">
+      <mat-icon matPrefix>label</mat-icon>
+      <mat-error *ngIf="form.get('surveyFieldName')?.hasError('required')">
+        Survey field name is required
+      </mat-error>
+      <mat-error *ngIf="form.get('surveyFieldName')?.hasError('maxlength')">
+        Maximum 100 characters
+      </mat-error>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Field Type</mat-label>
+      <mat-select formControlName="fieldType">
+        <mat-option *ngFor="let type of fieldTypes" [value]="type.value">
+          {{ type.label }}
+        </mat-option>
+      </mat-select>
+      <mat-icon matPrefix>category</mat-icon>
+      <mat-error *ngIf="form.get('fieldType')?.hasError('required')">
+        Field type is required
+      </mat-error>
+    </mat-form-field>
+
+    <div class="checkbox-field">
+      <mat-checkbox formControlName="isRequired">
+        Required Field
+      </mat-checkbox>
+      <p class="help-text">If checked, this field must be present in CRM data</p>
+    </div>
+
+    <div *ngIf="error" class="error-message">
+      <mat-icon>error</mat-icon>
+      <span>{{ error }}</span>
+    </div>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onCancel()" [disabled]="submitting">
+    Cancel
+  </button>
+  <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="form.invalid || submitting">
+    {{ mode === 'create' ? 'Create' : 'Update' }}
+  </button>
+</mat-dialog-actions>

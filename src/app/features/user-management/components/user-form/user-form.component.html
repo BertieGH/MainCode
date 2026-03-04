@@ -1,0 +1,63 @@
+<div class="container">
+  <div class="page-header">
+    <h1 class="page-title">{{ isEditMode ? 'Edit User' : 'Create User' }}</h1>
+    <button mat-button routerLink="/users">
+      <mat-icon>arrow_back</mat-icon>
+      Back to Users
+    </button>
+  </div>
+
+  <div *ngIf="formLoading" class="loading-spinner">
+    <mat-spinner></mat-spinner>
+  </div>
+
+  <mat-card *ngIf="!formLoading" class="form-card">
+    <div *ngIf="error" class="error-banner">
+      <mat-icon>error_outline</mat-icon>
+      {{ error }}
+    </div>
+
+    <form [formGroup]="userForm" (ngSubmit)="onSubmit()">
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Username</mat-label>
+        <input matInput formControlName="username">
+        <mat-icon matPrefix>person</mat-icon>
+        <mat-error *ngIf="userForm.get('username')?.hasError('required')">Username is required</mat-error>
+        <mat-error *ngIf="userForm.get('username')?.hasError('minlength')">Username must be at least 3 characters</mat-error>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Email</mat-label>
+        <input matInput formControlName="email" type="email">
+        <mat-icon matPrefix>email</mat-icon>
+        <mat-error *ngIf="userForm.get('email')?.hasError('required')">Email is required</mat-error>
+        <mat-error *ngIf="userForm.get('email')?.hasError('email')">Please enter a valid email</mat-error>
+      </mat-form-field>
+
+      <mat-form-field *ngIf="!isEditMode" appearance="outline" class="full-width">
+        <mat-label>Password</mat-label>
+        <input matInput type="password" formControlName="password">
+        <mat-icon matPrefix>lock</mat-icon>
+        <mat-error *ngIf="userForm.get('password')?.hasError('required')">Password is required</mat-error>
+        <mat-error *ngIf="userForm.get('password')?.hasError('minlength')">Password must be at least 6 characters</mat-error>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Role</mat-label>
+        <mat-select formControlName="role">
+          <mat-option *ngFor="let role of roles" [value]="role">{{ role }}</mat-option>
+        </mat-select>
+        <mat-icon matPrefix>badge</mat-icon>
+      </mat-form-field>
+
+      <div class="form-actions">
+        <button mat-button type="button" routerLink="/users">Cancel</button>
+        <button mat-raised-button color="primary" type="submit"
+                [disabled]="userForm.invalid || saving">
+          <mat-spinner *ngIf="saving" diameter="20"></mat-spinner>
+          <span *ngIf="!saving">{{ isEditMode ? 'Update User' : 'Create User' }}</span>
+        </button>
+      </div>
+    </form>
+  </mat-card>
+</div>
