@@ -146,8 +146,16 @@ Methods:
 - **Location:** `survey-ui/src/app/features/analytics/components/survey-analytics/`
 - **Files:** survey-analytics.component.ts, .html, .scss
 - **Features:**
+  - **Two-tab layout:** Overview tab + Question Report tab
   - Survey overview with key metrics
   - Question-level analytics with visual representations
+  - **Question Report tab with Chart.js visualizations:**
+    - Donut charts for Single Choice questions
+    - Horizontal bar charts for Multiple Choice questions
+    - Vertical bar charts for Rating distribution
+    - Donut charts (green/red) for Yes/No questions
+    - Scrollable text response list for Text questions
+  - Per-question cards with type badges, answer counts, and detailed stat breakdowns
   - Bar charts for Single/Multiple Choice questions
   - Rating display with average and distribution
   - Yes/No visual statistics
@@ -513,7 +521,6 @@ Frontend will start at: `http://localhost:4200`
 1. **Date Range Filtering:** Not implemented in current version. All analytics show data for all time.
 2. **Real-time Updates:** Analytics are calculated on-demand, not cached or pre-calculated.
 3. **Large Dataset Performance:** For surveys with >10,000 responses, consider implementing pagination or caching.
-4. **Advanced Visualizations:** Currently using simple bar charts. Chart.js integration can be added for more advanced visualizations.
 
 ## Future Enhancements
 
@@ -521,7 +528,7 @@ Frontend will start at: `http://localhost:4200`
 - **Date range filtering** - Filter analytics by date ranges
 - **Trend analysis** - Show response trends over time with line charts
 - **Comparison mode** - Compare multiple surveys side-by-side
-- **Advanced charts** - Integrate Chart.js for pie charts, line charts, area charts
+- ~~**Advanced charts** - Integrate Chart.js for pie charts, line charts, area charts~~ ✅ Done
 - **Response time analytics** - Question-by-question completion time
 - **Drop-off analysis** - Identify where users abandon surveys
 
@@ -549,6 +556,8 @@ Frontend will start at: `http://localhost:4200`
 - @angular/common 17+
 - @angular/material 17+
 - @angular/router 17+
+- chart.js 4.4+ (Chart visualizations)
+- ng2-charts 5.0+ (Angular Chart.js wrapper)
 - RxJS 7+
 
 ## Summary

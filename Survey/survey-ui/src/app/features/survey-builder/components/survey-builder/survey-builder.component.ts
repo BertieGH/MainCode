@@ -14,6 +14,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { SurveyService } from '../../services/survey.service';
 import { QuestionBankService } from '../../../question-bank/services/question-bank.service';
 import { Survey, SurveyQuestion, SurveyStatus } from '../../../../core/models/survey.model';
@@ -38,7 +39,8 @@ import { PageTitleService } from '../../../../core/services/page-title.service';
     MatProgressSpinnerModule,
     MatDialogModule,
     MatChipsModule,
-    MatTooltipModule
+    MatTooltipModule,
+    MatSnackBarModule
   ],
   templateUrl: './survey-builder.component.html',
   styleUrls: ['./survey-builder.component.scss']
@@ -52,6 +54,10 @@ export class SurveyBuilderComponent implements OnInit {
   loading = false;
   surveyId!: number;
 
+  // Save status
+  saveStatus: 'idle' | 'saving' | 'saved' = 'idle';
+  private saveTimeout: any;
+
   // Filters
   searchText = '';
   filterType: string = '';
@@ -64,7 +70,8 @@ export class SurveyBuilderComponent implements OnInit {
     private surveyService: SurveyService,
     private questionBankService: QuestionBankService,
     private dialog: MatDialog,
-    private pageTitle: PageTitleService
+    private pageTitle: PageTitleService,
+    private snackBar: MatSnackBar
   ) {}
 
   ngOnInit(): void {
@@ -161,6 +168,7 @@ export class SurveyBuilderComponent implements OnInit {
     this.surveyService.reorderQuestions(this.surveyId, reorderDto).subscribe({
       next: (questions) => {
         this.surveyQuestions = questions;
+        this.showSaved('Question order saved');
       },
       error: (error) => {
         alert('Error reordering questions: ' + error.message);
@@ -170,12 +178,14 @@ export class SurveyBuilderComponent implements OnInit {
   }
 
   addQuestion(questionBankId: number): void {
+    this.saveStatus = 'saving';
     this.surveyService.addQuestionToSurvey(this.surveyId, {
       questionBankId,
       isRequired: false
     }).subscribe({
       next: () => {
         this.loadSurvey();
+        this.showSaved('Question added successfully');
       },
       error: (error) => {
         alert('Error adding question: ' + error.message);
@@ -188,6 +198,7 @@ export class SurveyBuilderComponent implements OnInit {
       this.surveyService.removeQuestionFromSurvey(this.surveyId, questionId).subscribe({
         next: () => {
           this.loadSurvey();
+          this.showSaved('Question removed');
         },
         error: (error) => {
           alert('Error removing question: ' + error.message);
@@ -198,12 +209,13 @@ export class SurveyBuilderComponent implements OnInit {
 
   toggleRequired(question: SurveyQuestion): void {
     this.surveyService.modifyQuestionInSurvey(this.surveyId, question.id, {
-      isRequired: !question.isRequired
+      isRequired: question.isRequired
     }).subscribe({
       next: () => {
-        question.isRequired = !question.isRequired;
+        this.showSaved(question.isRequired ? 'Question marked as required' : 'Question marked as optional');
       },
       error: (error) => {
+        question.isRequired = !question.isRequired;
         alert('Error updating question: ' + error.message);
       }
     });
@@ -218,12 +230,19 @@ export class SurveyBuilderComponent implements OnInit {
     this.surveyService.updateSurveyStatus(this.surveyId, { status }).subscribe({
       next: (survey) => {
         this.survey = survey;
-        alert(`Survey ${status === SurveyStatus.Active ? 'activated' : 'status updated'} successfully`);
+        this.showSaved(`Survey ${status === SurveyStatus.Active ? 'activated' : 'status updated'} successfully`);
       },
       error: (error) => {
         alert('Error updating status: ' + error.message);
       }
     });
+  }
+
+  private showSaved(message: string): void {
+    this.saveStatus = 'saved';
+    this.snackBar.open(message, 'OK', { duration: 3000 });
+    clearTimeout(this.saveTimeout);
+    this.saveTimeout = setTimeout(() => this.saveStatus = 'idle', 4000);
   }
 
   getQuestionTypeLabel(type: string): string {

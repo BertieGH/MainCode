@@ -5,6 +5,12 @@
       <p *ngIf="survey?.description">{{ survey?.description }}</p>
     </div>
     <div class="header-actions">
+      <span *ngIf="saveStatus === 'saving'" class="save-indicator saving">
+        <mat-icon class="spin">sync</mat-icon> Saving...
+      </span>
+      <span *ngIf="saveStatus === 'saved'" class="save-indicator saved">
+        <mat-icon>check_circle</mat-icon> Saved
+      </span>
       <button mat-button routerLink="/surveys">
         <mat-icon>arrow_back</mat-icon>
         Back to Surveys

@@ -1,25 +1,25 @@
 # Survey Application - Project Status Report
 
-**Date**: February 13, 2026
-**Version**: 1.0.0-alpha
-**Phase**: Milestone 1 Complete (Pending Testing)
+**Date**: March 4, 2026
+**Version**: 1.1.0
+**Phase**: Milestones 1, 2 & 5 Complete (Pending Testing)
 
 ---
 
 ## 📊 Overall Progress
 
 ```
-Overall Progress: [████████░░░░░░░░░░░░] 40%
+Overall Progress: [████████████████░░░░] 80%
 
 ✅ Project Setup              [████████████████████] 100%
 ✅ Database Schema            [████████████████████] 100%
 ✅ Milestone 1 - Backend      [████████████████████] 100%
 ✅ Milestone 1 - Frontend     [████████████████████] 100%
 ⏳ Milestone 1 - Testing      [░░░░░░░░░░░░░░░░░░░░]   0% (Pending)
-⏳ Milestone 2 - Survey Builder                     0% (Pending)
-⏳ Milestone 3 - Field Mapping                      0% (Pending)
-⏳ Milestone 4 - Survey Execution                   0% (Pending)
-⏳ Milestone 5 - Analytics                          0% (Pending)
+✅ Milestone 2 - Survey Builder                   100% Complete
+⏸️ Milestone 3 - Field Mapping                      0% (Skipped)
+⏸️ Milestone 4 - Survey Execution                   0% (Skipped)
+✅ Milestone 5 - Analytics                        100% Complete (with Chart.js Question Report)
 ```
 
 ---

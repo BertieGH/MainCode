@@ -27,140 +27,270 @@
   </div>
 
   <div *ngIf="statistics && !loading" class="analytics-content">
-    <!-- Survey Overview -->
-    <mat-card class="overview-card">
-      <mat-card-header>
-        <mat-card-title>{{ statistics.surveyTitle }}</mat-card-title>
-      </mat-card-header>
-      <mat-card-content>
-        <div class="overview-stats">
-          <div class="stat">
-            <mat-icon>assignment</mat-icon>
-            <div class="stat-info">
-              <h3>{{ statistics.totalResponses }}</h3>
-              <p>Total Responses</p>
-            </div>
-          </div>
-          <div class="stat">
-            <mat-icon>check_circle</mat-icon>
-            <div class="stat-info">
-              <h3>{{ statistics.completeResponses }}</h3>
-              <p>Complete</p>
-            </div>
-          </div>
-          <div class="stat">
-            <mat-icon>pending</mat-icon>
-            <div class="stat-info">
-              <h3>{{ statistics.incompleteResponses }}</h3>
-              <p>Incomplete</p>
-            </div>
-          </div>
-          <div class="stat">
-            <mat-icon>percent</mat-icon>
-            <div class="stat-info">
-              <h3>{{ statistics.completionRate | number:'1.1-1' }}%</h3>
-              <p>Completion Rate</p>
-            </div>
-          </div>
-          <div class="stat">
-            <mat-icon>schedule</mat-icon>
-            <div class="stat-info">
-              <h3>{{ statistics.averageCompletionTimeMinutes | number:'1.1-1' }}</h3>
-              <p>Avg. Time (min)</p>
-            </div>
-          </div>
-        </div>
-        <div class="date-info" *ngIf="statistics.firstResponseDate">
-          <p><strong>First Response:</strong> {{ statistics.firstResponseDate | date:'medium' }}</p>
-          <p><strong>Last Response:</strong> {{ statistics.lastResponseDate | date:'medium' }}</p>
-        </div>
-      </mat-card-content>
-    </mat-card>
+    <mat-tab-group animationDuration="200ms">
 
-    <!-- Question Analytics -->
-    <mat-card class="questions-card">
-      <mat-card-header>
-        <mat-card-title>Question Analytics</mat-card-title>
-      </mat-card-header>
-      <mat-card-content>
-        <div *ngFor="let qa of statistics.questionAnalytics; let i = index" class="question-analytics">
-          <h3>Q{{ i + 1 }}: {{ qa.questionText }}</h3>
-          <p class="question-meta">Type: {{ qa.questionType }} | Answers: {{ qa.totalAnswers }}</p>
-
-          <!-- Single Choice / Multiple Choice -->
-          <div *ngIf="qa.questionType === 'SingleChoice' || qa.questionType === 'MultipleChoice'" class="option-distribution">
-            <div *ngFor="let option of getOptionKeys(qa.optionDistribution)" class="option-bar">
-              <div class="option-label">
-                <span>{{ option }}</span>
-                <span class="option-count">{{ getOptionValue(qa.optionDistribution, option) }}</span>
-              </div>
-              <div class="progress-bar">
-                <div class="progress-fill"
-                     [style.width.%]="calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers)">
-                </div>
-              </div>
-              <span class="percentage">{{ calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers) | number:'1.1-1' }}%</span>
-            </div>
-          </div>
-
-          <!-- Rating -->
-          <div *ngIf="qa.questionType === 'Rating'" class="rating-analytics">
-            <div class="average-rating">
-              <mat-icon class="star-icon">star</mat-icon>
-              <span class="rating-value">{{ qa.averageRating | number:'1.2-2' }}</span>
-              <span class="rating-label">Average Rating</span>
-            </div>
-            <div class="rating-distribution">
-              <div *ngFor="let option of getOptionKeys(qa.optionDistribution)" class="option-bar">
-                <div class="option-label">
-                  <span>{{ option }}</span>
-                  <span class="option-count">{{ getOptionValue(qa.optionDistribution, option) }}</span>
-                </div>
-                <div class="progress-bar">
-                  <div class="progress-fill"
-                       [style.width.%]="calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers)">
+      <!-- Tab 1: Overview -->
+      <mat-tab label="Overview">
+        <div class="tab-content">
+          <!-- Survey Overview -->
+          <mat-card class="overview-card">
+            <mat-card-header>
+              <mat-card-title>{{ statistics.surveyTitle }}</mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="overview-stats">
+                <div class="stat">
+                  <mat-icon>assignment</mat-icon>
+                  <div class="stat-info">
+                    <h3>{{ statistics.totalResponses }}</h3>
+                    <p>Total Responses</p>
                   </div>
                 </div>
-                <span class="percentage">{{ calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers) | number:'1.1-1' }}%</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Yes/No -->
-          <div *ngIf="qa.questionType === 'YesNo'" class="yesno-analytics">
-            <div class="yesno-stats">
-              <div class="yesno-stat yes">
-                <mat-icon>check</mat-icon>
-                <div>
-                  <h4>{{ qa.yesCount }}</h4>
-                  <p>Yes</p>
+                <div class="stat">
+                  <mat-icon>check_circle</mat-icon>
+                  <div class="stat-info">
+                    <h3>{{ statistics.completeResponses }}</h3>
+                    <p>Complete</p>
+                  </div>
+                </div>
+                <div class="stat">
+                  <mat-icon>pending</mat-icon>
+                  <div class="stat-info">
+                    <h3>{{ statistics.incompleteResponses }}</h3>
+                    <p>Incomplete</p>
+                  </div>
+                </div>
+                <div class="stat">
+                  <mat-icon>percent</mat-icon>
+                  <div class="stat-info">
+                    <h3>{{ statistics.completionRate | number:'1.1-1' }}%</h3>
+                    <p>Completion Rate</p>
+                  </div>
+                </div>
+                <div class="stat">
+                  <mat-icon>schedule</mat-icon>
+                  <div class="stat-info">
+                    <h3>{{ statistics.averageCompletionTimeMinutes | number:'1.1-1' }}</h3>
+                    <p>Avg. Time (min)</p>
+                  </div>
                 </div>
               </div>
-              <div class="yesno-stat no">
-                <mat-icon>close</mat-icon>
-                <div>
-                  <h4>{{ qa.noCount }}</h4>
-                  <p>No</p>
+              <div class="date-info" *ngIf="statistics.firstResponseDate">
+                <p><strong>First Response:</strong> {{ statistics.firstResponseDate | date:'medium' }}</p>
+                <p><strong>Last Response:</strong> {{ statistics.lastResponseDate | date:'medium' }}</p>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <!-- Question Analytics (existing simple view) -->
+          <mat-card class="questions-card">
+            <mat-card-header>
+              <mat-card-title>Question Analytics</mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div *ngFor="let qa of statistics.questionAnalytics; let i = index" class="question-analytics">
+                <h3>Q{{ i + 1 }}: {{ qa.questionText }}</h3>
+                <p class="question-meta">Type: {{ qa.questionType }} | Answers: {{ qa.totalAnswers }}</p>
+
+                <!-- Single Choice / Multiple Choice -->
+                <div *ngIf="qa.questionType === 'SingleChoice' || qa.questionType === 'MultipleChoice'" class="option-distribution">
+                  <div *ngFor="let option of getOptionKeys(qa.optionDistribution)" class="option-bar">
+                    <div class="option-label">
+                      <span>{{ option }}</span>
+                      <span class="option-count">{{ getOptionValue(qa.optionDistribution, option) }}</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div class="progress-fill"
+                           [style.width.%]="calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers)">
+                      </div>
+                    </div>
+                    <span class="percentage">{{ calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers) | number:'1.1-1' }}%</span>
+                  </div>
+                </div>
+
+                <!-- Rating -->
+                <div *ngIf="qa.questionType === 'Rating'" class="rating-analytics">
+                  <div class="average-rating">
+                    <mat-icon class="star-icon">star</mat-icon>
+                    <span class="rating-value">{{ qa.averageRating | number:'1.2-2' }}</span>
+                    <span class="rating-label">Average Rating</span>
+                  </div>
+                  <div class="rating-distribution">
+                    <div *ngFor="let option of getOptionKeys(qa.optionDistribution)" class="option-bar">
+                      <div class="option-label">
+                        <span>{{ option }}</span>
+                        <span class="option-count">{{ getOptionValue(qa.optionDistribution, option) }}</span>
+                      </div>
+                      <div class="progress-bar">
+                        <div class="progress-fill"
+                             [style.width.%]="calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers)">
+                        </div>
+                      </div>
+                      <span class="percentage">{{ calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers) | number:'1.1-1' }}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Yes/No -->
+                <div *ngIf="qa.questionType === 'YesNo'" class="yesno-analytics">
+                  <div class="yesno-stats">
+                    <div class="yesno-stat yes">
+                      <mat-icon>check</mat-icon>
+                      <div>
+                        <h4>{{ qa.yesCount }}</h4>
+                        <p>Yes</p>
+                      </div>
+                    </div>
+                    <div class="yesno-stat no">
+                      <mat-icon>close</mat-icon>
+                      <div>
+                        <h4>{{ qa.noCount }}</h4>
+                        <p>No</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Text Responses -->
+                <div *ngIf="qa.questionType === 'Text' && qa.textResponses && qa.textResponses.length > 0" class="text-responses">
+                  <h4>Sample Responses:</h4>
+                  <div class="response-list">
+                    <div *ngFor="let response of qa.textResponses.slice(0, 5)" class="text-response">
+                      <mat-icon>format_quote</mat-icon>
+                      <p>{{ response }}</p>
+                    </div>
+                    <p *ngIf="qa.textResponses.length > 5" class="more-responses">
+                      +{{ qa.textResponses.length - 5 }} more responses
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            </mat-card-content>
+          </mat-card>
+        </div>
+      </mat-tab>
+
+      <!-- Tab 2: Question Report -->
+      <mat-tab label="Question Report">
+        <div class="tab-content">
+          <div class="question-report-header">
+            <h2>Question-wise Answer Report</h2>
+            <p class="report-subtitle">{{ statistics.surveyTitle }} &mdash; {{ statistics.totalResponses }} total responses</p>
           </div>
 
-          <!-- Text Responses -->
-          <div *ngIf="qa.questionType === 'Text' && qa.textResponses && qa.textResponses.length > 0" class="text-responses">
-            <h4>Sample Responses:</h4>
-            <div class="response-list">
-              <div *ngFor="let response of qa.textResponses.slice(0, 5)" class="text-response">
-                <mat-icon>format_quote</mat-icon>
-                <p>{{ response }}</p>
-              </div>
-              <p *ngIf="qa.textResponses.length > 5" class="more-responses">
-                +{{ qa.textResponses.length - 5 }} more responses
-              </p>
-            </div>
+          <div class="question-report-grid">
+            <mat-card *ngFor="let qa of statistics.questionAnalytics; let i = index" class="question-report-card">
+              <mat-card-header>
+                <div class="question-report-title">
+                  <span class="question-number">Q{{ i + 1 }}</span>
+                  <div class="question-info">
+                    <h3>{{ qa.questionText }}</h3>
+                    <div class="question-badges">
+                      <span class="type-badge" [ngClass]="'type-' + qa.questionType.toLowerCase()">
+                        <mat-icon>{{ getQuestionTypeIcon(qa.questionType) }}</mat-icon>
+                        {{ getQuestionTypeLabel(qa.questionType) }}
+                      </span>
+                      <span class="answers-badge">{{ qa.totalAnswers }} answers</span>
+                    </div>
+                  </div>
+                </div>
+              </mat-card-header>
+
+              <mat-card-content>
+                <!-- Single Choice / Multiple Choice Chart -->
+                <div *ngIf="qa.questionType === 'SingleChoice' || qa.questionType === 'MultipleChoice'" class="chart-section">
+                  <div class="chart-container" [ngClass]="{'chart-bar': qa.questionType === 'MultipleChoice'}">
+                    <canvas baseChart
+                      [type]="getChoiceChartType(qa)"
+                      [data]="getChoiceChartData(qa)"
+                      [options]="getChoiceChartOptions(qa)">
+                    </canvas>
+                  </div>
+                  <div class="stats-breakdown">
+                    <div *ngFor="let option of getOptionKeys(qa.optionDistribution); let j = index" class="stat-row">
+                      <span class="stat-color" [style.background]="j < 8 ? ['#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#8b5cf6','#ec4899','#14b8a6'][j] : '#94a3b8'"></span>
+                      <span class="stat-label">{{ option }}</span>
+                      <span class="stat-count">{{ getOptionValue(qa.optionDistribution, option) }}</span>
+                      <span class="stat-pct">{{ calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers) | number:'1.1-1' }}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Yes/No Chart -->
+                <div *ngIf="qa.questionType === 'YesNo'" class="chart-section">
+                  <div class="chart-container chart-donut">
+                    <canvas baseChart
+                      type="doughnut"
+                      [data]="getYesNoChartData(qa)"
+                      [options]="getYesNoChartOptions(qa)">
+                    </canvas>
+                  </div>
+                  <div class="stats-breakdown yesno-breakdown">
+                    <div class="stat-row">
+                      <span class="stat-color" style="background: #22c55e"></span>
+                      <span class="stat-label">Yes</span>
+                      <span class="stat-count">{{ qa.yesCount || 0 }}</span>
+                      <span class="stat-pct">{{ calculatePercentage(qa.yesCount || 0, getYesNoTotal(qa)) | number:'1.1-1' }}%</span>
+                    </div>
+                    <div class="stat-row">
+                      <span class="stat-color" style="background: #ef4444"></span>
+                      <span class="stat-label">No</span>
+                      <span class="stat-count">{{ qa.noCount || 0 }}</span>
+                      <span class="stat-pct">{{ calculatePercentage(qa.noCount || 0, getYesNoTotal(qa)) | number:'1.1-1' }}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Rating Chart -->
+                <div *ngIf="qa.questionType === 'Rating'" class="chart-section">
+                  <div class="rating-summary">
+                    <mat-icon class="star-icon">star</mat-icon>
+                    <span class="rating-big">{{ qa.averageRating | number:'1.1-1' }}</span>
+                    <span class="rating-out-of">/ 5</span>
+                    <span class="rating-sublabel">Average Rating</span>
+                  </div>
+                  <div class="chart-container chart-bar">
+                    <canvas baseChart
+                      type="bar"
+                      [data]="getRatingChartData(qa)"
+                      [options]="getRatingChartOptions(qa)">
+                    </canvas>
+                  </div>
+                  <div class="stats-breakdown">
+                    <div *ngFor="let option of getOptionKeys(qa.optionDistribution)" class="stat-row">
+                      <span class="stat-color" style="background: #6366f1"></span>
+                      <span class="stat-label">{{ option }}</span>
+                      <span class="stat-count">{{ getOptionValue(qa.optionDistribution, option) }}</span>
+                      <span class="stat-pct">{{ calculatePercentage(getOptionValue(qa.optionDistribution, option), qa.totalAnswers) | number:'1.1-1' }}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Text Responses -->
+                <div *ngIf="qa.questionType === 'Text'" class="text-report-section">
+                  <div class="text-stats-row">
+                    <div class="text-stat">
+                      <mat-icon>chat</mat-icon>
+                      <span>{{ qa.textResponses?.length || 0 }} responses</span>
+                    </div>
+                  </div>
+                  <div *ngIf="qa.textResponses && qa.textResponses.length > 0" class="text-responses-list">
+                    <div *ngFor="let response of qa.textResponses; let ri = index" class="text-response-item">
+                      <span class="response-number">#{{ ri + 1 }}</span>
+                      <p>{{ response }}</p>
+                    </div>
+                  </div>
+                  <div *ngIf="!qa.textResponses || qa.textResponses.length === 0" class="no-responses">
+                    <mat-icon>info</mat-icon>
+                    <p>No text responses yet</p>
+                  </div>
+                </div>
+              </mat-card-content>
+            </mat-card>
           </div>
         </div>
-      </mat-card-content>
-    </mat-card>
+      </mat-tab>
+
+    </mat-tab-group>
   </div>
 </div>

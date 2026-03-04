@@ -638,6 +638,69 @@ Before testing, ensure:
 
 ---
 
+### TC42a: View Question Report Tab with Charts ✅
+
+**Objective:** Verify the Question Report tab displays Chart.js visualizations for each question.
+
+**Prerequisites:**
+- Survey with responses covering all question types
+
+**Steps:**
+
+1. **Navigate to Survey Analytics**
+   - Go to http://localhost:4200/analytics/survey/1
+   - Verify two tabs appear: "Overview" and "Question Report"
+
+2. **Click "Question Report" Tab**
+   - Tab should load without errors
+   - Header shows survey title and total response count
+
+3. **Verify Single Choice Question Card**
+   - Question number badge (Q1, Q2, etc.)
+   - Type badge shows "Single Choice" with radio icon
+   - **Donut chart** with color-coded segments
+   - Legend on the right side
+   - Stats breakdown below with color dots, option names, counts, and percentages
+
+4. **Verify Multiple Choice Question Card**
+   - Type badge shows "Multiple Choice" with checkbox icon
+   - **Horizontal bar chart** with one bar per option
+   - Stats breakdown with counts and percentages
+
+5. **Verify Rating Question Card**
+   - Rating summary box with star icon and average (e.g., 4.2 / 5)
+   - **Vertical bar chart** showing distribution per rating level
+   - Stats breakdown with counts per rating
+
+6. **Verify Yes/No Question Card**
+   - **Donut chart** with green (Yes) and red (No) segments
+   - Legend below chart
+   - Stats showing Yes count/% and No count/%
+
+7. **Verify Text Question Card**
+   - Response count badge
+   - Scrollable list of all text responses (numbered #1, #2, etc.)
+   - Left border accent on each response
+
+8. **Verify Tooltips**
+   - Hover over chart segments/bars
+   - Tooltip shows count and percentage
+
+**Expected Results:**
+✅ Two tabs visible: Overview and Question Report
+✅ Charts render correctly for each question type
+✅ Stats breakdown matches chart data
+✅ Responsive on different screen sizes
+✅ No console errors
+
+**Pass Criteria:**
+- All question types display appropriate chart
+- Counts and percentages are accurate
+- Charts are interactive (tooltips work)
+- Professional appearance with consistent colors
+
+---
+
 ### TC42: Filter Analytics by Date Range ⚠️
 
 **Status:** NOT IMPLEMENTED in current version

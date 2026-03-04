@@ -7,16 +7,13 @@ A comprehensive Survey API system that integrates with .NET CRM applications. Pr
 ### ✅ Completed
 - **Backend Structure**: Complete .NET 8 solution with clean architecture
 - **Database Schema**: MySQL schema with all tables and relationships
-- **Milestone 1 - Question Bank Management** (Backend): ✅ Complete
+- **Milestone 1 - Question Bank Management**: ✅ Complete (Backend + Frontend)
+- **Milestone 2 - Survey Builder**: ✅ Complete (Backend + Frontend)
+- **Milestone 5 - Analytics & Reporting**: ✅ Complete (with Chart.js Question Report)
 
-### 🚧 In Progress
-- Angular Frontend for Question Bank Management
-
-### 📅 Upcoming
-- Milestone 2: Survey Builder
+### ⏸️ Skipped (Optional)
 - Milestone 3: Field Mapping Configuration
 - Milestone 4: Survey Execution & CRM Integration
-- Milestone 5: Analytics & Reporting
 
 ---
 
@@ -31,7 +28,7 @@ Survey/
 │   └── Survey.Infrastructure/   # Data Access & Repositories
 ├── sql/
 │   └── init.sql                 # Database schema & seed data
-├── survey-ui/                   # Angular 17 Frontend (to be created)
+├── survey-ui/                   # Angular 17 Frontend
 └── docs/                        # Documentation
 ```
 
@@ -134,7 +131,7 @@ X-API-Key: survey-api-key-change-in-production
 
 ---
 
-## 📚 API Endpoints (Milestone 1)
+## 📚 API Endpoints
 
 ### Question Bank Management
 
@@ -382,7 +379,7 @@ Update `appsettings.json` to allow your CRM origin:
 - ✅ AutoMapper for DTO mapping
 - ✅ Logging with Serilog
 
-**Frontend:** 🚧 To be implemented
+**Frontend:** ✅ Complete
 
 ### 🧪 Test Cases (Backend)
 
@@ -416,32 +413,35 @@ Update `appsettings.json` to allow your CRM origin:
 
 ---
 
-## 🚀 Next Milestones
+## 🚀 Completed Milestones
 
-### Milestone 2: Survey Builder
+### Milestone 2: Survey Builder ✅
 - Survey CRUD operations
 - Add questions from Question Bank
 - Modify questions in survey context
-- Drag-and-drop question reordering
-- Survey preview
+- Drag-and-drop question reordering (Angular CDK)
+- Survey preview and duplication
 
-### Milestone 3: Field Mapping Configuration
+### Milestone 5: Analytics & Reporting ✅
+- Survey statistics dashboard with drill-down
+- Question-level analytics with Chart.js visualizations
+- Question Report tab (donut, bar, horizontal bar charts)
+- Client survey history tracking
+- Export to CSV/JSON
+- Per-question answer breakdown with counts and percentages
+
+### Pending Milestones (Optional)
+
+#### Milestone 3: Field Mapping Configuration
 - CRM field to Survey field mapping
 - Field type configuration
 - Test mappings with sample data
 
-### Milestone 4: Survey Execution & CRM Integration
+#### Milestone 4: Survey Execution & CRM Integration
 - Survey execution API for CRM
 - Auto-fill client data via field mappings
 - Response submission
 - Link responses to CRM Client ID
-
-### Milestone 5: Analytics & Reporting
-- Survey statistics dashboard
-- Question-level analytics
-- Client survey history
-- Export to CSV/JSON
-- Charts and visualizations
 
 ---
 
@@ -523,5 +523,5 @@ For issues or questions, contact the development team.
 
 ---
 
-**Last Updated**: February 2026
-**Version**: 1.0.0 (Milestone 1 - Backend Complete)
+**Last Updated**: March 2026
+**Version**: 1.1.0 (Milestones 1, 2 & 5 Complete with Chart.js Analytics)
