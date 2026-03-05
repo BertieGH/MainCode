@@ -4,6 +4,7 @@ public class ModifySurveyQuestionDto
 {
     public string? QuestionText { get; set; }
     public bool IsRequired { get; set; }
+    public bool? IsActive { get; set; }
     public List<ModifySurveyQuestionOptionDto>? Options { get; set; }
 }
 

@@ -59,4 +59,9 @@ public class ResponseRepository : Repository<Response>, IResponseRepository
             .Select(g => new { ClientId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.ClientId, x => x.Count);
     }
+
+    public async Task<bool> HasResponsesForSurveyAsync(int surveyId)
+    {
+        return await _dbSet.AnyAsync(r => r.SurveyId == surveyId);
+    }
 }

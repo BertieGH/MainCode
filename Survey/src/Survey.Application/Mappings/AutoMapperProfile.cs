@@ -49,6 +49,8 @@ public class AutoMapperProfile : Profile
         CreateMap<Core.Entities.Survey, SurveyDto>()
             .ForMember(dest => dest.QuestionCount,
                 opt => opt.MapFrom(src => src.Questions.Count))
+            .ForMember(dest => dest.HasResponses,
+                opt => opt.Ignore())
             .ForMember(dest => dest.Questions,
                 opt => opt.MapFrom(src => src.Questions.OrderBy(q => q.OrderIndex)));
 

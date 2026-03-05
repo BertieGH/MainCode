@@ -45,6 +45,12 @@
           </div>
         </div>
 
+        <!-- Info banner when survey has responses -->
+        <div *ngIf="survey?.hasResponses" class="info-banner">
+          <mat-icon>info</mat-icon>
+          <span>This survey has responses. Questions can be <strong>disabled</strong> but not removed, to preserve response data integrity. You can still add new questions.</span>
+        </div>
+
         <div *ngIf="surveyQuestions.length === 0" class="empty-state">
           <mat-icon>add_circle_outline</mat-icon>
           <p>No questions added yet. Select questions from the question bank to get started.</p>
@@ -53,6 +59,7 @@
         <div cdkDropList (cdkDropListDropped)="onDrop($event)" class="question-list">
           <div *ngFor="let question of surveyQuestions; let i = index"
                class="question-item"
+               [class.question-disabled]="!question.isActive"
                cdkDrag>
             <div class="drag-handle" cdkDragHandle>
               <mat-icon>drag_indicator</mat-icon>
@@ -62,6 +69,7 @@
                 <span class="question-number">{{ i + 1 }}.</span>
                 <span class="question-text">{{ question.questionText }}</span>
                 <mat-icon *ngIf="question.isModified" matTooltip="Modified from original" class="modified-icon">edit</mat-icon>
+                <span *ngIf="!question.isActive" class="disabled-badge">Disabled</span>
               </div>
               <div class="question-meta">
                 <span class="question-type">{{ getQuestionTypeLabel(question.questionType) }}</span>
@@ -76,8 +84,19 @@
               </div>
             </div>
             <div class="question-actions">
-              <button mat-icon-button (click)="$event.stopPropagation(); removeQuestion(question.id)" matTooltip="Remove" color="warn">
+              <!-- Show delete button when no responses -->
+              <button *ngIf="!survey?.hasResponses"
+                      mat-icon-button (click)="$event.stopPropagation(); removeQuestion(question.id)" matTooltip="Remove" color="warn">
                 <mat-icon>delete</mat-icon>
+              </button>
+              <!-- Show enable/disable eye icon when survey has responses -->
+              <button *ngIf="survey?.hasResponses"
+                      mat-icon-button
+                      (click)="$event.stopPropagation(); toggleActive(question)"
+                      [matTooltip]="question.isActive ? 'Disable question' : 'Enable question'"
+                      [class.eye-active]="question.isActive"
+                      [class.eye-disabled]="!question.isActive">
+                <mat-icon>{{ question.isActive ? 'visibility' : 'visibility_off' }}</mat-icon>
               </button>
             </div>
           </div>

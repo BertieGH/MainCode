@@ -89,7 +89,10 @@ export class SurveyBuilderComponent implements OnInit {
     this.surveyService.getSurveyById(this.surveyId).subscribe({
       next: (survey) => {
         this.survey = survey;
-        this.surveyQuestions = survey.questions;
+        this.surveyQuestions = survey.questions.map(q => ({
+          ...q,
+          isActive: q.isActive !== false
+        }));
         this.loading = false;
       },
       error: (error) => {
@@ -205,6 +208,22 @@ export class SurveyBuilderComponent implements OnInit {
         }
       });
     }
+  }
+
+  toggleActive(question: SurveyQuestion): void {
+    const newActive = !question.isActive;
+    this.surveyService.modifyQuestionInSurvey(this.surveyId, question.id, {
+      isRequired: question.isRequired,
+      isActive: newActive
+    }).subscribe({
+      next: () => {
+        question.isActive = newActive;
+        this.showSaved(newActive ? 'Question enabled' : 'Question disabled');
+      },
+      error: (error) => {
+        alert('Error updating question: ' + error.message);
+      }
+    });
   }
 
   toggleRequired(question: SurveyQuestion): void {

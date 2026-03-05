@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Survey Builder - UI Mockup</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    /* Top toolbar */
+    .toolbar {
+      background: #6750a4;
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .toolbar h1 { font-size: 18px; font-weight: 500; }
+
+    /* Mode toggle bar */
+    .mode-toggle-bar {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .mode-toggle-bar label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #555;
+    }
+    .mode-switch {
+      display: flex;
+      background: #e8e0f0;
+      border-radius: 24px;
+      overflow: hidden;
+    }
+    .mode-switch button {
+      padding: 8px 20px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.3s;
+      border-radius: 24px;
+    }
+    .mode-switch button.active {
+      background: #6750a4;
+      color: white;
+    }
+    .mode-desc {
+      font-size: 12px;
+      color: #888;
+      margin-left: 8px;
+      font-style: italic;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    /* Page header */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+    .page-header h2 { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+    .page-header p { font-size: 14px; color: #666; margin-top: 4px; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Save indicator */
+    .save-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 4px 12px;
+      border-radius: 16px;
+      color: #10b981;
+      animation: fadeIn 0.3s ease;
+    }
+    .save-indicator .material-icons { font-size: 18px; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn-text {
+      background: transparent;
+      color: #555;
+    }
+    .btn-text:hover { background: #f0f0f0; }
+    .btn-primary {
+      background: #6750a4;
+      color: white;
+    }
+    .btn-primary:hover { background: #5a3f96; }
+    .btn .material-icons { font-size: 18px; }
+
+    /* Builder layout */
+    .builder-layout {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+
+    /* Card */
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+      padding: 20px;
+    }
+
+    /* Panel header */
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #e8e0f0;
+    }
+    .panel-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    /* Status select */
+    .status-select {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 13px;
+      background: white;
+      cursor: pointer;
+    }
+
+    /* Info banner */
+    .info-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #e8f4fd;
+      border: 1px solid #b3d9f2;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #1565c0;
+      line-height: 1.5;
+    }
+    .info-banner .material-icons {
+      font-size: 20px;
+      color: #1976d2;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* Question item */
+    .question-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .question-item:hover {
+      background: #f3f4f6;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .question-item.disabled {
+      opacity: 0.55;
+      background: #f5f5f5;
+      border-style: dashed;
+      border-color: #ccc;
+    }
+    .question-item.disabled .question-text {
+      text-decoration: line-through;
+      color: #999;
+    }
+
+    .drag-handle {
+      color: #9ca3af;
+      cursor: grab;
+      margin-top: 2px;
+    }
+
+    .question-content { flex: 1; }
+
+    .question-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .question-number {
+      font-weight: 600;
+      color: #6b7280;
+    }
+    .question-text {
+      font-weight: 500;
+      color: #1a1a1a;
+    }
+
+    .question-meta {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 8px;
+    }
+    .question-type {
+      font-size: 12px;
+      padding: 3px 10px;
+      background: #ede9fe;
+      color: #6750a4;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+
+    /* Checkbox */
+    .checkbox-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #555;
+      cursor: pointer;
+    }
+    .checkbox-wrapper input[type="checkbox"] {
+      accent-color: #6750a4;
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    .question-options {
+      margin-top: 10px;
+      padding-left: 24px;
+    }
+    .question-options li {
+      font-size: 13px;
+      color: #6b7280;
+      margin: 3px 0;
+    }
+
+    /* Question actions */
+    .question-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 2px;
+    }
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: transparent;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .icon-btn:hover { background: #f0f0f0; }
+    .icon-btn.delete { color: #ef4444; }
+    .icon-btn.delete:hover { background: #fef2f2; }
+
+    /* Slide toggle */
+    .slide-toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .slide-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #ccc;
+      transition: 0.3s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      transition: 0.3s;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .slide-toggle input:checked + .slider {
+      background: #6750a4;
+    }
+    .slide-toggle input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+    .toggle-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toggle-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: #888;
+    }
+    .toggle-label.on { color: #6750a4; }
+    .toggle-label.off { color: #999; }
+
+    /* Question bank panel */
+    .bank-question {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .bank-question:hover {
+      border-color: #6750a4;
+      box-shadow: 0 1px 3px rgba(103,80,164,0.15);
+    }
+    .bank-question-content {
+      flex: 1;
+    }
+    .bank-question-content strong {
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .bank-question-meta {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .bank-question-meta small {
+      font-size: 11px;
+      color: #888;
+    }
+    .bank-category {
+      padding: 2px 8px;
+      background: #ede9fe;
+      color: #6750a4;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .add-btn {
+      color: #6750a4;
+    }
+    .add-btn:hover { background: #f5f0ff; }
+
+    /* Snackbar */
+    .snackbar {
+      position: fixed;
+      bottom: -60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      transition: bottom 0.3s ease;
+      z-index: 1000;
+    }
+    .snackbar.show { bottom: 24px; }
+    .snackbar .material-icons { font-size: 20px; }
+    .snackbar-btn {
+      background: none;
+      border: none;
+      color: #bb86fc;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      margin-left: 16px;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .builder-layout { grid-template-columns: 1fr; }
+    }
+
+    .disabled-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: #fee2e2;
+      color: #dc2626;
+      border-radius: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="material-icons">poll</span>
+    <h1>Survey Application</h1>
+  </div>
+
+  <!-- Mode Toggle -->
+  <div class="mode-toggle-bar">
+    <label>Preview Mode:</label>
+    <div class="mode-switch">
+      <button id="modeNoResp" class="active" onclick="switchMode('no-responses')">No Responses</button>
+      <button id="modeWithResp" onclick="switchMode('has-responses')">Has Responses</button>
+    </div>
+    <span class="mode-desc" id="modeDesc">Survey has never been taken - full editing allowed</span>
+  </div>
+
+  <div class="container">
+    <!-- Page Header -->
+    <div class="page-header">
+      <div>
+        <h2>Customer Satisfaction Survey</h2>
+        <p>Gather feedback about our products and services</p>
+      </div>
+      <div class="header-actions">
+        <div class="save-indicator" id="saveIndicator" style="visibility: hidden;">
+          <span class="material-icons">check_circle</span>
+          <span id="saveText">Saved</span>
+        </div>
+        <button class="btn btn-text">
+          <span class="material-icons">arrow_back</span>
+          Back to Surveys
+        </button>
+        <button class="btn btn-primary">
+          <span class="material-icons">visibility</span>
+          Preview
+        </button>
+      </div>
+    </div>
+
+    <!-- Builder Layout -->
+    <div class="builder-layout">
+      <!-- Left Panel -->
+      <div class="card">
+        <div class="panel-header">
+          <h3>Survey Questions (<span id="questionCount">4</span>)</h3>
+          <div>
+            <select class="status-select" id="statusSelect">
+              <option>Draft</option>
+              <option selected id="statusOption">Active</option>
+              <option>Paused</option>
+              <option>Archived</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Info Banner (only in has-responses mode) -->
+        <div class="info-banner" id="infoBanner" style="display: none;">
+          <span class="material-icons">info</span>
+          <span>This survey has responses. Questions can be <strong>disabled</strong> but not removed, to preserve response data integrity. You can still add new questions.</span>
+        </div>
+
+        <!-- Questions List -->
+        <div id="questionsList">
+          <!-- Question 1 -->
+          <div class="question-item" id="q1">
+            <div class="drag-handle"><span class="material-icons">drag_indicator</span></div>
+            <div class="question-content">
+              <div class="question-header">
+                <span class="question-number">1.</span>
+                <span class="question-text">How satisfied are you with our service?</span>
+              </div>
+              <div class="question-meta">
+                <span class="question-type">Rating</span>
+                <label class="checkbox-wrapper">
+                  <input type="checkbox" checked onchange="toggleRequired(this, 1)"> Required
+                </label>
+              </div>
+            </div>
+            <div class="question-actions" id="q1-actions">
+              <!-- Will be filled by JS based on mode -->
+            </div>
+          </div>
+
+          <!-- Question 2 -->
+          <div class="question-item" id="q2">
+            <div class="drag-handle"><span class="material-icons">drag_indicator</span></div>
+            <div class="question-content">
+              <div class="question-header">
+                <span class="question-number">2.</span>
+                <span class="question-text">Which products do you use?</span>
+              </div>
+              <div class="question-meta">
+                <span class="question-type">Multiple Choice</span>
+                <label class="checkbox-wrapper">
+                  <input type="checkbox" onchange="toggleRequired(this, 2)"> Required
+                </label>
+              </div>
+              <div class="question-options">
+                <ul>
+                  <li>Product A</li>
+                  <li>Product B</li>
+                  <li>Product C</li>
+                </ul>
+              </div>
+            </div>
+            <div class="question-actions" id="q2-actions"></div>
+          </div>
+
+          <!-- Question 3 -->
+          <div class="question-item" id="q3">
+            <div class="drag-handle"><span class="material-icons">drag_indicator</span></div>
+            <div class="question-content">
+              <div class="question-header">
+                <span class="question-number">3.</span>
+                <span class="question-text">Would you recommend us to others?</span>
+              </div>
+              <div class="question-meta">
+                <span class="question-type">Yes/No</span>
+                <label class="checkbox-wrapper">
+                  <input type="checkbox" checked onchange="toggleRequired(this, 3)"> Required
+                </label>
+              </div>
+            </div>
+            <div class="question-actions" id="q3-actions"></div>
+          </div>
+
+          <!-- Question 4 -->
+          <div class="question-item" id="q4">
+            <div class="drag-handle"><span class="material-icons">drag_indicator</span></div>
+            <div class="question-content">
+              <div class="question-header">
+                <span class="question-number">4.</span>
+                <span class="question-text">Any additional comments or suggestions?</span>
+              </div>
+              <div class="question-meta">
+                <span class="question-type">Text</span>
+                <label class="checkbox-wrapper">
+                  <input type="checkbox" onchange="toggleRequired(this, 4)"> Required
+                </label>
+              </div>
+            </div>
+            <div class="question-actions" id="q4-actions"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Question Bank -->
+      <div class="card">
+        <div class="panel-header">
+          <h3>Question Bank</h3>
+          <button class="icon-btn"><span class="material-icons">filter_list</span></button>
+        </div>
+
+        <div class="bank-question" onclick="addQuestion('How likely are you to buy again?', 'Single Choice')">
+          <div class="bank-question-content">
+            <strong>How likely are you to buy again?</strong>
+            <div class="bank-question-meta">
+              <small class="question-type" style="font-size:11px; padding:2px 6px;">Single Choice</small>
+              <small class="bank-category">Loyalty</small>
+            </div>
+          </div>
+          <button class="icon-btn add-btn"><span class="material-icons">add_circle</span></button>
+        </div>
+
+        <div class="bank-question" onclick="addQuestion('Rate our customer support', 'Rating')">
+          <div class="bank-question-content">
+            <strong>Rate our customer support</strong>
+            <div class="bank-question-meta">
+              <small class="question-type" style="font-size:11px; padding:2px 6px;">Rating</small>
+              <small class="bank-category">Support</small>
+            </div>
+          </div>
+          <button class="icon-btn add-btn"><span class="material-icons">add_circle</span></button>
+        </div>
+
+        <div class="bank-question" onclick="addQuestion('What is your preferred contact method?', 'Single Choice')">
+          <div class="bank-question-content">
+            <strong>What is your preferred contact method?</strong>
+            <div class="bank-question-meta">
+              <small class="question-type" style="font-size:11px; padding:2px 6px;">Single Choice</small>
+              <small class="bank-category">Contact</small>
+            </div>
+          </div>
+          <button class="icon-btn add-btn"><span class="material-icons">add_circle</span></button>
+        </div>
+
+        <div class="bank-question" onclick="addQuestion('How did you hear about us?', 'Multiple Choice')">
+          <div class="bank-question-content">
+            <strong>How did you hear about us?</strong>
+            <div class="bank-question-meta">
+              <small class="question-type" style="font-size:11px; padding:2px 6px;">Multiple Choice</small>
+              <small class="bank-category">Marketing</small>
+            </div>
+          </div>
+          <button class="icon-btn add-btn"><span class="material-icons">add_circle</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Snackbar -->
+  <div class="snackbar" id="snackbar">
+    <span class="material-icons" id="snackIcon">check_circle</span>
+    <span id="snackText">Saved</span>
+    <button class="snackbar-btn" onclick="hideSnackbar()">OK</button>
+  </div>
+
+  <script>
+    let currentMode = 'no-responses';
+    let questionStates = { q1: true, q2: true, q3: true, q4: true };
+    let questionCounter = 4;
+
+    function switchMode(mode) {
+      currentMode = mode;
+      document.getElementById('modeNoResp').classList.toggle('active', mode === 'no-responses');
+      document.getElementById('modeWithResp').classList.toggle('active', mode === 'has-responses');
+
+      if (mode === 'has-responses') {
+        document.getElementById('modeDesc').textContent = 'Survey has been taken - questions protected from deletion';
+        document.getElementById('infoBanner').style.display = 'flex';
+        document.getElementById('statusOption').selected = true;
+      } else {
+        document.getElementById('modeDesc').textContent = 'Survey has never been taken - full editing allowed';
+        document.getElementById('infoBanner').style.display = 'none';
+      }
+
+      renderActions();
+    }
+
+    function renderActions() {
+      const questions = document.querySelectorAll('.question-item');
+      questions.forEach(q => {
+        const id = q.id;
+        const actionsEl = document.getElementById(id + '-actions');
+        if (!actionsEl) return;
+
+        if (currentMode === 'no-responses') {
+          // Show delete button
+          actionsEl.innerHTML = `
+            <button class="icon-btn delete" onclick="event.stopPropagation(); deleteQuestion('${id}')" title="Remove question">
+              <span class="material-icons">delete</span>
+            </button>
+          `;
+          // Reset disabled state visually
+          q.classList.remove('disabled');
+          questionStates[id] = true;
+          // Remove disabled badge if any
+          const badge = q.querySelector('.disabled-badge');
+          if (badge) badge.remove();
+        } else {
+          // Show toggle
+          const isActive = questionStates[id];
+          actionsEl.innerHTML = `
+            <div class="toggle-wrapper">
+              <span class="toggle-label ${isActive ? 'on' : 'off'}">${isActive ? 'Enabled' : 'Disabled'}</span>
+              <label class="slide-toggle">
+                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleActive('${id}', this)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          `;
+
+          if (!isActive) {
+            q.classList.add('disabled');
+            if (!q.querySelector('.disabled-badge')) {
+              const header = q.querySelector('.question-header');
+              const badge = document.createElement('span');
+              badge.className = 'disabled-badge';
+              badge.textContent = 'Disabled';
+              header.appendChild(badge);
+            }
+          } else {
+            q.classList.remove('disabled');
+            const badge = q.querySelector('.disabled-badge');
+            if (badge) badge.remove();
+          }
+        }
+      });
+    }
+
+    function toggleActive(qId, checkbox) {
+      questionStates[qId] = checkbox.checked;
+      const item = document.getElementById(qId);
+
+      if (!checkbox.checked) {
+        item.classList.add('disabled');
+        if (!item.querySelector('.disabled-badge')) {
+          const header = item.querySelector('.question-header');
+          const badge = document.createElement('span');
+          badge.className = 'disabled-badge';
+          badge.textContent = 'Disabled';
+          header.appendChild(badge);
+        }
+        showSnackbar('Question disabled', 'visibility_off');
+      } else {
+        item.classList.remove('disabled');
+        const badge = item.querySelector('.disabled-badge');
+        if (badge) badge.remove();
+        showSnackbar('Question enabled', 'check_circle');
+      }
+
+      // Update toggle label
+      const label = item.querySelector('.toggle-label');
+      if (label) {
+        label.textContent = checkbox.checked ? 'Enabled' : 'Disabled';
+        label.className = 'toggle-label ' + (checkbox.checked ? 'on' : 'off');
+      }
+    }
+
+    function deleteQuestion(qId) {
+      if (!confirm('Remove this question from the survey?')) return;
+      const item = document.getElementById(qId);
+      item.style.transition = 'all 0.3s';
+      item.style.opacity = '0';
+      item.style.transform = 'translateX(-20px)';
+      setTimeout(() => {
+        item.remove();
+        renumberQuestions();
+        showSnackbar('Question removed', 'delete');
+      }, 300);
+    }
+
+    function addQuestion(text, type) {
+      questionCounter++;
+      const qId = 'q' + questionCounter;
+      questionStates[qId] = true;
+
+      const newQ = document.createElement('div');
+      newQ.className = 'question-item';
+      newQ.id = qId;
+      newQ.style.animation = 'fadeIn 0.3s ease';
+
+      const count = document.querySelectorAll('#questionsList .question-item').length + 1;
+
+      newQ.innerHTML = `
+        <div class="drag-handle"><span class="material-icons">drag_indicator</span></div>
+        <div class="question-content">
+          <div class="question-header">
+            <span class="question-number">${count}.</span>
+            <span class="question-text">${text}</span>
+          </div>
+          <div class="question-meta">
+            <span class="question-type">${type}</span>
+            <label class="checkbox-wrapper">
+              <input type="checkbox" onchange="toggleRequired(this, ${questionCounter})"> Required
+            </label>
+          </div>
+        </div>
+        <div class="question-actions" id="${qId}-actions"></div>
+      `;
+
+      document.getElementById('questionsList').appendChild(newQ);
+      renderActions();
+      renumberQuestions();
+      showSnackbar('Question added successfully', 'add_circle');
+    }
+
+    function toggleRequired(checkbox, qNum) {
+      const msg = checkbox.checked ? 'Question marked as required' : 'Question marked as optional';
+      showSnackbar(msg, 'check_circle');
+    }
+
+    function renumberQuestions() {
+      const questions = document.querySelectorAll('#questionsList .question-item');
+      questions.forEach((q, i) => {
+        const numEl = q.querySelector('.question-number');
+        if (numEl) numEl.textContent = (i + 1) + '.';
+      });
+      document.getElementById('questionCount').textContent = questions.length;
+    }
+
+    function showSnackbar(text, icon) {
+      const snackbar = document.getElementById('snackbar');
+      const snackText = document.getElementById('snackText');
+      const snackIcon = document.getElementById('snackIcon');
+      snackText.textContent = text;
+      snackIcon.textContent = icon || 'check_circle';
+      snackbar.classList.add('show');
+
+      // Save indicator
+      const saveInd = document.getElementById('saveIndicator');
+      saveInd.style.visibility = 'visible';
+      document.getElementById('saveText').textContent = 'Saved';
+
+      clearTimeout(window._snackTimeout);
+      window._snackTimeout = setTimeout(() => {
+        snackbar.classList.remove('show');
+      }, 3000);
+
+      clearTimeout(window._saveTimeout);
+      window._saveTimeout = setTimeout(() => {
+        saveInd.style.visibility = 'hidden';
+      }, 4000);
+    }
+
+    function hideSnackbar() {
+      document.getElementById('snackbar').classList.remove('show');
+    }
+
+    // Initialize
+    renderActions();
+  </script>
+</body>
+</html>

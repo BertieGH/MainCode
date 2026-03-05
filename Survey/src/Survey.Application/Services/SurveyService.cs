@@ -11,17 +11,20 @@ public class SurveyService : ISurveyService
 {
     private readonly ISurveyRepository _surveyRepository;
     private readonly ISurveyQuestionRepository _surveyQuestionRepository;
+    private readonly IResponseRepository _responseRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
 
     public SurveyService(
         ISurveyRepository surveyRepository,
         ISurveyQuestionRepository surveyQuestionRepository,
+        IResponseRepository responseRepository,
         IUnitOfWork unitOfWork,
         IMapper mapper)
     {
         _surveyRepository = surveyRepository;
         _surveyQuestionRepository = surveyQuestionRepository;
+        _responseRepository = responseRepository;
         _unitOfWork = unitOfWork;
         _mapper = mapper;
     }
@@ -45,7 +48,11 @@ public class SurveyService : ISurveyService
     public async Task<SurveyDto?> GetSurveyByIdAsync(int id)
     {
         var survey = await _surveyRepository.GetSurveyWithQuestionsAsync(id);
-        return survey == null ? null : _mapper.Map<SurveyDto>(survey);
+        if (survey == null) return null;
+
+        var dto = _mapper.Map<SurveyDto>(survey);
+        dto.HasResponses = await _responseRepository.HasResponsesForSurveyAsync(id);
+        return dto;
     }
 
     public async Task<SurveyDto> CreateSurveyAsync(CreateSurveyDto dto)

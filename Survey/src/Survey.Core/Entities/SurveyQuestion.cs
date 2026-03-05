@@ -11,6 +11,7 @@ public class SurveyQuestion
     public QuestionType QuestionType { get; set; }
     public bool IsRequired { get; set; }
     public int OrderIndex { get; set; }
+    public bool IsActive { get; set; } = true;
     public bool IsModified { get; set; }  // True if customized from bank
     public DateTime CreatedAt { get; set; }
 

@@ -25,6 +25,9 @@ public class SurveyQuestionConfiguration : IEntityTypeConfiguration<SurveyQuesti
         builder.Property(sq => sq.OrderIndex)
             .HasDefaultValue(0);
 
+        builder.Property(sq => sq.IsActive)
+            .HasDefaultValue(true);
+
         builder.Property(sq => sq.IsModified)
             .HasDefaultValue(false);
 

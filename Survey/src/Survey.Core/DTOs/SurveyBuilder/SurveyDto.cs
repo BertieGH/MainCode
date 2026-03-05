@@ -12,5 +12,6 @@ public class SurveyDto
     public DateTime UpdatedAt { get; set; }
     public string? CreatedBy { get; set; }
     public int QuestionCount { get; set; }
+    public bool HasResponses { get; set; }
     public List<SurveyQuestionDto> Questions { get; set; } = new();
 }

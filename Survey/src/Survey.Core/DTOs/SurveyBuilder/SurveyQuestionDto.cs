@@ -10,6 +10,7 @@ public class SurveyQuestionDto
     public string QuestionText { get; set; } = string.Empty;
     public QuestionType QuestionType { get; set; }
     public bool IsRequired { get; set; }
+    public bool IsActive { get; set; }
     public int OrderIndex { get; set; }
     public bool IsModified { get; set; }
     public DateTime CreatedAt { get; set; }

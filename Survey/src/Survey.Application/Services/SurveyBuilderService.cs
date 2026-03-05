@@ -12,6 +12,7 @@ public class SurveyBuilderService : ISurveyBuilderService
     private readonly ISurveyRepository _surveyRepository;
     private readonly ISurveyQuestionRepository _surveyQuestionRepository;
     private readonly IQuestionBankRepository _questionBankRepository;
+    private readonly IResponseRepository _responseRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
 
@@ -19,12 +20,14 @@ public class SurveyBuilderService : ISurveyBuilderService
         ISurveyRepository surveyRepository,
         ISurveyQuestionRepository surveyQuestionRepository,
         IQuestionBankRepository questionBankRepository,
+        IResponseRepository responseRepository,
         IUnitOfWork unitOfWork,
         IMapper mapper)
     {
         _surveyRepository = surveyRepository;
         _surveyQuestionRepository = surveyQuestionRepository;
         _questionBankRepository = questionBankRepository;
+        _responseRepository = responseRepository;
         _unitOfWork = unitOfWork;
         _mapper = mapper;
     }
@@ -86,6 +89,11 @@ public class SurveyBuilderService : ISurveyBuilderService
 
         surveyQuestion.IsRequired = dto.IsRequired;
 
+        if (dto.IsActive.HasValue)
+        {
+            surveyQuestion.IsActive = dto.IsActive.Value;
+        }
+
         // Modify options if provided
         if (dto.Options != null && dto.Options.Any())
         {
@@ -117,6 +125,11 @@ public class SurveyBuilderService : ISurveyBuilderService
         var surveyQuestion = await _surveyQuestionRepository.GetByIdAsync(surveyQuestionId);
         if (surveyQuestion == null || surveyQuestion.SurveyId != surveyId)
             throw new NotFoundException("SurveyQuestion", surveyQuestionId);
+
+        // Prevent deletion if survey has responses
+        var hasResponses = await _responseRepository.HasResponsesForSurveyAsync(surveyId);
+        if (hasResponses)
+            throw new BusinessRuleException("Cannot delete questions from a survey with responses. Use disable instead.");
 
         // Use direct SQL delete to bypass EF Core change tracker issues
         await _surveyQuestionRepository.DeleteByIdAsync(surveyQuestionId);

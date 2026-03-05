@@ -20,6 +20,7 @@ export interface SurveyQuestion {
   questionText: string;
   questionType: QuestionType;
   isRequired: boolean;
+  isActive: boolean;
   orderIndex: number;
   isModified: boolean;
   createdAt: Date;
@@ -35,6 +36,7 @@ export interface Survey {
   updatedAt: Date;
   createdBy?: string;
   questionCount: number;
+  hasResponses: boolean;
   questions: SurveyQuestion[];
 }
 
@@ -62,6 +64,7 @@ export interface AddQuestionToSurvey {
 export interface ModifySurveyQuestion {
   questionText?: string;
   isRequired: boolean;
+  isActive?: boolean;
   options?: ModifySurveyQuestionOption[];
 }
 

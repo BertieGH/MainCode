@@ -102,6 +102,7 @@ CREATE TABLE SurveyQuestions (
     QuestionText TEXT NULL, -- Override if modified from bank
     QuestionType VARCHAR(50) NOT NULL,
     IsRequired BOOLEAN NOT NULL DEFAULT FALSE,
+    IsActive BOOLEAN NOT NULL DEFAULT TRUE,
     OrderIndex INT NOT NULL DEFAULT 0,
     IsModified BOOLEAN NOT NULL DEFAULT FALSE, -- True if customized from bank
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

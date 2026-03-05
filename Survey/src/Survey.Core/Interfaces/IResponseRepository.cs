@@ -10,4 +10,5 @@ public interface IResponseRepository : IRepository<Response>
     Task<int> GetTotalResponseCountAsync();
     Task<int> GetCompleteResponseCountForSurveyAsync(int surveyId);
     Task<Dictionary<string, int>> GetUniqueClientsCountAsync();
+    Task<bool> HasResponsesForSurveyAsync(int surveyId);
 }
