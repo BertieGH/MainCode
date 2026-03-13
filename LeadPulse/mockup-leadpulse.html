@@ -1,0 +1,3140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LeadPulse - Insurance Lead Generation</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: #f5f7fa; color: #1e293b; display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidebar { width: 250px; background: #1a1f36; color: #fff; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; }
+.sidebar-brand { padding: 20px 24px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px; }
+.sidebar-brand .logo { width: 32px; height: 32px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
+.sidebar-brand span { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+.sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+.nav-section { padding: 8px 24px 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.35); margin-top: 8px; }
+.nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 24px; cursor: pointer; color: rgba(255,255,255,0.6); transition: all 0.15s; font-size: 14px; font-weight: 500; border-left: 3px solid transparent; }
+.nav-item:hover { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.9); }
+.nav-item.active { background: rgba(37,99,235,0.15); color: #fff; border-left-color: #2563eb; }
+.nav-item .material-icons { font-size: 20px; }
+.nav-item .badge { background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; margin-left: auto; }
+.sidebar-footer { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.08); }
+.sidebar-user { display: flex; align-items: center; gap: 10px; }
+.sidebar-user .avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; }
+.sidebar-user-info { flex: 1; }
+.sidebar-user-info .name { font-size: 13px; font-weight: 600; }
+.sidebar-user-info .role { font-size: 11px; color: rgba(255,255,255,0.45); }
+
+/* Main content */
+.main { margin-left: 250px; flex: 1; min-height: 100vh; }
+.topbar { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 0 32px; height: 56px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+.topbar-left { display: flex; align-items: center; gap: 16px; }
+.topbar-left h2 { font-size: 16px; font-weight: 600; }
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+.topbar-right .icon-btn { width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.15s; position: relative; }
+.topbar-right .icon-btn:hover { background: #f1f5f9; color: #1e293b; }
+.topbar-right .icon-btn .dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; border: 2px solid #fff; }
+.content { padding: 24px 32px; }
+
+/* Screen containers */
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* Cards */
+.card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 20px; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.card-header h3 { font-size: 15px; font-weight: 600; }
+.card-header .see-all { font-size: 13px; color: #2563eb; cursor: pointer; font-weight: 500; }
+
+/* KPI Cards */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.kpi-card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 20px; }
+.kpi-card .kpi-label { font-size: 12px; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.kpi-card .kpi-value { font-size: 28px; font-weight: 700; color: #1e293b; }
+.kpi-card .kpi-change { font-size: 12px; font-weight: 600; margin-top: 4px; display: flex; align-items: center; gap: 2px; }
+.kpi-card .kpi-change.up { color: #16a34a; }
+.kpi-card .kpi-change.down { color: #ef4444; }
+
+/* Dashboard grid */
+.dash-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+.dash-grid-equal { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+
+/* Welcome banner */
+.welcome-banner { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #fff; border-radius: 12px; padding: 24px 28px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
+.welcome-banner h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.welcome-banner p { font-size: 14px; opacity: 0.85; }
+.welcome-banner .date-badge { background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+
+/* Prospect cards */
+.prospect-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 16px; transition: box-shadow 0.15s; cursor: pointer; background: #fff; }
+.prospect-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.score-circle { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; color: #fff; flex-shrink: 0; }
+.score-high { background: #16a34a; }
+.score-medium { background: #f59e0b; }
+.score-low { background: #94a3b8; }
+.prospect-info { flex: 1; min-width: 0; }
+.prospect-info .name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+.prospect-info .snippet { font-size: 13px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prospect-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.chip-auto { background: #dbeafe; color: #1d4ed8; }
+.chip-home { background: #dcfce7; color: #166534; }
+.chip-life { background: #fef3c7; color: #92400e; }
+.chip-health { background: #fce7f3; color: #9d174d; }
+.chip-commercial { background: #e0e7ff; color: #3730a3; }
+.urgency-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.urgency-hot { background: #fef2f2; color: #dc2626; }
+.urgency-warm { background: #fff7ed; color: #ea580c; }
+.urgency-cool { background: #f0f9ff; color: #0284c7; }
+.platform-icon { font-size: 11px; color: #64748b; font-weight: 500; display: flex; align-items: center; gap: 3px; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; font-family: inherit; }
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-secondary { background: #f1f5f9; color: #475569; }
+.btn-secondary:hover { background: #e2e8f0; }
+.btn-success { background: #16a34a; color: #fff; }
+.btn-success:hover { background: #15803d; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.btn-outline { background: transparent; border: 1px solid #e2e8f0; color: #475569; }
+.btn-outline:hover { background: #f8fafc; border-color: #cbd5e1; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-icon { width: 32px; height: 32px; padding: 0; justify-content: center; }
+
+/* Filter bar */
+.filter-bar { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px 20px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.filter-bar select, .filter-bar input { padding: 7px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-family: inherit; color: #1e293b; background: #f8fafc; }
+.filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.view-toggle { display: flex; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin-left: auto; }
+.view-toggle button { border: none; background: #f8fafc; padding: 6px 12px; cursor: pointer; color: #64748b; }
+.view-toggle button.active { background: #2563eb; color: #fff; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 600; padding: 10px 12px; border-bottom: 2px solid #e2e8f0; }
+td { padding: 12px; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
+tr:hover td { background: #f8fafc; }
+
+/* Prospect grid */
+.prospect-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.prospect-grid .prospect-card { flex-direction: column; align-items: flex-start; }
+.prospect-grid .prospect-card .score-circle { position: absolute; top: 12px; right: 12px; }
+.prospect-grid .prospect-card { position: relative; }
+
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 20px; }
+.pagination button { width: 32px; height: 32px; border: 1px solid #e2e8f0; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; color: #475569; }
+.pagination button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.pagination button:hover:not(.active) { background: #f1f5f9; }
+
+/* Modal / Slide panel */
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; }
+.overlay.active { display: block; }
+.slide-panel { position: fixed; top: 0; right: -600px; width: 600px; height: 100vh; background: #fff; z-index: 201; transition: right 0.3s ease; overflow-y: auto; box-shadow: -4px 0 24px rgba(0,0,0,0.12); }
+.slide-panel.active { right: 0; }
+.panel-header { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: #fff; z-index: 10; }
+.panel-header h2 { font-size: 18px; font-weight: 700; }
+.panel-body { padding: 24px; }
+.panel-section { margin-bottom: 24px; }
+.panel-section h4 { font-size: 13px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+/* Timeline */
+.timeline { position: relative; padding-left: 24px; }
+.timeline::before { content: ''; position: absolute; left: 8px; top: 4px; bottom: 4px; width: 2px; background: #e2e8f0; }
+.timeline-item { position: relative; margin-bottom: 16px; }
+.timeline-item::before { content: ''; position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #2563eb; border: 2px solid #fff; box-shadow: 0 0 0 2px #e2e8f0; }
+.timeline-item .time { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
+.timeline-item .desc { font-size: 13px; }
+
+/* Form elements */
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; color: #1e293b; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.form-group textarea { resize: vertical; min-height: 80px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Strategy cards */
+.strategy-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; background: #fff; }
+.strategy-card.active-strategy { border-color: #2563eb; background: #eff6ff; }
+.strategy-info h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.strategy-info p { font-size: 12px; color: #64748b; }
+.strategy-actions { display: flex; gap: 8px; }
+
+/* Connected accounts */
+.account-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 16px; background: #fff; }
+.account-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; color: #fff; }
+.account-icon.linkedin { background: #0077b5; }
+.account-icon.facebook { background: #1877f2; }
+.account-icon.nextdoor { background: #00b246; }
+.account-info { flex: 1; }
+.account-info h4 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.account-info p { font-size: 12px; color: #64748b; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.status-dot.active { background: #16a34a; }
+.status-dot.syncing { background: #f59e0b; }
+.status-dot.error { background: #ef4444; }
+.status-dot.expired { background: #94a3b8; }
+.status-label { font-size: 12px; font-weight: 500; }
+
+/* Charts (CSS-only placeholders) */
+.chart-placeholder { width: 100%; height: 200px; position: relative; display: flex; align-items: flex-end; gap: 6px; padding: 0 4px; }
+.chart-bar { flex: 1; border-radius: 4px 4px 0 0; transition: height 0.3s; position: relative; min-width: 20px; }
+.chart-bar:hover { opacity: 0.8; }
+.chart-bar .chart-label { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #64748b; white-space: nowrap; }
+.chart-bar .chart-val { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 600; color: #374151; }
+
+/* Donut chart */
+.donut-chart { width: 180px; height: 180px; border-radius: 50%; position: relative; margin: 0 auto; }
+.donut-center { position: absolute; inset: 35px; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+.donut-center .big { font-size: 22px; font-weight: 700; }
+.donut-center .small { font-size: 11px; color: #64748b; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 16px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+/* Funnel */
+.funnel { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 20px 0; }
+.funnel-step { height: 40px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 13px; border-radius: 4px; transition: width 0.3s; }
+
+/* Follow-up item */
+.followup-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+.followup-item:last-child { border-bottom: none; }
+.followup-time { font-size: 12px; font-weight: 600; color: #2563eb; min-width: 60px; }
+.followup-name { font-size: 13px; font-weight: 500; flex: 1; }
+.followup-type { font-size: 11px; color: #64748b; }
+
+/* Activity feed */
+.activity-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+.activity-item:last-child { border-bottom: none; }
+.activity-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.activity-icon .material-icons { font-size: 16px; color: #fff; }
+.activity-text { font-size: 13px; }
+.activity-text .time { color: #94a3b8; font-size: 11px; }
+
+/* Daily list status */
+.status-pill { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px; }
+.status-new { background: #dbeafe; color: #1d4ed8; }
+.status-viewed { background: #fef3c7; color: #92400e; }
+.status-contacted { background: #dcfce7; color: #166534; }
+.status-converted { background: #d1fae5; color: #065f46; }
+.status-dismissed { background: #f1f5f9; color: #64748b; }
+
+/* Calendar mini */
+.mini-calendar { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; }
+.cal-header { font-size: 10px; font-weight: 600; color: #94a3b8; text-align: center; padding: 4px; }
+.cal-day { text-align: center; padding: 6px 4px; font-size: 12px; border-radius: 6px; cursor: pointer; }
+.cal-day:hover { background: #f1f5f9; }
+.cal-day.has-event { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+.cal-day.today { background: #2563eb; color: #fff; font-weight: 600; }
+
+/* Checkbox */
+.checkbox-wrap { display: flex; align-items: center; gap: 8px; }
+.checkbox-wrap input[type="checkbox"] { width: 16px; height: 16px; accent-color: #2563eb; }
+
+/* Multi-select mock */
+.multi-select { display: flex; flex-wrap: wrap; gap: 6px; }
+.multi-option { padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.multi-option.selected { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+/* Contact info grid */
+.contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.contact-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.contact-item .material-icons { font-size: 18px; color: #64748b; }
+.contact-item .label { font-size: 11px; color: #94a3b8; display: block; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Confirmation dialog */
+.confirm-dialog { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 12px; padding: 24px; z-index: 300; width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); display: none; }
+.confirm-dialog.active { display: block; }
+.confirm-dialog h3 { font-size: 16px; margin-bottom: 8px; }
+.confirm-dialog p { font-size: 13px; color: #64748b; margin-bottom: 20px; }
+.confirm-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Column chooser dropdown */
+.col-chooser-wrap { position: relative; }
+.col-chooser-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-family: inherit; color: #475569; background: #f8fafc; cursor: pointer; }
+.col-chooser-btn:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.col-chooser-dropdown { display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 8px 0; z-index: 60; min-width: 220px; }
+.col-chooser-dropdown.open { display: block; }
+.col-chooser-dropdown label { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; transition: background 0.1s; }
+.col-chooser-dropdown label:hover { background: #f8fafc; }
+.col-chooser-dropdown input[type="checkbox"] { width: 15px; height: 15px; accent-color: #2563eb; }
+.col-chooser-dropdown .divider { height: 1px; background: #e2e8f0; margin: 4px 0; }
+.col-chooser-dropdown .dd-header { padding: 6px 14px 4px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Tenant switcher */
+.tenant-bar { padding: 12px 24px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.tenant-selector { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(255,255,255,0.06); border-radius: 8px; cursor: pointer; transition: background 0.15s; }
+.tenant-selector:hover { background: rgba(255,255,255,0.1); }
+.tenant-selector .tenant-icon { width: 28px; height: 28px; border-radius: 6px; background: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.tenant-selector .tenant-info { flex: 1; min-width: 0; }
+.tenant-selector .tenant-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tenant-selector .tenant-id { font-size: 10px; color: rgba(255,255,255,0.4); }
+.tenant-selector .material-icons { font-size: 16px; color: rgba(255,255,255,0.4); }
+.tenant-dropdown { display: none; position: absolute; left: 12px; right: 12px; top: 100%; margin-top: 4px; background: #252b45; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 110; max-height: 280px; overflow-y: auto; }
+.tenant-dropdown.open { display: block; }
+.tenant-dropdown .td-search { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.tenant-dropdown .td-search input { width: 100%; padding: 6px 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; color: #fff; font-size: 12px; font-family: inherit; }
+.tenant-dropdown .td-search input::placeholder { color: rgba(255,255,255,0.3); }
+.tenant-dropdown .td-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; transition: background 0.1s; font-size: 12px; color: rgba(255,255,255,0.7); }
+.tenant-dropdown .td-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+.tenant-dropdown .td-item.active { background: rgba(37,99,235,0.2); color: #fff; }
+.tenant-dropdown .td-item .td-icon { width: 24px; height: 24px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; }
+.tenant-dropdown .td-item .td-plan { font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-left: auto; }
+
+/* Topbar tenant context */
+.topbar-tenant { display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; color: #1d4ed8; }
+.topbar-tenant .material-icons { font-size: 14px; }
+
+/* Role badge in sidebar */
+.role-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.role-super { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.role-admin { background: rgba(37,99,235,0.2); color: #93c5fd; }
+.role-agent { background: rgba(22,163,74,0.2); color: #86efac; }
+.role-viewer { background: rgba(148,163,184,0.2); color: #cbd5e1; }
+
+/* Nav group for role-based visibility */
+.nav-group-admin { border-top: 1px solid rgba(255,255,255,0.06); margin-top: 4px; padding-top: 4px; }
+
+/* Environment banner */
+.env-banner { padding: 3px 24px; font-size: 10px; font-weight: 600; text-align: center; letter-spacing: 0.5px; }
+.env-dev { background: #f59e0b; color: #000; }
+.env-staging { background: #8b5cf6; color: #fff; }
+.env-prod { background: transparent; display: none; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="logo">LP</div>
+    <span>LeadPulse</span>
+  </div>
+
+  <!-- Environment Banner -->
+  <div class="env-banner env-dev">DEVELOPMENT ENVIRONMENT</div>
+
+  <!-- Tenant Switcher (Super Admin only) -->
+  <div class="tenant-bar" style="position:relative;">
+    <div class="tenant-selector" onclick="toggleTenantSwitcher()">
+      <div class="tenant-icon">MI</div>
+      <div class="tenant-info">
+        <div class="tenant-name" id="current-tenant-name">Mitchell Insurance Group</div>
+        <div class="tenant-id">TEN-00142 &bull; Professional</div>
+      </div>
+      <span class="material-icons">unfold_more</span>
+    </div>
+    <div class="tenant-dropdown" id="tenant-dropdown">
+      <div class="td-search"><input type="text" placeholder="Search tenants..." oninput="filterTenants(this.value)"></div>
+      <div class="td-item active" onclick="switchTenant('Mitchell Insurance Group','TEN-00142','MI','#2563eb')">
+        <div class="td-icon" style="background:#2563eb;">MI</div>
+        Mitchell Insurance Group
+        <span class="td-plan" style="background:rgba(37,99,235,0.15);color:#60a5fa;">PRO</span>
+      </div>
+      <div class="td-item" onclick="switchTenant('Apex Financial Services','TEN-00098','AF','#8b5cf6')">
+        <div class="td-icon" style="background:#8b5cf6;">AF</div>
+        Apex Financial Services
+        <span class="td-plan" style="background:rgba(139,92,246,0.15);color:#a78bfa;">ENT</span>
+      </div>
+      <div class="td-item" onclick="switchTenant('SafeGuard Insurance LLC','TEN-00201','SG','#16a34a')">
+        <div class="td-icon" style="background:#16a34a;">SG</div>
+        SafeGuard Insurance LLC
+        <span class="td-plan" style="background:rgba(22,163,74,0.15);color:#86efac;">STR</span>
+      </div>
+      <div class="td-item" onclick="switchTenant('Premier Realty Group','TEN-00187','PR','#f59e0b')">
+        <div class="td-icon" style="background:#f59e0b;">PR</div>
+        Premier Realty Group
+        <span class="td-plan" style="background:rgba(37,99,235,0.15);color:#60a5fa;">PRO</span>
+      </div>
+      <div class="td-item" style="opacity:0.4;">
+        <div class="td-icon" style="background:#94a3b8;">BP</div>
+        BrightPath Mortgage
+        <span class="td-plan" style="background:rgba(148,163,184,0.15);color:#94a3b8;">SUS</span>
+      </div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section">Main</div>
+    <div class="nav-item active" data-screen="dashboard">
+      <span class="material-icons">dashboard</span> Dashboard
+    </div>
+    <div class="nav-item" data-screen="prospects">
+      <span class="material-icons">people</span> Prospects <span class="badge">24</span>
+    </div>
+    <div class="nav-item" data-screen="daily-list">
+      <span class="material-icons">today</span> Daily List <span class="badge">8</span>
+    </div>
+    <div class="nav-section">Manage</div>
+    <div class="nav-item" data-screen="strategies">
+      <span class="material-icons">tune</span> Strategies
+    </div>
+    <div class="nav-item" data-screen="call-tracker">
+      <span class="material-icons">phone_in_talk</span> Call Tracker
+    </div>
+    <div class="nav-item" data-screen="social-accounts">
+      <span class="material-icons">share</span> Social Accounts
+    </div>
+    <div class="nav-section">Insights</div>
+    <div class="nav-item" data-screen="analytics">
+      <span class="material-icons">bar_chart</span> Analytics
+    </div>
+    <div class="nav-group-admin">
+      <div class="nav-section">Admin</div>
+      <div class="nav-item" data-screen="keyword-config">
+        <span class="material-icons">manage_search</span> Keywords
+      </div>
+      <div class="nav-item" data-screen="user-management">
+        <span class="material-icons">admin_panel_settings</span> Users
+      </div>
+    </div>
+    <div class="nav-group-admin" id="nav-super-admin">
+      <div class="nav-section">Platform</div>
+      <div class="nav-item" data-screen="tenant-admin">
+        <span class="material-icons">business</span> Tenants
+      </div>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="avatar">JM</div>
+      <div class="sidebar-user-info">
+        <div class="name">Jake Mitchell</div>
+        <div class="role"><span class="role-badge role-super">Super Admin</span></div>
+      </div>
+      <span class="material-icons" style="font-size:16px;color:rgba(255,255,255,0.3);cursor:pointer;" onclick="showConfirmDialog('Sign Out?','You will be returned to the login page.')">logout</span>
+    </div>
+  </div>
+</aside>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h2 id="page-title">Dashboard</h2>
+      <div class="topbar-tenant" id="topbar-tenant-badge">
+        <span class="material-icons">business</span>
+        <span id="topbar-tenant-label">Mitchell Insurance Group</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn"><span class="material-icons">search</span></button>
+      <button class="icon-btn">
+        <span class="material-icons">notifications</span>
+        <span class="dot"></span>
+      </button>
+      <button class="icon-btn"><span class="material-icons">settings</span></button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ DASHBOARD ============ -->
+    <div class="screen active" id="screen-dashboard">
+      <div class="welcome-banner">
+        <div>
+          <h1>Good morning, Jake!</h1>
+          <p>You have 8 new prospects and 3 follow-ups today.</p>
+        </div>
+        <div class="date-badge">
+          <span class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:4px;">calendar_today</span>
+          Thursday, March 12, 2026
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#2563eb;">person_add</span> New Prospects</div>
+          <div class="kpi-value">24</div>
+          <div class="kpi-change up"><span class="material-icons" style="font-size:14px;">trending_up</span> +12% vs yesterday</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#16a34a;">phone</span> Calls Made</div>
+          <div class="kpi-value">18</div>
+          <div class="kpi-change up"><span class="material-icons" style="font-size:14px;">trending_up</span> +5 from yesterday</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#f59e0b;">swap_horiz</span> Conversion Rate</div>
+          <div class="kpi-value">14.2%</div>
+          <div class="kpi-change down"><span class="material-icons" style="font-size:14px;">trending_down</span> -1.3% this week</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#8b5cf6;">sensors</span> Active Signals</div>
+          <div class="kpi-value">142</div>
+          <div class="kpi-change up"><span class="material-icons" style="font-size:14px;">trending_up</span> +28 new today</div>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-header">
+            <h3>Today's Top Prospects</h3>
+            <span class="see-all" onclick="navigateTo('prospects')">View All</span>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Maria Santos')">
+            <div class="score-circle score-high">92</div>
+            <div class="prospect-info">
+              <div class="name">Maria Santos</div>
+              <div class="snippet">"Looking for a new homeowner's policy after moving to a new house..."</div>
+              <div class="prospect-meta">
+                <span class="chip chip-home">Home</span>
+                <span class="urgency-badge urgency-hot">HOT</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> Nextdoor</span>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('David Kim')">
+            <div class="score-circle score-high">87</div>
+            <div class="prospect-info">
+              <div class="name">David Kim</div>
+              <div class="snippet">"Just bought my first car, need recommendations for good auto insurance..."</div>
+              <div class="prospect-meta">
+                <span class="chip chip-auto">Auto</span>
+                <span class="urgency-badge urgency-hot">HOT</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> Facebook</span>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Sarah Thompson')">
+            <div class="score-circle score-high">81</div>
+            <div class="prospect-info">
+              <div class="name">Sarah Thompson</div>
+              <div class="snippet">"Anyone know a good life insurance agent? My wife and I just had our first baby..."</div>
+              <div class="prospect-meta">
+                <span class="chip chip-life">Life</span>
+                <span class="urgency-badge urgency-warm">WARM</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> Facebook</span>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Robert Chen')">
+            <div class="score-circle score-medium">74</div>
+            <div class="prospect-info">
+              <div class="name">Robert Chen</div>
+              <div class="snippet">"My health insurance premiums went up 30%! Time to shop around..."</div>
+              <div class="prospect-meta">
+                <span class="chip chip-health">Health</span>
+                <span class="urgency-badge urgency-warm">WARM</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> LinkedIn</span>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Amanda Price')">
+            <div class="score-circle score-medium">68</div>
+            <div class="prospect-info">
+              <div class="name">Amanda Price</div>
+              <div class="snippet">"Starting a small bakery next month. What kind of business insurance do I need?"</div>
+              <div class="prospect-meta">
+                <span class="chip chip-commercial">Commercial</span>
+                <span class="urgency-badge urgency-cool">COOL</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> LinkedIn</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card" style="margin-bottom:24px;">
+            <div class="card-header"><h3>Follow-Up Reminders</h3></div>
+            <div class="followup-item">
+              <span class="followup-time">9:00 AM</span>
+              <span class="followup-name">Call back James Rivera</span>
+              <span class="chip chip-auto" style="font-size:10px;">Auto</span>
+            </div>
+            <div class="followup-item">
+              <span class="followup-time">11:30 AM</span>
+              <span class="followup-name">Email quote to Lisa Park</span>
+              <span class="chip chip-home" style="font-size:10px;">Home</span>
+            </div>
+            <div class="followup-item">
+              <span class="followup-time">2:00 PM</span>
+              <span class="followup-name">Follow up with Tom Baker</span>
+              <span class="chip chip-life" style="font-size:10px;">Life</span>
+            </div>
+            <div class="followup-item">
+              <span class="followup-time">4:30 PM</span>
+              <span class="followup-name">Send proposal to Wei Zhang</span>
+              <span class="chip chip-commercial" style="font-size:10px;">Commercial</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Recent Activity</h3></div>
+            <div class="activity-item">
+              <div class="activity-icon" style="background:#16a34a;"><span class="material-icons">phone</span></div>
+              <div class="activity-text">Called <strong>James Rivera</strong> — left voicemail <div class="time">25 min ago</div></div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-icon" style="background:#2563eb;"><span class="material-icons">person_add</span></div>
+              <div class="activity-text">New prospect <strong>Maria Santos</strong> scored 92 <div class="time">1 hr ago</div></div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-icon" style="background:#f59e0b;"><span class="material-icons">email</span></div>
+              <div class="activity-text">Sent quote email to <strong>Lisa Park</strong> <div class="time">2 hrs ago</div></div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-icon" style="background:#8b5cf6;"><span class="material-icons">sensors</span></div>
+              <div class="activity-text">12 new signals detected from Facebook <div class="time">3 hrs ago</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Signal Activity This Week</h3></div>
+        <div class="chart-placeholder" style="height:180px;padding-bottom:24px;">
+          <div class="chart-bar" style="height:45%;background:#2563eb;"><span class="chart-val">28</span><span class="chart-label">Mon</span></div>
+          <div class="chart-bar" style="height:65%;background:#2563eb;"><span class="chart-val">41</span><span class="chart-label">Tue</span></div>
+          <div class="chart-bar" style="height:55%;background:#2563eb;"><span class="chart-val">35</span><span class="chart-label">Wed</span></div>
+          <div class="chart-bar" style="height:80%;background:#2563eb;"><span class="chart-val">52</span><span class="chart-label">Thu</span></div>
+          <div class="chart-bar" style="height:40%;background:#e2e8f0;"><span class="chart-val">—</span><span class="chart-label">Fri</span></div>
+          <div class="chart-bar" style="height:10%;background:#e2e8f0;"><span class="chart-val">—</span><span class="chart-label">Sat</span></div>
+          <div class="chart-bar" style="height:10%;background:#e2e8f0;"><span class="chart-val">—</span><span class="chart-label">Sun</span></div>
+        </div>
+        <div class="legend" style="margin-top:28px;">
+          <div class="legend-item"><div class="legend-dot" style="background:#16a34a;"></div>Home (42)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div>Auto (38)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div>Life (25)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#ec4899;"></div>Health (19)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#6366f1;"></div>Commercial (18)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PROSPECT LIST ============ -->
+    <div class="screen" id="screen-prospects">
+      <div class="filter-bar">
+        <select>
+          <option>All Categories</option>
+          <option>Home</option>
+          <option>Auto</option>
+          <option>Life</option>
+          <option>Health</option>
+          <option>Commercial</option>
+        </select>
+        <select>
+          <option>All Urgency</option>
+          <option>Hot</option>
+          <option>Warm</option>
+          <option>Cool</option>
+        </select>
+        <select>
+          <option>Score: Any</option>
+          <option>90+</option>
+          <option>70-89</option>
+          <option>50-69</option>
+          <option>Below 50</option>
+        </select>
+        <select>
+          <option>All Platforms</option>
+          <option>Facebook</option>
+          <option>LinkedIn</option>
+          <option>Nextdoor</option>
+        </select>
+        <input type="text" placeholder="Location..." style="width:120px;">
+        <input type="date" style="width:140px;">
+        <div class="col-chooser-wrap">
+          <button class="col-chooser-btn" onclick="toggleColumnChooser('prospect')"><span class="material-icons" style="font-size:16px;">view_column</span> Columns</button>
+          <div class="col-chooser-dropdown" id="col-chooser-prospect">
+            <div class="dd-header">Show / Hide Columns</div>
+            <label><input type="checkbox" checked onchange="toggleCol('prospect','score')"> Score</label>
+            <label><input type="checkbox" checked onchange="toggleCol('prospect','name')"> Name</label>
+            <label><input type="checkbox" checked onchange="toggleCol('prospect','category')"> Category</label>
+            <label><input type="checkbox" checked onchange="toggleCol('prospect','urgency')"> Urgency</label>
+            <label><input type="checkbox" checked onchange="toggleCol('prospect','platform')"> Platform</label>
+            <label><input type="checkbox" checked onchange="toggleCol('prospect','location')"> Location</label>
+            <label><input type="checkbox" checked onchange="toggleCol('prospect','signal')"> Signal</label>
+            <div class="divider"></div>
+            <label><input type="checkbox" onchange="toggleCol('prospect','phone')"> Phone #</label>
+            <label><input type="checkbox" onchange="toggleCol('prospect','email')"> Email</label>
+            <label><input type="checkbox" onchange="toggleCol('prospect','address')"> Address</label>
+            <label><input type="checkbox" onchange="toggleCol('prospect','company')"> Company</label>
+            <label><input type="checkbox" onchange="toggleCol('prospect','enrichment')"> Enrichment Status</label>
+            <label><input type="checkbox" onchange="toggleCol('prospect','date')"> Date Found</label>
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="exportCSV('prospect')" style="margin-left:4px;"><span class="material-icons" style="font-size:16px;">file_download</span> Export CSV</button>
+        <div class="view-toggle">
+          <button class="active" id="btn-card-view" onclick="setView('card')"><span class="material-icons" style="font-size:18px;">grid_view</span></button>
+          <button id="btn-table-view" onclick="setView('table')"><span class="material-icons" style="font-size:18px;">view_list</span></button>
+        </div>
+      </div>
+
+      <!-- Card View -->
+      <div id="prospect-card-view">
+        <div class="prospect-grid">
+          <div class="prospect-card" onclick="openProspectDetail('Maria Santos')">
+            <div class="score-circle score-high">92</div>
+            <div class="prospect-info" style="width:100%;">
+              <div class="name">Maria Santos</div>
+              <div class="snippet">"Looking for a new homeowner's policy after moving to a new house in Plano..."</div>
+              <div class="prospect-meta" style="margin-top:8px;">
+                <span class="chip chip-home">Home</span>
+                <span class="urgency-badge urgency-hot">HOT</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> Nextdoor</span>
+              </div>
+              <div style="margin-top:8px;font-size:12px;color:#64748b;"><span class="material-icons" style="font-size:13px;vertical-align:middle;">location_on</span> Plano, TX</div>
+              <div style="margin-top:8px;display:flex;gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openProspectDetail('Maria Santos')">View</button>
+                <button class="btn btn-success btn-sm" onclick="event.stopPropagation();">Call</button>
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">Dismiss</button>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('David Kim')">
+            <div class="score-circle score-high">87</div>
+            <div class="prospect-info" style="width:100%;">
+              <div class="name">David Kim</div>
+              <div class="snippet">"Just bought my first car, need recommendations for good auto insurance..."</div>
+              <div class="prospect-meta" style="margin-top:8px;">
+                <span class="chip chip-auto">Auto</span>
+                <span class="urgency-badge urgency-hot">HOT</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> Facebook</span>
+              </div>
+              <div style="margin-top:8px;font-size:12px;color:#64748b;"><span class="material-icons" style="font-size:13px;vertical-align:middle;">location_on</span> Richardson, TX</div>
+              <div style="margin-top:8px;display:flex;gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openProspectDetail('David Kim')">View</button>
+                <button class="btn btn-success btn-sm" onclick="event.stopPropagation();">Call</button>
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">Dismiss</button>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Sarah Thompson')">
+            <div class="score-circle score-high">81</div>
+            <div class="prospect-info" style="width:100%;">
+              <div class="name">Sarah Thompson</div>
+              <div class="snippet">"Anyone know a good life insurance agent? My wife and I just had our first baby..."</div>
+              <div class="prospect-meta" style="margin-top:8px;">
+                <span class="chip chip-life">Life</span>
+                <span class="urgency-badge urgency-warm">WARM</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> Facebook</span>
+              </div>
+              <div style="margin-top:8px;font-size:12px;color:#64748b;"><span class="material-icons" style="font-size:13px;vertical-align:middle;">location_on</span> Frisco, TX</div>
+              <div style="margin-top:8px;display:flex;gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openProspectDetail('Sarah Thompson')">View</button>
+                <button class="btn btn-success btn-sm" onclick="event.stopPropagation();">Call</button>
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">Dismiss</button>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Robert Chen')">
+            <div class="score-circle score-medium">74</div>
+            <div class="prospect-info" style="width:100%;">
+              <div class="name">Robert Chen</div>
+              <div class="snippet">"My health insurance premiums went up 30%! Time to shop around..."</div>
+              <div class="prospect-meta" style="margin-top:8px;">
+                <span class="chip chip-health">Health</span>
+                <span class="urgency-badge urgency-warm">WARM</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> LinkedIn</span>
+              </div>
+              <div style="margin-top:8px;font-size:12px;color:#64748b;"><span class="material-icons" style="font-size:13px;vertical-align:middle;">location_on</span> Dallas, TX</div>
+              <div style="margin-top:8px;display:flex;gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openProspectDetail('Robert Chen')">View</button>
+                <button class="btn btn-success btn-sm" onclick="event.stopPropagation();">Call</button>
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">Dismiss</button>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Amanda Price')">
+            <div class="score-circle score-medium">68</div>
+            <div class="prospect-info" style="width:100%;">
+              <div class="name">Amanda Price</div>
+              <div class="snippet">"Starting a small bakery next month. What kind of business insurance do I need?"</div>
+              <div class="prospect-meta" style="margin-top:8px;">
+                <span class="chip chip-commercial">Commercial</span>
+                <span class="urgency-badge urgency-cool">COOL</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> LinkedIn</span>
+              </div>
+              <div style="margin-top:8px;font-size:12px;color:#64748b;"><span class="material-icons" style="font-size:13px;vertical-align:middle;">location_on</span> McKinney, TX</div>
+              <div style="margin-top:8px;display:flex;gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openProspectDetail('Amanda Price')">View</button>
+                <button class="btn btn-success btn-sm" onclick="event.stopPropagation();">Call</button>
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">Dismiss</button>
+              </div>
+            </div>
+          </div>
+          <div class="prospect-card" onclick="openProspectDetail('Marcus Johnson')">
+            <div class="score-circle score-medium">63</div>
+            <div class="prospect-info" style="width:100%;">
+              <div class="name">Marcus Johnson</div>
+              <div class="snippet">"Thinking about getting renters insurance. Is it worth it for a 1-bedroom apt?"</div>
+              <div class="prospect-meta" style="margin-top:8px;">
+                <span class="chip chip-home">Home</span>
+                <span class="urgency-badge urgency-cool">COOL</span>
+                <span class="platform-icon"><span class="material-icons" style="font-size:12px;">public</span> Nextdoor</span>
+              </div>
+              <div style="margin-top:8px;font-size:12px;color:#64748b;"><span class="material-icons" style="font-size:13px;vertical-align:middle;">location_on</span> Allen, TX</div>
+              <div style="margin-top:8px;display:flex;gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openProspectDetail('Marcus Johnson')">View</button>
+                <button class="btn btn-success btn-sm" onclick="event.stopPropagation();">Call</button>
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">Dismiss</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table View -->
+      <div id="prospect-table-view" style="display:none;">
+        <div class="card">
+          <div class="table-wrap">
+            <table id="prospect-table">
+              <thead>
+                <tr>
+                  <th data-col="score">Score</th>
+                  <th data-col="name">Name</th>
+                  <th data-col="category">Category</th>
+                  <th data-col="urgency">Urgency</th>
+                  <th data-col="platform">Platform</th>
+                  <th data-col="location">Location</th>
+                  <th data-col="signal">Signal</th>
+                  <th data-col="phone" style="display:none;">Phone #</th>
+                  <th data-col="email" style="display:none;">Email</th>
+                  <th data-col="address" style="display:none;">Address</th>
+                  <th data-col="company" style="display:none;">Company</th>
+                  <th data-col="enrichment" style="display:none;">Enrichment</th>
+                  <th data-col="date" style="display:none;">Date Found</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr onclick="openProspectDetail('Maria Santos')" style="cursor:pointer;">
+                  <td data-col="score"><span class="score-circle score-high" style="width:32px;height:32px;font-size:12px;">92</span></td>
+                  <td data-col="name"><strong>Maria Santos</strong></td>
+                  <td data-col="category"><span class="chip chip-home">Home</span></td>
+                  <td data-col="urgency"><span class="urgency-badge urgency-hot">HOT</span></td>
+                  <td data-col="platform">Nextdoor</td>
+                  <td data-col="location">Plano, TX</td>
+                  <td data-col="signal" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Looking for a new homeowner's policy...</td>
+                  <td data-col="phone" style="display:none;">(469) 555-0142</td>
+                  <td data-col="email" style="display:none;">m.santos@email.com</td>
+                  <td data-col="address" style="display:none;">1234 Oak Ln, Plano, TX 75024</td>
+                  <td data-col="company" style="display:none;">Self-employed</td>
+                  <td data-col="enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                  <td data-col="date" style="display:none;">Mar 12, 2026</td>
+                  <td><button class="btn btn-primary btn-sm">View</button></td>
+                </tr>
+                <tr onclick="openProspectDetail('David Kim')" style="cursor:pointer;">
+                  <td data-col="score"><span class="score-circle score-high" style="width:32px;height:32px;font-size:12px;">87</span></td>
+                  <td data-col="name"><strong>David Kim</strong></td>
+                  <td data-col="category"><span class="chip chip-auto">Auto</span></td>
+                  <td data-col="urgency"><span class="urgency-badge urgency-hot">HOT</span></td>
+                  <td data-col="platform">Facebook</td>
+                  <td data-col="location">Richardson, TX</td>
+                  <td data-col="signal" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Just bought my first car, need insurance...</td>
+                  <td data-col="phone" style="display:none;">(972) 555-0288</td>
+                  <td data-col="email" style="display:none;">d.kim@email.com</td>
+                  <td data-col="address" style="display:none;">567 Maple Dr, Richardson, TX 75080</td>
+                  <td data-col="company" style="display:none;">TechCorp Inc.</td>
+                  <td data-col="enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                  <td data-col="date" style="display:none;">Mar 12, 2026</td>
+                  <td><button class="btn btn-primary btn-sm">View</button></td>
+                </tr>
+                <tr onclick="openProspectDetail('Sarah Thompson')" style="cursor:pointer;">
+                  <td data-col="score"><span class="score-circle score-high" style="width:32px;height:32px;font-size:12px;">81</span></td>
+                  <td data-col="name"><strong>Sarah Thompson</strong></td>
+                  <td data-col="category"><span class="chip chip-life">Life</span></td>
+                  <td data-col="urgency"><span class="urgency-badge urgency-warm">WARM</span></td>
+                  <td data-col="platform">Facebook</td>
+                  <td data-col="location">Frisco, TX</td>
+                  <td data-col="signal" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Anyone know a good life insurance agent?...</td>
+                  <td data-col="phone" style="display:none;">(214) 555-0391</td>
+                  <td data-col="email" style="display:none;">s.thompson@email.com</td>
+                  <td data-col="address" style="display:none;">892 Elm St, Frisco, TX 75034</td>
+                  <td data-col="company" style="display:none;">—</td>
+                  <td data-col="enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                  <td data-col="date" style="display:none;">Mar 12, 2026</td>
+                  <td><button class="btn btn-primary btn-sm">View</button></td>
+                </tr>
+                <tr onclick="openProspectDetail('Robert Chen')" style="cursor:pointer;">
+                  <td data-col="score"><span class="score-circle score-medium" style="width:32px;height:32px;font-size:12px;">74</span></td>
+                  <td data-col="name"><strong>Robert Chen</strong></td>
+                  <td data-col="category"><span class="chip chip-health">Health</span></td>
+                  <td data-col="urgency"><span class="urgency-badge urgency-warm">WARM</span></td>
+                  <td data-col="platform">LinkedIn</td>
+                  <td data-col="location">Dallas, TX</td>
+                  <td data-col="signal" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">My health insurance premiums went up 30%!...</td>
+                  <td data-col="phone" style="display:none;">(469) 555-0517</td>
+                  <td data-col="email" style="display:none;">r.chen@email.com</td>
+                  <td data-col="address" style="display:none;">345 Cedar Rd, Dallas, TX 75201</td>
+                  <td data-col="company" style="display:none;">Chen Consulting LLC</td>
+                  <td data-col="enrichment" style="display:none;"><span class="chip" style="background:#fef3c7;color:#92400e;">Partial</span></td>
+                  <td data-col="date" style="display:none;">Mar 11, 2026</td>
+                  <td><button class="btn btn-primary btn-sm">View</button></td>
+                </tr>
+                <tr onclick="openProspectDetail('Amanda Price')" style="cursor:pointer;">
+                  <td data-col="score"><span class="score-circle score-medium" style="width:32px;height:32px;font-size:12px;">68</span></td>
+                  <td data-col="name"><strong>Amanda Price</strong></td>
+                  <td data-col="category"><span class="chip chip-commercial">Commercial</span></td>
+                  <td data-col="urgency"><span class="urgency-badge urgency-cool">COOL</span></td>
+                  <td data-col="platform">LinkedIn</td>
+                  <td data-col="location">McKinney, TX</td>
+                  <td data-col="signal" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Starting a small bakery next month...</td>
+                  <td data-col="phone" style="display:none;">(972) 555-0634</td>
+                  <td data-col="email" style="display:none;">a.price@email.com</td>
+                  <td data-col="address" style="display:none;">78 Main St, McKinney, TX 75070</td>
+                  <td data-col="company" style="display:none;">Sweet Rise Bakery (upcoming)</td>
+                  <td data-col="enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                  <td data-col="date" style="display:none;">Mar 11, 2026</td>
+                  <td><button class="btn btn-primary btn-sm">View</button></td>
+                </tr>
+                <tr onclick="openProspectDetail('Marcus Johnson')" style="cursor:pointer;">
+                  <td data-col="score"><span class="score-circle score-medium" style="width:32px;height:32px;font-size:12px;">63</span></td>
+                  <td data-col="name"><strong>Marcus Johnson</strong></td>
+                  <td data-col="category"><span class="chip chip-home">Home</span></td>
+                  <td data-col="urgency"><span class="urgency-badge urgency-cool">COOL</span></td>
+                  <td data-col="platform">Nextdoor</td>
+                  <td data-col="location">Allen, TX</td>
+                  <td data-col="signal" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Thinking about getting renters insurance...</td>
+                  <td data-col="phone" style="display:none;">(214) 555-0782</td>
+                  <td data-col="email" style="display:none;">m.johnson@email.com</td>
+                  <td data-col="address" style="display:none;">210 Pine Ave #4B, Allen, TX 75002</td>
+                  <td data-col="company" style="display:none;">—</td>
+                  <td data-col="enrichment" style="display:none;"><span class="chip" style="background:#fef3c7;color:#92400e;">Partial</span></td>
+                  <td data-col="date" style="display:none;">Mar 10, 2026</td>
+                  <td><button class="btn btn-primary btn-sm">View</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="pagination">
+        <button class="active">1</button>
+        <button>2</button>
+        <button>3</button>
+        <button>4</button>
+      </div>
+    </div>
+
+    <!-- ============ DAILY LIST ============ -->
+    <div class="screen" id="screen-daily-list">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <select style="padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;font-family:inherit;">
+            <option>DFW Metro Home + Auto</option>
+            <option>Life Insurance Families</option>
+            <option>Small Business Commercial</option>
+          </select>
+          <span style="font-size:13px;color:#64748b;">8 prospects matched today</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <div class="col-chooser-wrap">
+            <button class="col-chooser-btn" onclick="toggleColumnChooser('daily')"><span class="material-icons" style="font-size:16px;">view_column</span> Columns</button>
+            <div class="col-chooser-dropdown" id="col-chooser-daily">
+              <div class="dd-header">Show / Hide Columns</div>
+              <label><input type="checkbox" checked onchange="toggleCol('daily','dl-score')"> Score</label>
+              <label><input type="checkbox" checked onchange="toggleCol('daily','dl-name')"> Name</label>
+              <label><input type="checkbox" checked onchange="toggleCol('daily','dl-category')"> Category</label>
+              <label><input type="checkbox" checked onchange="toggleCol('daily','dl-signal')"> Signal</label>
+              <label><input type="checkbox" checked onchange="toggleCol('daily','dl-status')"> Status</label>
+              <div class="divider"></div>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-urgency')"> Urgency</label>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-platform')"> Platform</label>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-location')"> Location</label>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-phone')"> Phone #</label>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-email')"> Email</label>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-address')"> Address</label>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-company')"> Company</label>
+              <label><input type="checkbox" onchange="toggleCol('daily','dl-enrichment')"> Enrichment Status</label>
+            </div>
+          </div>
+          <button class="btn btn-secondary" onclick="exportCSV('daily')"><span class="material-icons" style="font-size:16px;">file_download</span> Export CSV</button>
+          <button class="btn btn-primary"><span class="material-icons" style="font-size:16px;">check_box</span> Batch Actions</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table id="daily-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox"></th>
+                <th data-col="dl-score">Score</th>
+                <th data-col="dl-name">Name</th>
+                <th data-col="dl-category">Category</th>
+                <th data-col="dl-signal">Signal</th>
+                <th data-col="dl-status">Status</th>
+                <th data-col="dl-urgency" style="display:none;">Urgency</th>
+                <th data-col="dl-platform" style="display:none;">Platform</th>
+                <th data-col="dl-location" style="display:none;">Location</th>
+                <th data-col="dl-phone" style="display:none;">Phone #</th>
+                <th data-col="dl-email" style="display:none;">Email</th>
+                <th data-col="dl-address" style="display:none;">Address</th>
+                <th data-col="dl-company" style="display:none;">Company</th>
+                <th data-col="dl-enrichment" style="display:none;">Enrichment</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-high" style="width:32px;height:32px;font-size:12px;">92</span></td>
+                <td data-col="dl-name"><strong>Maria Santos</strong></td>
+                <td data-col="dl-category"><span class="chip chip-home">Home</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Looking for a new homeowner's policy...</td>
+                <td data-col="dl-status"><span class="status-pill status-contacted">Contacted</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-hot">HOT</span></td>
+                <td data-col="dl-platform" style="display:none;">Nextdoor</td>
+                <td data-col="dl-location" style="display:none;">Plano, TX</td>
+                <td data-col="dl-phone" style="display:none;">(469) 555-0142</td>
+                <td data-col="dl-email" style="display:none;">m.santos@email.com</td>
+                <td data-col="dl-address" style="display:none;">1234 Oak Ln, Plano, TX 75024</td>
+                <td data-col="dl-company" style="display:none;">Self-employed</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('Maria Santos')">View</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-high" style="width:32px;height:32px;font-size:12px;">87</span></td>
+                <td data-col="dl-name"><strong>David Kim</strong></td>
+                <td data-col="dl-category"><span class="chip chip-auto">Auto</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Just bought my first car, need insurance...</td>
+                <td data-col="dl-status"><span class="status-pill status-viewed">Viewed</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-hot">HOT</span></td>
+                <td data-col="dl-platform" style="display:none;">Facebook</td>
+                <td data-col="dl-location" style="display:none;">Richardson, TX</td>
+                <td data-col="dl-phone" style="display:none;">(972) 555-0288</td>
+                <td data-col="dl-email" style="display:none;">d.kim@email.com</td>
+                <td data-col="dl-address" style="display:none;">567 Maple Dr, Richardson, TX 75080</td>
+                <td data-col="dl-company" style="display:none;">TechCorp Inc.</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('David Kim')">View</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-high" style="width:32px;height:32px;font-size:12px;">81</span></td>
+                <td data-col="dl-name"><strong>Sarah Thompson</strong></td>
+                <td data-col="dl-category"><span class="chip chip-life">Life</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Anyone know a good life insurance agent?...</td>
+                <td data-col="dl-status"><span class="status-pill status-new">New</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-warm">WARM</span></td>
+                <td data-col="dl-platform" style="display:none;">Facebook</td>
+                <td data-col="dl-location" style="display:none;">Frisco, TX</td>
+                <td data-col="dl-phone" style="display:none;">(214) 555-0391</td>
+                <td data-col="dl-email" style="display:none;">s.thompson@email.com</td>
+                <td data-col="dl-address" style="display:none;">892 Elm St, Frisco, TX 75034</td>
+                <td data-col="dl-company" style="display:none;">—</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('Sarah Thompson')">View</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-medium" style="width:32px;height:32px;font-size:12px;">74</span></td>
+                <td data-col="dl-name"><strong>Robert Chen</strong></td>
+                <td data-col="dl-category"><span class="chip chip-health">Health</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">My health insurance premiums went up 30%!...</td>
+                <td data-col="dl-status"><span class="status-pill status-new">New</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-warm">WARM</span></td>
+                <td data-col="dl-platform" style="display:none;">LinkedIn</td>
+                <td data-col="dl-location" style="display:none;">Dallas, TX</td>
+                <td data-col="dl-phone" style="display:none;">(469) 555-0517</td>
+                <td data-col="dl-email" style="display:none;">r.chen@email.com</td>
+                <td data-col="dl-address" style="display:none;">345 Cedar Rd, Dallas, TX 75201</td>
+                <td data-col="dl-company" style="display:none;">Chen Consulting LLC</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#fef3c7;color:#92400e;">Partial</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('Robert Chen')">View</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-medium" style="width:32px;height:32px;font-size:12px;">68</span></td>
+                <td data-col="dl-name"><strong>Amanda Price</strong></td>
+                <td data-col="dl-category"><span class="chip chip-commercial">Commercial</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Starting a small bakery next month...</td>
+                <td data-col="dl-status"><span class="status-pill status-new">New</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-cool">COOL</span></td>
+                <td data-col="dl-platform" style="display:none;">LinkedIn</td>
+                <td data-col="dl-location" style="display:none;">McKinney, TX</td>
+                <td data-col="dl-phone" style="display:none;">(972) 555-0634</td>
+                <td data-col="dl-email" style="display:none;">a.price@email.com</td>
+                <td data-col="dl-address" style="display:none;">78 Main St, McKinney, TX 75070</td>
+                <td data-col="dl-company" style="display:none;">Sweet Rise Bakery (upcoming)</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('Amanda Price')">View</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-medium" style="width:32px;height:32px;font-size:12px;">63</span></td>
+                <td data-col="dl-name"><strong>Marcus Johnson</strong></td>
+                <td data-col="dl-category"><span class="chip chip-home">Home</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Thinking about getting renters insurance...</td>
+                <td data-col="dl-status"><span class="status-pill status-dismissed">Dismissed</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-cool">COOL</span></td>
+                <td data-col="dl-platform" style="display:none;">Nextdoor</td>
+                <td data-col="dl-location" style="display:none;">Allen, TX</td>
+                <td data-col="dl-phone" style="display:none;">(214) 555-0782</td>
+                <td data-col="dl-email" style="display:none;">m.johnson@email.com</td>
+                <td data-col="dl-address" style="display:none;">210 Pine Ave #4B, Allen, TX 75002</td>
+                <td data-col="dl-company" style="display:none;">—</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#fef3c7;color:#92400e;">Partial</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('Marcus Johnson')">View</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-medium" style="width:32px;height:32px;font-size:12px;">59</span></td>
+                <td data-col="dl-name"><strong>Elena Rodriguez</strong></td>
+                <td data-col="dl-category"><span class="chip chip-auto">Auto</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Does anyone have a good mechanic? Also need new insurance...</td>
+                <td data-col="dl-status"><span class="status-pill status-converted">Converted</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-warm">WARM</span></td>
+                <td data-col="dl-platform" style="display:none;">Facebook</td>
+                <td data-col="dl-location" style="display:none;">Plano, TX</td>
+                <td data-col="dl-phone" style="display:none;">(469) 555-0893</td>
+                <td data-col="dl-email" style="display:none;">e.rodriguez@email.com</td>
+                <td data-col="dl-address" style="display:none;">456 Birch Ct, Plano, TX 75023</td>
+                <td data-col="dl-company" style="display:none;">—</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#dcfce7;color:#166534;">Verified</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('Elena Rodriguez')">View</button></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td data-col="dl-score"><span class="score-circle score-low" style="width:32px;height:32px;font-size:12px;">52</span></td>
+                <td data-col="dl-name"><strong>Tyler Brooks</strong></td>
+                <td data-col="dl-category"><span class="chip chip-home">Home</span></td>
+                <td data-col="dl-signal" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Our roof got damaged in the storm last week...</td>
+                <td data-col="dl-status"><span class="status-pill status-new">New</span></td>
+                <td data-col="dl-urgency" style="display:none;"><span class="urgency-badge urgency-cool">COOL</span></td>
+                <td data-col="dl-platform" style="display:none;">Nextdoor</td>
+                <td data-col="dl-location" style="display:none;">Frisco, TX</td>
+                <td data-col="dl-phone" style="display:none;">(972) 555-0145</td>
+                <td data-col="dl-email" style="display:none;">t.brooks@email.com</td>
+                <td data-col="dl-address" style="display:none;">987 Walnut Blvd, Frisco, TX 75035</td>
+                <td data-col="dl-company" style="display:none;">—</td>
+                <td data-col="dl-enrichment" style="display:none;"><span class="chip" style="background:#dbeafe;color:#1d4ed8;">Pending</span></td>
+                <td><button class="btn btn-sm btn-outline" onclick="openProspectDetail('Tyler Brooks')">View</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ STRATEGIES ============ -->
+    <div class="screen" id="screen-strategies">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <h3 style="font-size:16px;font-weight:600;">Saved Strategies</h3>
+        <button class="btn btn-primary" onclick="toggleStrategyForm()"><span class="material-icons" style="font-size:16px;">add</span> New Strategy</button>
+      </div>
+
+      <div class="strategy-card active-strategy">
+        <div class="strategy-info">
+          <h4>DFW Metro Home + Auto</h4>
+          <p>Home, Auto &bull; 75001-75252 &bull; Min score: 60 &bull; Max 15/day &bull; <strong style="color:#16a34a;">Active</strong></p>
+        </div>
+        <div class="strategy-actions">
+          <button class="btn btn-sm btn-outline" onclick="toggleStrategyForm()">Edit</button>
+          <button class="btn btn-sm btn-secondary">Deactivate</button>
+        </div>
+      </div>
+      <div class="strategy-card">
+        <div class="strategy-info">
+          <h4>Life Insurance - New Families</h4>
+          <p>Life &bull; All locations &bull; Min score: 70 &bull; Max 10/day &bull; <span style="color:#64748b;">Inactive</span></p>
+        </div>
+        <div class="strategy-actions">
+          <button class="btn btn-sm btn-outline" onclick="toggleStrategyForm()">Edit</button>
+          <button class="btn btn-sm btn-primary">Activate</button>
+        </div>
+      </div>
+      <div class="strategy-card">
+        <div class="strategy-info">
+          <h4>Small Business Commercial</h4>
+          <p>Commercial &bull; Dallas, Plano, Frisco &bull; Min score: 55 &bull; Max 8/day &bull; <span style="color:#64748b;">Inactive</span></p>
+        </div>
+        <div class="strategy-actions">
+          <button class="btn btn-sm btn-outline" onclick="toggleStrategyForm()">Edit</button>
+          <button class="btn btn-sm btn-primary">Activate</button>
+        </div>
+      </div>
+
+      <!-- Strategy Form -->
+      <div id="strategy-form" class="card" style="margin-top:24px;display:none;">
+        <div class="card-header">
+          <h3>Strategy Configuration</h3>
+          <button class="btn btn-sm btn-secondary" onclick="toggleStrategyForm()">Cancel</button>
+        </div>
+        <div class="form-group">
+          <label>Strategy Name</label>
+          <input type="text" value="DFW Metro Home + Auto">
+        </div>
+        <div class="form-group">
+          <label>Target Categories</label>
+          <div class="multi-select">
+            <span class="multi-option selected" onclick="this.classList.toggle('selected')">Home</span>
+            <span class="multi-option selected" onclick="this.classList.toggle('selected')">Auto</span>
+            <span class="multi-option" onclick="this.classList.toggle('selected')">Life</span>
+            <span class="multi-option" onclick="this.classList.toggle('selected')">Health</span>
+            <span class="multi-option" onclick="this.classList.toggle('selected')">Commercial</span>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Target Zip Codes / Cities</label>
+            <input type="text" value="75001, 75002, 75023, 75024, 75025">
+          </div>
+          <div class="form-group">
+            <label>Radius (miles)</label>
+            <input type="number" value="25">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Minimum Score</label>
+            <input type="number" value="60" min="0" max="100">
+          </div>
+          <div class="form-group">
+            <label>Minimum Urgency</label>
+            <select>
+              <option>Any</option>
+              <option>Cool or higher</option>
+              <option>Warm or higher</option>
+              <option>Hot only</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Max Daily Prospects</label>
+            <input type="number" value="15">
+          </div>
+          <div class="form-group">
+            <label>Custom Keyword Boosts</label>
+            <input type="text" placeholder="e.g. new home, first-time buyer" value="new home, moving, first car">
+          </div>
+        </div>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#166534;">
+          <span class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:4px;">info</span>
+          This strategy would match <strong>~12 prospects</strong> from yesterday's signals.
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary">Save Strategy</button>
+          <button class="btn btn-secondary" onclick="toggleStrategyForm()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ CALL TRACKER ============ -->
+    <div class="screen" id="screen-call-tracker">
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:24px;">
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#2563eb;">phone</span> Calls Today</div>
+          <div class="kpi-value">7</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#16a34a;">date_range</span> Calls This Week</div>
+          <div class="kpi-value">34</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#f59e0b;">swap_horiz</span> Conversion Rate</div>
+          <div class="kpi-value">17.6%</div>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-header">
+            <h3>Call Log</h3>
+            <button class="btn btn-primary btn-sm" onclick="toggleCallForm()"><span class="material-icons" style="font-size:14px;">add</span> Log Call</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Prospect</th>
+                  <th>Method</th>
+                  <th>Outcome</th>
+                  <th>Notes</th>
+                  <th>Follow-up</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Mar 12</td>
+                  <td><strong>Maria Santos</strong></td>
+                  <td>Phone</td>
+                  <td><span class="chip" style="background:#dcfce7;color:#166534;">Interested</span></td>
+                  <td>Wants quote for 4BR home, will email details</td>
+                  <td>Mar 14</td>
+                </tr>
+                <tr>
+                  <td>Mar 12</td>
+                  <td><strong>James Rivera</strong></td>
+                  <td>Phone</td>
+                  <td><span class="chip" style="background:#fef3c7;color:#92400e;">Voicemail</span></td>
+                  <td>Left voicemail, will try again tomorrow</td>
+                  <td>Mar 13</td>
+                </tr>
+                <tr>
+                  <td>Mar 11</td>
+                  <td><strong>Lisa Park</strong></td>
+                  <td>Email</td>
+                  <td><span class="chip" style="background:#dcfce7;color:#166534;">Quote Sent</span></td>
+                  <td>Sent home + auto bundle quote</td>
+                  <td>Mar 15</td>
+                </tr>
+                <tr>
+                  <td>Mar 11</td>
+                  <td><strong>David Kim</strong></td>
+                  <td>Phone</td>
+                  <td><span class="chip" style="background:#fef2f2;color:#dc2626;">Not Interested</span></td>
+                  <td>Already found coverage through employer</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td>Mar 10</td>
+                  <td><strong>Sarah Thompson</strong></td>
+                  <td>Phone</td>
+                  <td><span class="chip" style="background:#dcfce7;color:#166534;">Interested</span></td>
+                  <td>Meeting scheduled for Friday</td>
+                  <td>Mar 14</td>
+                </tr>
+                <tr>
+                  <td>Mar 10</td>
+                  <td><strong>Wei Zhang</strong></td>
+                  <td>Phone</td>
+                  <td><span class="chip" style="background:#d1fae5;color:#065f46;">Converted!</span></td>
+                  <td>Signed commercial GL policy</td>
+                  <td>—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Follow-up Calendar</h3></div>
+          <div style="text-align:center;font-weight:600;margin-bottom:8px;">March 2026</div>
+          <div class="mini-calendar">
+            <div class="cal-header">Sun</div><div class="cal-header">Mon</div><div class="cal-header">Tue</div><div class="cal-header">Wed</div><div class="cal-header">Thu</div><div class="cal-header">Fri</div><div class="cal-header">Sat</div>
+            <div class="cal-day">1</div><div class="cal-day">2</div><div class="cal-day">3</div><div class="cal-day">4</div><div class="cal-day">5</div><div class="cal-day">6</div><div class="cal-day">7</div>
+            <div class="cal-day">8</div><div class="cal-day has-event">9</div><div class="cal-day has-event">10</div><div class="cal-day has-event">11</div><div class="cal-day today">12</div><div class="cal-day has-event">13</div><div class="cal-day has-event">14</div>
+            <div class="cal-day has-event">15</div><div class="cal-day">16</div><div class="cal-day">17</div><div class="cal-day has-event">18</div><div class="cal-day">19</div><div class="cal-day">20</div><div class="cal-day">21</div>
+            <div class="cal-day">22</div><div class="cal-day">23</div><div class="cal-day">24</div><div class="cal-day">25</div><div class="cal-day">26</div><div class="cal-day">27</div><div class="cal-day">28</div>
+            <div class="cal-day">29</div><div class="cal-day">30</div><div class="cal-day">31</div>
+          </div>
+          <div style="margin-top:16px;">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Today's Follow-ups</div>
+            <div class="followup-item">
+              <span class="followup-time">9:00 AM</span>
+              <span class="followup-name">James Rivera</span>
+              <span class="chip chip-auto" style="font-size:10px;">Auto</span>
+            </div>
+            <div class="followup-item">
+              <span class="followup-time">2:00 PM</span>
+              <span class="followup-name">Tom Baker</span>
+              <span class="chip chip-life" style="font-size:10px;">Life</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log Call Form (slide panel) -->
+      <div id="call-form-panel" class="slide-panel">
+        <div class="panel-header">
+          <h2>Log New Call</h2>
+          <button class="btn btn-sm btn-secondary" onclick="toggleCallForm()"><span class="material-icons" style="font-size:18px;">close</span></button>
+        </div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label>Prospect</label>
+            <select>
+              <option>Maria Santos</option>
+              <option>David Kim</option>
+              <option>Sarah Thompson</option>
+              <option>Robert Chen</option>
+              <option>Amanda Price</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Contact Method</label>
+              <select>
+                <option>Phone Call</option>
+                <option>Email</option>
+                <option>Text Message</option>
+                <option>In-Person</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Outcome</label>
+              <select>
+                <option>Interested</option>
+                <option>Quote Sent</option>
+                <option>Voicemail</option>
+                <option>Not Interested</option>
+                <option>No Answer</option>
+                <option>Converted</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea placeholder="Describe the interaction..."></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Follow-up Date</label>
+              <input type="date">
+            </div>
+            <div class="form-group">
+              <label>Follow-up Time</label>
+              <input type="time">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-primary">Save Call Log</button>
+            <button class="btn btn-secondary" onclick="toggleCallForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SOCIAL ACCOUNTS ============ -->
+    <div class="screen" id="screen-social-accounts">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div>
+          <h3 style="font-size:16px;font-weight:600;">Social Media Accounts</h3>
+          <p style="font-size:13px;color:#64748b;margin-top:2px;">Manage login credentials and sync schedules for each platform</p>
+        </div>
+        <button class="btn btn-primary" onclick="toggleAddAccountForm()"><span class="material-icons" style="font-size:16px;">add</span> Add Account</button>
+      </div>
+
+      <!-- Connected Account 1 - LinkedIn -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div class="account-icon linkedin">in</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div>
+                <h4 style="font-size:14px;font-weight:600;">LinkedIn</h4>
+                <p style="font-size:12px;color:#64748b;">jake.mitchell@email.com</p>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="status-dot active"></span><span class="status-label" style="color:#16a34a;">Connected</span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;background:#f8fafc;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Last Login</div>
+                <div style="font-size:13px;font-weight:500;">Mar 12, 9:14 AM</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Sync Schedule</div>
+                <div style="font-size:13px;font-weight:500;">Every 6 hours</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Last Sync</div>
+                <div style="font-size:13px;font-weight:500;">12 min ago</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Posts Scraped</div>
+                <div style="font-size:13px;font-weight:500;">1,247</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="btn btn-sm btn-primary" onclick="showSyncConfigModal('LinkedIn')"><span class="material-icons" style="font-size:14px;">schedule</span> Sync Settings</button>
+              <button class="btn btn-sm btn-outline" onclick="showConfirmDialog('Sync Now?','This will immediately start a new scraping session for LinkedIn.')"><span class="material-icons" style="font-size:14px;">sync</span> Sync Now</button>
+              <button class="btn btn-sm btn-outline" onclick="showCredentialModal('LinkedIn','jake.mitchell@email.com')"><span class="material-icons" style="font-size:14px;">key</span> Update Credentials</button>
+              <button class="btn btn-sm btn-outline" onclick="showConfirmDialog('Test Login?','LeadPulse will attempt to log in to LinkedIn with the stored credentials.')"><span class="material-icons" style="font-size:14px;">verified</span> Test Login</button>
+              <button class="btn btn-sm btn-danger" onclick="showConfirmDialog('Remove LinkedIn Account?','This will delete stored credentials and stop all syncing. Historical data will be preserved.')">Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connected Account 2 - Facebook -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div class="account-icon facebook">f</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div>
+                <h4 style="font-size:14px;font-weight:600;">Facebook</h4>
+                <p style="font-size:12px;color:#64748b;">jake.mitchell.fb@email.com</p>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="status-dot active"></span><span class="status-label" style="color:#16a34a;">Connected</span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;background:#f8fafc;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Last Login</div>
+                <div style="font-size:13px;font-weight:500;">Mar 12, 8:00 AM</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Sync Schedule</div>
+                <div style="font-size:13px;font-weight:500;">Every 4 hours</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Last Sync</div>
+                <div style="font-size:13px;font-weight:500;">34 min ago</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Posts Scraped</div>
+                <div style="font-size:13px;font-weight:500;">3,892</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr;gap:6px;margin-bottom:12px;">
+              <div style="font-size:12px;color:#64748b;"><span class="material-icons" style="font-size:14px;vertical-align:middle;">group</span> Monitoring: <strong>DFW Home Buyers</strong>, <strong>Plano Families</strong>, <strong>North Texas Insurance Q&A</strong> + 4 more groups</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="btn btn-sm btn-primary" onclick="showSyncConfigModal('Facebook')"><span class="material-icons" style="font-size:14px;">schedule</span> Sync Settings</button>
+              <button class="btn btn-sm btn-outline" onclick="showConfirmDialog('Sync Now?','This will immediately start a new scraping session for Facebook.')"><span class="material-icons" style="font-size:14px;">sync</span> Sync Now</button>
+              <button class="btn btn-sm btn-outline" onclick="showCredentialModal('Facebook','jake.mitchell.fb@email.com')"><span class="material-icons" style="font-size:14px;">key</span> Update Credentials</button>
+              <button class="btn btn-sm btn-outline" onclick="showConfirmDialog('Test Login?','LeadPulse will attempt to log in to Facebook with the stored credentials.')"><span class="material-icons" style="font-size:14px;">verified</span> Test Login</button>
+              <button class="btn btn-sm btn-danger" onclick="showConfirmDialog('Remove Facebook Account?','This will delete stored credentials and stop all syncing.')">Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connected Account 3 - Nextdoor (syncing) -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div class="account-icon nextdoor" style="font-size:14px;">ND</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div>
+                <h4 style="font-size:14px;font-weight:600;">Nextdoor</h4>
+                <p style="font-size:12px;color:#64748b;">jake.m@email.com</p>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="status-dot syncing"></span><span class="status-label" style="color:#f59e0b;">Syncing...</span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;background:#f8fafc;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Last Login</div>
+                <div style="font-size:13px;font-weight:500;">Mar 12, 10:02 AM</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Sync Schedule</div>
+                <div style="font-size:13px;font-weight:500;">Every 24 hours</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Last Sync</div>
+                <div style="font-size:13px;font-weight:500;color:#f59e0b;">In progress...</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:2px;">Posts Scraped</div>
+                <div style="font-size:13px;font-weight:500;">856</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="btn btn-sm btn-primary" onclick="showSyncConfigModal('Nextdoor')"><span class="material-icons" style="font-size:14px;">schedule</span> Sync Settings</button>
+              <button class="btn btn-sm btn-outline" disabled><span class="material-icons" style="font-size:14px;">sync</span> Syncing...</button>
+              <button class="btn btn-sm btn-outline" onclick="showCredentialModal('Nextdoor','jake.m@email.com')"><span class="material-icons" style="font-size:14px;">key</span> Update Credentials</button>
+              <button class="btn btn-sm btn-outline" onclick="showConfirmDialog('Test Login?','LeadPulse will attempt to log in to Nextdoor with the stored credentials.')"><span class="material-icons" style="font-size:14px;">verified</span> Test Login</button>
+              <button class="btn btn-sm btn-danger" onclick="showConfirmDialog('Remove Nextdoor Account?','This will delete stored credentials and stop all syncing.')">Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Account with error state -->
+      <div class="card" style="margin-bottom:16px;border-color:#fecaca;">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div class="account-icon" style="background:#e11d48;font-size:14px;color:#fff;">X</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div>
+                <h4 style="font-size:14px;font-weight:600;">X (Twitter)</h4>
+                <p style="font-size:12px;color:#64748b;">@jake_mitchell_ins</p>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="status-dot error"></span><span class="status-label" style="color:#ef4444;">Login Failed</span>
+              </div>
+            </div>
+            <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#dc2626;">
+              <span class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:4px;">error</span>
+              <strong>Credentials expired.</strong> Password was changed or 2FA was enabled. Please update your credentials to resume syncing. Last successful login: Mar 8, 2026.
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="btn btn-sm btn-primary" onclick="showCredentialModal('X (Twitter)','@jake_mitchell_ins')"><span class="material-icons" style="font-size:14px;">key</span> Update Credentials</button>
+              <button class="btn btn-sm btn-outline" onclick="showConfirmDialog('Test Login?','LeadPulse will attempt to log in to X with the stored credentials.')"><span class="material-icons" style="font-size:14px;">verified</span> Test Login</button>
+              <button class="btn btn-sm btn-danger" onclick="showConfirmDialog('Remove X Account?','This will delete stored credentials and stop all syncing.')">Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sync Activity Log -->
+      <div class="card" style="margin-top:24px;">
+        <div class="card-header">
+          <h3>Sync Activity Log</h3>
+          <span style="font-size:12px;color:#64748b;">Last 24 hours</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Platform</th><th>Status</th><th>Posts Found</th><th>Signals</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Mar 12, 10:02 AM</td><td>Nextdoor</td>
+                <td><span class="chip" style="background:#fef3c7;color:#92400e;">In Progress</span></td>
+                <td>—</td><td>—</td><td>Running...</td>
+              </tr>
+              <tr>
+                <td>Mar 12, 9:14 AM</td><td>LinkedIn</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Success</span></td>
+                <td>142</td><td>18</td><td>3m 22s</td>
+              </tr>
+              <tr>
+                <td>Mar 12, 8:00 AM</td><td>Facebook</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Success</span></td>
+                <td>287</td><td>34</td><td>5m 48s</td>
+              </tr>
+              <tr>
+                <td>Mar 12, 3:14 AM</td><td>LinkedIn</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Success</span></td>
+                <td>89</td><td>7</td><td>2m 11s</td>
+              </tr>
+              <tr>
+                <td>Mar 12, 2:00 AM</td><td>Facebook</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Success</span></td>
+                <td>156</td><td>12</td><td>4m 05s</td>
+              </tr>
+              <tr>
+                <td>Mar 11, 10:00 PM</td><td>X (Twitter)</td>
+                <td><span class="chip" style="background:#fef2f2;color:#dc2626;">Failed</span></td>
+                <td>—</td><td>—</td><td>0m 04s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Account Form (hidden by default) -->
+    <div id="add-account-form" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:28px;z-index:300;width:500px;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <h3 style="font-size:16px;font-weight:700;">Add Social Media Account</h3>
+        <button class="btn btn-sm btn-secondary" onclick="toggleAddAccountForm()"><span class="material-icons" style="font-size:18px;">close</span></button>
+      </div>
+      <div class="form-group">
+        <label>Platform</label>
+        <select>
+          <option>Select platform...</option>
+          <option>LinkedIn</option>
+          <option>Facebook</option>
+          <option>Nextdoor</option>
+          <option>X (Twitter)</option>
+          <option>Reddit</option>
+          <option>Instagram</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Login Username / Email</label>
+        <input type="text" placeholder="Enter your platform login email or username">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" placeholder="Enter your platform password">
+        <p style="font-size:11px;color:#94a3b8;margin-top:4px;"><span class="material-icons" style="font-size:12px;vertical-align:middle;">lock</span> Credentials are encrypted with AES-256 and stored securely per tenant</p>
+      </div>
+      <div class="form-group">
+        <label>2FA / MFA Token (if enabled)</label>
+        <input type="text" placeholder="Optional - TOTP secret or backup code">
+      </div>
+      <div class="form-group">
+        <label>Sync Schedule</label>
+        <select>
+          <option>Every 1 hour</option>
+          <option>Every 2 hours</option>
+          <option>Every 4 hours</option>
+          <option selected>Every 6 hours</option>
+          <option>Every 12 hours</option>
+          <option>Every 24 hours</option>
+          <option>Every 48 hours</option>
+          <option>Manual only</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Groups / Pages to Monitor (optional)</label>
+        <textarea placeholder="Enter group or page URLs, one per line..."></textarea>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary"><span class="material-icons" style="font-size:14px;">verified</span> Test & Save</button>
+        <button class="btn btn-secondary" onclick="toggleAddAccountForm()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Sync Config Modal -->
+    <div id="sync-config-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:28px;z-index:300;width:480px;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <h3 style="font-size:16px;font-weight:700;">Sync Settings — <span id="sync-config-platform">LinkedIn</span></h3>
+        <button class="btn btn-sm btn-secondary" onclick="hideSyncConfigModal()"><span class="material-icons" style="font-size:18px;">close</span></button>
+      </div>
+      <div class="form-group">
+        <label>Sync Frequency</label>
+        <select>
+          <option>Every 1 hour</option>
+          <option>Every 2 hours</option>
+          <option>Every 4 hours</option>
+          <option selected>Every 6 hours</option>
+          <option>Every 12 hours</option>
+          <option>Every 24 hours</option>
+          <option>Every 48 hours</option>
+          <option>Manual only</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Sync Window (time of day to run)</label>
+        <div class="form-row">
+          <div>
+            <label style="font-size:11px;color:#94a3b8;">Start Time</label>
+            <input type="time" value="00:00">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;">End Time</label>
+            <input type="time" value="23:59">
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Max Posts Per Sync</label>
+        <input type="number" value="500" min="50" max="5000">
+      </div>
+      <div class="form-group">
+        <label>Scrape Depth</label>
+        <select>
+          <option>Last 24 hours only</option>
+          <option selected>Last 48 hours</option>
+          <option>Last 7 days</option>
+          <option>Last 30 days (initial)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Auto-retry on Failure</label>
+        <select>
+          <option selected>Yes — retry up to 3 times</option>
+          <option>Yes — retry up to 5 times</option>
+          <option>No — alert admin on failure</option>
+        </select>
+      </div>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#1d4ed8;">
+        <span class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:4px;">info</span>
+        Next scheduled sync: <strong>Mar 12, 2026 at 3:14 PM</strong>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="hideSyncConfigModal()">Save Settings</button>
+        <button class="btn btn-secondary" onclick="hideSyncConfigModal()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Update Credentials Modal -->
+    <div id="credential-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:28px;z-index:300;width:460px;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <h3 style="font-size:16px;font-weight:700;">Update Credentials — <span id="cred-platform">LinkedIn</span></h3>
+        <button class="btn btn-sm btn-secondary" onclick="hideCredentialModal()"><span class="material-icons" style="font-size:18px;">close</span></button>
+      </div>
+      <div class="form-group">
+        <label>Username / Email</label>
+        <input type="text" id="cred-username" value="">
+      </div>
+      <div class="form-group">
+        <label>New Password</label>
+        <input type="password" placeholder="Enter new password">
+      </div>
+      <div class="form-group">
+        <label>2FA / MFA Token (if applicable)</label>
+        <input type="text" placeholder="Optional - TOTP secret or backup code">
+      </div>
+      <p style="font-size:11px;color:#94a3b8;margin-bottom:16px;"><span class="material-icons" style="font-size:12px;vertical-align:middle;">lock</span> Credentials are encrypted with AES-256 and never shown in plain text after saving.</p>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="hideCredentialModal()"><span class="material-icons" style="font-size:14px;">verified</span> Test & Save</button>
+        <button class="btn btn-secondary" onclick="hideCredentialModal()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ============ ANALYTICS ============ -->
+    <div class="screen" id="screen-analytics">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Signals (30d)</div>
+          <div class="kpi-value">1,842</div>
+          <div class="kpi-change up"><span class="material-icons" style="font-size:14px;">trending_up</span> +18% vs prior</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Prospects Generated</div>
+          <div class="kpi-value">312</div>
+          <div class="kpi-change up"><span class="material-icons" style="font-size:14px;">trending_up</span> +24% vs prior</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Contacted</div>
+          <div class="kpi-value">186</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Converted</div>
+          <div class="kpi-value">28</div>
+          <div class="kpi-change up"><span class="material-icons" style="font-size:14px;">trending_up</span> 15.1% rate</div>
+        </div>
+      </div>
+
+      <div class="dash-grid-equal">
+        <!-- Signal Volume -->
+        <div class="card">
+          <div class="card-header"><h3>Signal Volume (30 Days)</h3></div>
+          <div class="chart-placeholder" style="height:160px;padding-bottom:24px;align-items:flex-end;">
+            <div class="chart-bar" style="height:30%;background:#93c5fd;"></div>
+            <div class="chart-bar" style="height:45%;background:#93c5fd;"></div>
+            <div class="chart-bar" style="height:38%;background:#93c5fd;"></div>
+            <div class="chart-bar" style="height:55%;background:#60a5fa;"></div>
+            <div class="chart-bar" style="height:48%;background:#60a5fa;"></div>
+            <div class="chart-bar" style="height:62%;background:#60a5fa;"></div>
+            <div class="chart-bar" style="height:70%;background:#3b82f6;"></div>
+            <div class="chart-bar" style="height:58%;background:#3b82f6;"></div>
+            <div class="chart-bar" style="height:75%;background:#3b82f6;"></div>
+            <div class="chart-bar" style="height:82%;background:#2563eb;"></div>
+            <div class="chart-bar" style="height:68%;background:#2563eb;"></div>
+            <div class="chart-bar" style="height:90%;background:#2563eb;"><span class="chart-val">92</span></div>
+          </div>
+          <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:28px;">Weeks 1-4 &rarr; Trending Up</div>
+        </div>
+
+        <!-- Category Breakdown -->
+        <div class="card">
+          <div class="card-header"><h3>Category Breakdown</h3></div>
+          <div style="display:flex;align-items:center;justify-content:center;padding:10px 0;">
+            <div class="donut-chart" style="background:conic-gradient(#16a34a 0% 32%, #3b82f6 32% 56%, #f59e0b 56% 72%, #ec4899 72% 85%, #6366f1 85% 100%);">
+              <div class="donut-center">
+                <span class="big">1,842</span>
+                <span class="small">signals</span>
+              </div>
+            </div>
+          </div>
+          <div class="legend">
+            <div class="legend-item"><div class="legend-dot" style="background:#16a34a;"></div>Home (32%)</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div>Auto (24%)</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div>Life (16%)</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#ec4899;"></div>Health (13%)</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#6366f1;"></div>Commercial (15%)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-grid-equal">
+        <!-- Platform Distribution -->
+        <div class="card">
+          <div class="card-header"><h3>Platform Distribution</h3></div>
+          <div class="chart-placeholder" style="height:160px;padding-bottom:24px;justify-content:center;gap:32px;">
+            <div class="chart-bar" style="height:85%;background:#1877f2;width:60px;"><span class="chart-val">782</span><span class="chart-label">Facebook</span></div>
+            <div class="chart-bar" style="height:55%;background:#0077b5;width:60px;"><span class="chart-val">508</span><span class="chart-label">LinkedIn</span></div>
+            <div class="chart-bar" style="height:60%;background:#00b246;width:60px;"><span class="chart-val">552</span><span class="chart-label">Nextdoor</span></div>
+          </div>
+        </div>
+
+        <!-- Conversion Funnel -->
+        <div class="card">
+          <div class="card-header"><h3>Conversion Funnel</h3></div>
+          <div class="funnel">
+            <div class="funnel-step" style="width:100%;background:#93c5fd;">Signals: 1,842</div>
+            <div class="funnel-step" style="width:70%;background:#60a5fa;">Prospects: 312</div>
+            <div class="funnel-step" style="width:45%;background:#3b82f6;">Contacted: 186</div>
+            <div class="funnel-step" style="width:20%;background:#2563eb;">Converted: 28</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Cost Tracking -->
+      <div class="card" style="margin-top:24px;">
+        <div class="card-header"><h3>API Cost Tracking (March 2026)</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Calls</th>
+                <th>Cost</th>
+                <th>Budget</th>
+                <th>Usage</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>OpenAI (Signal Classification)</strong></td>
+                <td>12,450</td>
+                <td>$186.75</td>
+                <td>$300.00</td>
+                <td><div style="background:#e2e8f0;border-radius:4px;height:8px;width:120px;"><div style="background:#f59e0b;border-radius:4px;height:8px;width:75%;"></div></div></td>
+              </tr>
+              <tr>
+                <td><strong>Data Enrichment API</strong></td>
+                <td>842</td>
+                <td>$42.10</td>
+                <td>$100.00</td>
+                <td><div style="background:#e2e8f0;border-radius:4px;height:8px;width:120px;"><div style="background:#16a34a;border-radius:4px;height:8px;width:42%;"></div></div></td>
+              </tr>
+              <tr>
+                <td><strong>Social Media Scraping</strong></td>
+                <td>28,100</td>
+                <td>$84.30</td>
+                <td>$150.00</td>
+                <td><div style="background:#e2e8f0;border-radius:4px;height:8px;width:120px;"><div style="background:#f59e0b;border-radius:4px;height:8px;width:56%;"></div></div></td>
+              </tr>
+              <tr>
+                <td><strong>Phone Number Lookup</strong></td>
+                <td>312</td>
+                <td>$15.60</td>
+                <td>$50.00</td>
+                <td><div style="background:#e2e8f0;border-radius:4px;height:8px;width:120px;"><div style="background:#16a34a;border-radius:4px;height:8px;width:31%;"></div></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ KEYWORD CONFIGURATION ============ -->
+    <div class="screen" id="screen-keyword-config">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div>
+          <h3 style="font-size:16px;font-weight:600;">Keyword Configuration</h3>
+          <p style="font-size:13px;color:#64748b;margin-top:2px;">Configure search keywords and match types for signal detection. Each tenant can customize for their industry.</p>
+        </div>
+        <button class="btn btn-primary" onclick="toggleKeywordForm()"><span class="material-icons" style="font-size:16px;">add</span> Add Keyword Rule</button>
+      </div>
+
+      <!-- Current tenant indicator -->
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;color:#1d4ed8;">
+          <span class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:4px;">business</span>
+          Configuring keywords for: <strong>Mitchell Insurance Group</strong> (Tenant ID: TEN-00142)
+        </div>
+        <span style="font-size:12px;color:#64748b;">18 active keyword rules</span>
+      </div>
+
+      <!-- Keyword Rules Table -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h3>Active Keyword Rules</h3>
+          <div style="display:flex;gap:8px;">
+            <select style="padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;">
+              <option>All Categories</option>
+              <option>Home Insurance</option>
+              <option>Auto Insurance</option>
+              <option>Life Insurance</option>
+              <option>Health Insurance</option>
+              <option>Commercial</option>
+            </select>
+            <select style="padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;">
+              <option>All Match Types</option>
+              <option>Exact Match</option>
+              <option>Similar / Fuzzy</option>
+              <option>Contains</option>
+              <option>Regex</option>
+              <option>Semantic</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Keyword / Phrase</th>
+                <th>Match Type</th>
+                <th>Category</th>
+                <th>Score Boost</th>
+                <th>Synonyms / Similar</th>
+                <th>Status</th>
+                <th>Hits (30d)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>"need home insurance"</strong></td>
+                <td><span class="chip" style="background:#dbeafe;color:#1d4ed8;">Similar</span></td>
+                <td><span class="chip chip-home">Home</span></td>
+                <td><strong>+20</strong></td>
+                <td style="font-size:12px;color:#64748b;">homeowner policy, house insurance, dwelling coverage, home coverage</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>142</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleKeywordForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Disable</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>"car insurance"</strong></td>
+                <td><span class="chip" style="background:#dbeafe;color:#1d4ed8;">Similar</span></td>
+                <td><span class="chip chip-auto">Auto</span></td>
+                <td><strong>+15</strong></td>
+                <td style="font-size:12px;color:#64748b;">auto insurance, vehicle coverage, auto policy, car coverage</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>98</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleKeywordForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Disable</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>"life insurance agent"</strong></td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Contains</span></td>
+                <td><span class="chip chip-life">Life</span></td>
+                <td><strong>+25</strong></td>
+                <td style="font-size:12px;color:#64748b;">—</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>67</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleKeywordForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Disable</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>"insurance premiums"</strong></td>
+                <td><span class="chip" style="background:#fef3c7;color:#92400e;">Exact</span></td>
+                <td><span class="chip chip-health">Health</span></td>
+                <td><strong>+10</strong></td>
+                <td style="font-size:12px;color:#64748b;">—</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>54</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleKeywordForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Disable</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>"business insurance|commercial policy|liability coverage"</strong></td>
+                <td><span class="chip" style="background:#e0e7ff;color:#3730a3;">Regex</span></td>
+                <td><span class="chip chip-commercial">Commercial</span></td>
+                <td><strong>+18</strong></td>
+                <td style="font-size:12px;color:#64748b;">—</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>38</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleKeywordForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Disable</button>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>"shopping for coverage"</strong></td>
+                <td><span class="chip" style="background:#fce7f3;color:#9d174d;">Semantic</span></td>
+                <td><span class="chip" style="background:#f1f5f9;color:#475569;">Any</span></td>
+                <td><strong>+12</strong></td>
+                <td style="font-size:12px;color:#64748b;">AI matches intent: looking for, comparing, switching, need better, too expensive</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>203</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleKeywordForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Disable</button>
+                </td>
+              </tr>
+              <tr style="opacity:0.5;">
+                <td><strong>"renters insurance"</strong></td>
+                <td><span class="chip" style="background:#dbeafe;color:#1d4ed8;">Similar</span></td>
+                <td><span class="chip chip-home">Home</span></td>
+                <td><strong>+8</strong></td>
+                <td style="font-size:12px;color:#64748b;">renter coverage, apartment insurance, tenant insurance</td>
+                <td><span class="status-dot" style="background:#94a3b8;"></span> Disabled</td>
+                <td>12</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleKeywordForm()">Edit</button>
+                  <button class="btn btn-sm btn-primary">Enable</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Add/Edit Keyword Rule Form -->
+      <div id="keyword-form" class="card" style="display:none;margin-bottom:20px;">
+        <div class="card-header">
+          <h3>Add / Edit Keyword Rule</h3>
+          <button class="btn btn-sm btn-secondary" onclick="toggleKeywordForm()">Cancel</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Keyword or Phrase</label>
+            <input type="text" placeholder='e.g. "need home insurance"'>
+          </div>
+          <div class="form-group">
+            <label>Match Type</label>
+            <select id="keyword-match-type" onchange="updateMatchTypeHelp()">
+              <option value="exact">Exact Match</option>
+              <option value="similar" selected>Similar / Fuzzy</option>
+              <option value="contains">Contains</option>
+              <option value="regex">Regex Pattern</option>
+              <option value="semantic">Semantic (AI)</option>
+            </select>
+          </div>
+        </div>
+        <div id="match-type-help" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:#475569;">
+          <strong>Similar / Fuzzy:</strong> Matches the keyword and common variations, synonyms, misspellings, and related phrases. Define custom synonyms below or let the system auto-detect similar terms.
+        </div>
+        <div class="form-group" id="synonyms-group">
+          <label>Synonyms / Similar Terms (comma separated)</label>
+          <textarea placeholder="homeowner policy, house insurance, dwelling coverage, home coverage..."></textarea>
+          <p style="font-size:11px;color:#94a3b8;margin-top:4px;">
+            <span class="material-icons" style="font-size:12px;vertical-align:middle;">auto_awesome</span>
+            Leave empty to auto-generate similar terms using AI
+          </p>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Insurance Category</label>
+            <select>
+              <option>Any Category</option>
+              <option>Home</option>
+              <option>Auto</option>
+              <option>Life</option>
+              <option>Health</option>
+              <option>Commercial</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Score Boost (points)</label>
+            <input type="number" value="15" min="1" max="50">
+            <p style="font-size:11px;color:#94a3b8;margin-top:4px;">Added to prospect score when this keyword is matched</p>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Minimum Similarity Threshold</label>
+            <input type="range" min="50" max="100" value="75" style="width:100%;" oninput="this.nextElementSibling.textContent=this.value+'%'">
+            <span style="font-size:12px;color:#64748b;">75%</span>
+            <p style="font-size:11px;color:#94a3b8;margin-top:2px;">How closely a post must match the keyword (applies to Similar & Semantic)</p>
+          </div>
+          <div class="form-group">
+            <label>Negative Keywords (exclude if present)</label>
+            <input type="text" placeholder="e.g. selling, agent, realtor, spam">
+            <p style="font-size:11px;color:#94a3b8;margin-top:4px;">Posts containing these words will be excluded even if keyword matches</p>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Apply to Platforms</label>
+          <div class="multi-select">
+            <span class="multi-option selected" onclick="this.classList.toggle('selected')">All Platforms</span>
+            <span class="multi-option" onclick="this.classList.toggle('selected')">LinkedIn</span>
+            <span class="multi-option" onclick="this.classList.toggle('selected')">Facebook</span>
+            <span class="multi-option" onclick="this.classList.toggle('selected')">Nextdoor</span>
+            <span class="multi-option" onclick="this.classList.toggle('selected')">X (Twitter)</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-primary"><span class="material-icons" style="font-size:14px;">save</span> Save Rule</button>
+          <button class="btn btn-outline"><span class="material-icons" style="font-size:14px;">science</span> Test Rule</button>
+          <button class="btn btn-secondary" onclick="toggleKeywordForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Keyword Import/Export -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Import / Export</h3>
+        </div>
+        <p style="font-size:13px;color:#64748b;margin-bottom:12px;">Bulk manage keyword rules across tenants or back up your configuration.</p>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline"><span class="material-icons" style="font-size:14px;">upload_file</span> Import CSV</button>
+          <button class="btn btn-outline"><span class="material-icons" style="font-size:14px;">file_download</span> Export CSV</button>
+          <button class="btn btn-outline"><span class="material-icons" style="font-size:14px;">content_copy</span> Copy from Another Tenant</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TENANT ADMIN ============ -->
+    <div class="screen" id="screen-tenant-admin">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div>
+          <h3 style="font-size:16px;font-weight:600;">Tenant Management</h3>
+          <p style="font-size:13px;color:#64748b;margin-top:2px;">SaaS multi-tenant administration. Each tenant has isolated data, keywords, accounts, and users.</p>
+        </div>
+        <button class="btn btn-primary" onclick="toggleTenantForm()"><span class="material-icons" style="font-size:16px;">add</span> Add Tenant</button>
+      </div>
+
+      <!-- Platform Stats -->
+      <div class="kpi-grid" style="margin-bottom:24px;">
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#2563eb;">business</span> Active Tenants</div>
+          <div class="kpi-value">12</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#16a34a;">people</span> Total Users</div>
+          <div class="kpi-value">47</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#8b5cf6;">share</span> Connected Accounts</div>
+          <div class="kpi-value">31</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#f59e0b;">sensors</span> Signals Today</div>
+          <div class="kpi-value">842</div>
+        </div>
+      </div>
+
+      <!-- Tenant List -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h3>All Tenants</h3>
+          <input type="text" placeholder="Search tenants..." style="padding:6px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;width:200px;">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant ID</th>
+                <th>Company Name</th>
+                <th>Industry</th>
+                <th>Plan</th>
+                <th>Users</th>
+                <th>Accounts</th>
+                <th>Keywords</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-family:monospace;font-size:12px;">TEN-00142</td>
+                <td><strong>Mitchell Insurance Group</strong></td>
+                <td>Insurance Agency</td>
+                <td><span class="chip" style="background:#dbeafe;color:#1d4ed8;">Professional</span></td>
+                <td>4</td>
+                <td>4</td>
+                <td>18</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleTenantForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Login As</button>
+                </td>
+              </tr>
+              <tr>
+                <td style="font-family:monospace;font-size:12px;">TEN-00098</td>
+                <td><strong>Apex Financial Services</strong></td>
+                <td>Financial Advisory</td>
+                <td><span class="chip" style="background:#f3e8ff;color:#7c3aed;">Enterprise</span></td>
+                <td>12</td>
+                <td>8</td>
+                <td>42</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleTenantForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Login As</button>
+                </td>
+              </tr>
+              <tr>
+                <td style="font-family:monospace;font-size:12px;">TEN-00201</td>
+                <td><strong>SafeGuard Insurance LLC</strong></td>
+                <td>Insurance Agency</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Starter</span></td>
+                <td>2</td>
+                <td>2</td>
+                <td>8</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleTenantForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Login As</button>
+                </td>
+              </tr>
+              <tr>
+                <td style="font-family:monospace;font-size:12px;">TEN-00187</td>
+                <td><strong>Premier Realty Group</strong></td>
+                <td>Real Estate</td>
+                <td><span class="chip" style="background:#dbeafe;color:#1d4ed8;">Professional</span></td>
+                <td>6</td>
+                <td>5</td>
+                <td>22</td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleTenantForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Login As</button>
+                </td>
+              </tr>
+              <tr style="opacity:0.5;">
+                <td style="font-family:monospace;font-size:12px;">TEN-00055</td>
+                <td><strong>BrightPath Mortgage</strong></td>
+                <td>Mortgage Broker</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Starter</span></td>
+                <td>1</td>
+                <td>0</td>
+                <td>0</td>
+                <td><span class="status-dot" style="background:#94a3b8;"></span> Suspended</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleTenantForm()">Edit</button>
+                  <button class="btn btn-sm btn-primary">Reactivate</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Add/Edit Tenant Form -->
+      <div id="tenant-form" class="card" style="display:none;">
+        <div class="card-header">
+          <h3>Add / Edit Tenant</h3>
+          <button class="btn btn-sm btn-secondary" onclick="toggleTenantForm()">Cancel</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Company Name</label>
+            <input type="text" placeholder="e.g. Mitchell Insurance Group">
+          </div>
+          <div class="form-group">
+            <label>Industry</label>
+            <select>
+              <option>Insurance Agency</option>
+              <option>Financial Advisory</option>
+              <option>Real Estate</option>
+              <option>Mortgage Broker</option>
+              <option>Auto Dealer</option>
+              <option>Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Subscription Plan</label>
+            <select>
+              <option>Starter — 2 users, 3 accounts, 10 keywords</option>
+              <option selected>Professional — 5 users, 5 accounts, 25 keywords</option>
+              <option>Enterprise — Unlimited users, 10 accounts, unlimited keywords</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Billing Email</label>
+            <input type="email" placeholder="billing@company.com">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Admin User Email</label>
+            <input type="email" placeholder="admin@company.com">
+          </div>
+          <div class="form-group">
+            <label>Admin User Name</label>
+            <input type="text" placeholder="First Last">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Custom Domain (optional)</label>
+          <input type="text" placeholder="leads.company.com">
+          <p style="font-size:11px;color:#94a3b8;margin-top:4px;">Tenant will access LeadPulse via this subdomain (CNAME required)</p>
+        </div>
+        <div class="form-group">
+          <label>Data Isolation</label>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#166534;">
+            <span class="material-icons" style="font-size:14px;vertical-align:middle;margin-right:4px;">verified_user</span>
+            All tenant data (prospects, signals, credentials, keywords) is fully isolated. No cross-tenant data access is possible.
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>API Rate Limits</label>
+            <select>
+              <option>Standard — 1,000 API calls/day</option>
+              <option selected>Professional — 5,000 API calls/day</option>
+              <option>Enterprise — 25,000 API calls/day</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Max Social Accounts</label>
+            <input type="number" value="5" min="1" max="50">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-primary" onclick="toggleTenantForm()"><span class="material-icons" style="font-size:14px;">save</span> Save Tenant</button>
+          <button class="btn btn-secondary" onclick="toggleTenantForm()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ USER MANAGEMENT ============ -->
+    <div class="screen" id="screen-user-management">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div>
+          <h3 style="font-size:16px;font-weight:600;">User Management</h3>
+          <p style="font-size:13px;color:#64748b;margin-top:2px;">Manage users, roles, and permissions for this tenant.</p>
+        </div>
+        <button class="btn btn-primary" onclick="toggleUserForm()"><span class="material-icons" style="font-size:16px;">person_add</span> Add User</button>
+      </div>
+
+      <!-- Tenant context -->
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;color:#1d4ed8;">
+          <span class="material-icons" style="font-size:16px;vertical-align:middle;margin-right:4px;">business</span>
+          Tenant: <strong>Mitchell Insurance Group</strong> (TEN-00142) &mdash; Plan: Professional (max 5 users)
+        </div>
+        <span style="font-size:12px;color:#64748b;">4 of 5 seats used</span>
+      </div>
+
+      <!-- Role summary cards -->
+      <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px;">
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#dc2626;">shield</span> Super Admin</div>
+          <div class="kpi-value">1</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#2563eb;">admin_panel_settings</span> Tenant Admin</div>
+          <div class="kpi-value">1</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#16a34a;">person</span> Agents</div>
+          <div class="kpi-value">2</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label"><span class="material-icons" style="font-size:16px;color:#64748b;">visibility</span> Viewers</div>
+          <div class="kpi-value">0</div>
+        </div>
+      </div>
+
+      <!-- Users table -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h3>All Users</h3>
+          <div style="display:flex;gap:8px;">
+            <select style="padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;">
+              <option>All Roles</option>
+              <option>Super Admin</option>
+              <option>Tenant Admin</option>
+              <option>Agent</option>
+              <option>Viewer</option>
+            </select>
+            <select style="padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:inherit;">
+              <option>All Status</option>
+              <option>Active</option>
+              <option>Invited</option>
+              <option>Disabled</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th>Calls (30d)</th>
+                <th>Conversions</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:32px;height:32px;border-radius:50%;background:#3b82f6;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:#fff;">JM</div>
+                    <strong>Jake Mitchell</strong>
+                  </div>
+                </td>
+                <td>jake.mitchell@mitchellins.com</td>
+                <td><span class="chip" style="background:#fef2f2;color:#dc2626;">Super Admin</span></td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>Mar 12, 10:14 AM</td>
+                <td>34</td>
+                <td>6</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleUserForm()">Edit</button>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:32px;height:32px;border-radius:50%;background:#8b5cf6;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:#fff;">RP</div>
+                    <strong>Rachel Patel</strong>
+                  </div>
+                </td>
+                <td>rachel.patel@mitchellins.com</td>
+                <td><span class="chip" style="background:#dbeafe;color:#1d4ed8;">Tenant Admin</span></td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>Mar 12, 9:41 AM</td>
+                <td>28</td>
+                <td>4</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleUserForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Reset Pwd</button>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:32px;height:32px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:#fff;">TL</div>
+                    <strong>Tony Lopez</strong>
+                  </div>
+                </td>
+                <td>tony.lopez@mitchellins.com</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Agent</span></td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>Mar 12, 8:22 AM</td>
+                <td>19</td>
+                <td>3</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleUserForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Reset Pwd</button>
+                  <button class="btn btn-sm btn-danger" onclick="showConfirmDialog('Disable user?','Tony Lopez will lose access immediately. Their data will be preserved.')">Disable</button>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:32px;height:32px;border-radius:50%;background:#f59e0b;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:#fff;">KW</div>
+                    <strong>Karen Wright</strong>
+                  </div>
+                </td>
+                <td>karen.wright@mitchellins.com</td>
+                <td><span class="chip" style="background:#dcfce7;color:#166534;">Agent</span></td>
+                <td><span class="status-dot active"></span> Active</td>
+                <td>Mar 11, 5:03 PM</td>
+                <td>22</td>
+                <td>5</td>
+                <td>
+                  <button class="btn btn-sm btn-outline" onclick="toggleUserForm()">Edit</button>
+                  <button class="btn btn-sm btn-secondary">Reset Pwd</button>
+                  <button class="btn btn-sm btn-danger" onclick="showConfirmDialog('Disable user?','Karen Wright will lose access immediately. Their data will be preserved.')">Disable</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Pending invitations -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h3>Pending Invitations</h3>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f1f5f9;">
+          <div>
+            <strong style="font-size:13px;">mike.chen@mitchellins.com</strong>
+            <span class="chip" style="background:#dcfce7;color:#166534;margin-left:8px;">Agent</span>
+            <span style="font-size:12px;color:#94a3b8;margin-left:8px;">Invited Mar 10, 2026</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-sm btn-outline">Resend</button>
+            <button class="btn btn-sm btn-danger" onclick="showConfirmDialog('Revoke Invitation?','The invitation link will be invalidated.')">Revoke</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add/Edit User Form -->
+      <div id="user-form" class="card" style="display:none;">
+        <div class="card-header">
+          <h3>Add / Edit User</h3>
+          <button class="btn btn-sm btn-secondary" onclick="toggleUserForm()">Cancel</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>First Name</label>
+            <input type="text" placeholder="First name">
+          </div>
+          <div class="form-group">
+            <label>Last Name</label>
+            <input type="text" placeholder="Last name">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" placeholder="user@company.com">
+          </div>
+          <div class="form-group">
+            <label>Phone (optional)</label>
+            <input type="tel" placeholder="(555) 000-0000">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Role</label>
+          <select>
+            <option value="" disabled selected>Select a role...</option>
+            <option>Super Admin — Full platform access, tenant management, billing</option>
+            <option>Tenant Admin — Manage users, accounts, keywords for this tenant</option>
+            <option>Agent — Prospect management, calls, daily lists, strategies</option>
+            <option>Viewer — Read-only access to dashboards and analytics</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Permissions</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" checked style="accent-color:#2563eb;"> View Prospects
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" checked style="accent-color:#2563eb;"> Log Calls
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" checked style="accent-color:#2563eb;"> Manage Strategies
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" style="accent-color:#2563eb;"> Export Data
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" style="accent-color:#2563eb;"> Manage Social Accounts
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" style="accent-color:#2563eb;"> Manage Keywords
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" style="accent-color:#2563eb;"> View Analytics
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;">
+              <input type="checkbox" style="accent-color:#2563eb;"> Manage Users
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Initial Password</label>
+          <div class="form-row">
+            <input type="password" placeholder="Set initial password">
+            <div style="display:flex;align-items:center;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;cursor:pointer;white-space:nowrap;">
+                <input type="checkbox" checked style="accent-color:#2563eb;"> Force change on first login
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Require MFA</label>
+          <select>
+            <option>Optional — user can enable in their profile</option>
+            <option selected>Required — must set up MFA on first login</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="btn btn-primary" onclick="toggleUserForm()"><span class="material-icons" style="font-size:14px;">save</span> Save User</button>
+          <button class="btn btn-outline"><span class="material-icons" style="font-size:14px;">email</span> Save & Send Invite</button>
+          <button class="btn btn-secondary" onclick="toggleUserForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Roles & Permissions reference -->
+      <div class="card">
+        <div class="card-header"><h3>Role Permissions Matrix</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Permission</th>
+                <th style="text-align:center;">Super Admin</th>
+                <th style="text-align:center;">Tenant Admin</th>
+                <th style="text-align:center;">Agent</th>
+                <th style="text-align:center;">Viewer</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>View Dashboard & Analytics</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+              </tr>
+              <tr>
+                <td>View & Manage Prospects</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+              <tr>
+                <td>Log Calls & Follow-ups</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+              <tr>
+                <td>Manage Strategies</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+              <tr>
+                <td>Export Data (CSV)</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#f59e0b;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+              <tr>
+                <td>Manage Social Accounts & Credentials</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+              <tr>
+                <td>Manage Keywords</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+              <tr>
+                <td>Manage Users & Roles</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+              <tr>
+                <td>Tenant & Billing Administration</td>
+                <td style="text-align:center;color:#16a34a;"><span class="material-icons" style="font-size:18px;">check_circle</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+                <td style="text-align:center;color:#ef4444;"><span class="material-icons" style="font-size:18px;">cancel</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ============ PROSPECT DETAIL SLIDE PANEL ============ -->
+<div class="overlay" id="prospect-overlay" onclick="closeProspectDetail()"></div>
+<div class="slide-panel" id="prospect-panel">
+  <div class="panel-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="score-circle score-high" style="width:40px;height:40px;font-size:15px;" id="detail-score">92</div>
+      <div>
+        <h2 id="detail-name">Maria Santos</h2>
+        <span class="urgency-badge urgency-hot" id="detail-urgency">HOT</span>
+      </div>
+    </div>
+    <button class="btn btn-sm btn-secondary" onclick="closeProspectDetail()"><span class="material-icons" style="font-size:18px;">close</span></button>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section">
+      <h4>Contact Information</h4>
+      <div class="contact-grid">
+        <div class="contact-item">
+          <span class="material-icons">phone</span>
+          <div><span class="label">Phone</span>(469) 555-0142</div>
+        </div>
+        <div class="contact-item">
+          <span class="material-icons">email</span>
+          <div><span class="label">Email</span>m.santos@email.com</div>
+        </div>
+        <div class="contact-item">
+          <span class="material-icons">location_on</span>
+          <div><span class="label">Address</span>Plano, TX 75024</div>
+        </div>
+        <div class="contact-item">
+          <span class="material-icons">business</span>
+          <div><span class="label">Company</span>Self-employed</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Original Post</h4>
+      <div class="card" style="background:#f8fafc;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div class="account-icon nextdoor" style="width:28px;height:28px;font-size:10px;border-radius:6px;">ND</div>
+          <div>
+            <div style="font-weight:600;font-size:13px;">Maria Santos</div>
+            <div style="font-size:11px;color:#94a3b8;">Nextdoor - Plano West &bull; 2 hours ago</div>
+          </div>
+        </div>
+        <p style="font-size:13px;line-height:1.5;">Looking for a new homeowner's policy after moving to a new house in Plano. Our current provider (State Farm) quoted us way too high for the new place. It's a 4BR/3BA built in 2019. Anyone have recommendations for good home insurance agents in the area? Preferably someone who can also bundle with auto.</p>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Signal History</h4>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="time">Mar 12, 2026 - 8:14 AM</div>
+          <div class="desc"><strong>Primary signal detected</strong> - Homeowner's policy inquiry on Nextdoor</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">Mar 12, 2026 - 8:15 AM</div>
+          <div class="desc"><strong>Auto-classified</strong> - Category: Home Insurance, Score: 92, Urgency: Hot</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">Mar 12, 2026 - 8:20 AM</div>
+          <div class="desc"><strong>Enrichment completed</strong> - Phone number, email, and address verified</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">Mar 12, 2026 - 9:05 AM</div>
+          <div class="desc"><strong>Added to Daily List</strong> - Strategy: DFW Metro Home + Auto</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Call History</h4>
+      <div class="card" style="background:#f8fafc;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <strong style="font-size:13px;">Phone Call - Mar 12, 9:30 AM</strong>
+          <span class="chip" style="background:#dcfce7;color:#166534;">Interested</span>
+        </div>
+        <p style="font-size:12px;color:#64748b;">Spoke for 8 minutes. She needs coverage for a 4BR home, built 2019. Wants bundle with auto (2023 Honda CR-V). Emailing quote by end of day. Follow-up scheduled for Mar 14.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0;">
+      <button class="btn btn-success"><span class="material-icons" style="font-size:16px;">phone</span> Log Call</button>
+      <button class="btn btn-primary"><span class="material-icons" style="font-size:16px;">auto_fix_high</span> Request Enrichment</button>
+      <button class="btn btn-secondary"><span class="material-icons" style="font-size:16px;">playlist_add</span> Add to Call List</button>
+      <button class="btn btn-outline"><span class="material-icons" style="font-size:16px;">close</span> Dismiss</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation Dialog -->
+<div class="confirm-dialog" id="confirm-dialog">
+  <h3 id="confirm-title">Confirm Action</h3>
+  <p id="confirm-message">Are you sure?</p>
+  <div class="actions">
+    <button class="btn btn-secondary" onclick="hideConfirmDialog()">Cancel</button>
+    <button class="btn btn-primary" onclick="hideConfirmDialog()">Confirm</button>
+  </div>
+</div>
+
+<script>
+// Navigation
+const navItems = document.querySelectorAll('.nav-item[data-screen]');
+const screens = document.querySelectorAll('.screen');
+const pageTitle = document.getElementById('page-title');
+
+const titles = {
+  'dashboard': 'Dashboard',
+  'prospects': 'Prospects',
+  'daily-list': 'Daily Prospect List',
+  'strategies': 'Strategy Configuration',
+  'call-tracker': 'Call Tracker',
+  'social-accounts': 'Social Accounts',
+  'analytics': 'Analytics',
+  'keyword-config': 'Keyword Configuration',
+  'tenant-admin': 'Tenant Management',
+  'user-management': 'User Management'
+};
+
+function navigateTo(screenId) {
+  navItems.forEach(item => item.classList.remove('active'));
+  screens.forEach(s => s.classList.remove('active'));
+  const target = document.querySelector(`[data-screen="${screenId}"]`);
+  if (target) target.classList.add('active');
+  const screen = document.getElementById('screen-' + screenId);
+  if (screen) screen.classList.add('active');
+  pageTitle.textContent = titles[screenId] || screenId;
+}
+
+navItems.forEach(item => {
+  item.addEventListener('click', () => {
+    navigateTo(item.dataset.screen);
+  });
+});
+
+// View toggle (Card/Table)
+function setView(mode) {
+  const cardView = document.getElementById('prospect-card-view');
+  const tableView = document.getElementById('prospect-table-view');
+  const btnCard = document.getElementById('btn-card-view');
+  const btnTable = document.getElementById('btn-table-view');
+  if (mode === 'card') {
+    cardView.style.display = 'block';
+    tableView.style.display = 'none';
+    btnCard.classList.add('active');
+    btnTable.classList.remove('active');
+  } else {
+    cardView.style.display = 'none';
+    tableView.style.display = 'block';
+    btnTable.classList.add('active');
+    btnCard.classList.remove('active');
+  }
+}
+
+// Prospect detail panel
+const prospectData = {
+  'Maria Santos': { score: 92, urgency: 'HOT', urgencyClass: 'urgency-hot', scoreClass: 'score-high' },
+  'David Kim': { score: 87, urgency: 'HOT', urgencyClass: 'urgency-hot', scoreClass: 'score-high' },
+  'Sarah Thompson': { score: 81, urgency: 'WARM', urgencyClass: 'urgency-warm', scoreClass: 'score-high' },
+  'Robert Chen': { score: 74, urgency: 'WARM', urgencyClass: 'urgency-warm', scoreClass: 'score-medium' },
+  'Amanda Price': { score: 68, urgency: 'COOL', urgencyClass: 'urgency-cool', scoreClass: 'score-medium' },
+  'Marcus Johnson': { score: 63, urgency: 'COOL', urgencyClass: 'urgency-cool', scoreClass: 'score-medium' },
+  'Elena Rodriguez': { score: 59, urgency: 'COOL', urgencyClass: 'urgency-cool', scoreClass: 'score-medium' },
+  'Tyler Brooks': { score: 52, urgency: 'COOL', urgencyClass: 'urgency-cool', scoreClass: 'score-low' },
+};
+
+function openProspectDetail(name) {
+  const data = prospectData[name] || { score: 70, urgency: 'WARM', urgencyClass: 'urgency-warm', scoreClass: 'score-medium' };
+  document.getElementById('detail-name').textContent = name;
+  const scoreEl = document.getElementById('detail-score');
+  scoreEl.textContent = data.score;
+  scoreEl.className = 'score-circle ' + data.scoreClass;
+  scoreEl.style.width = '40px';
+  scoreEl.style.height = '40px';
+  scoreEl.style.fontSize = '15px';
+  const urgEl = document.getElementById('detail-urgency');
+  urgEl.textContent = data.urgency;
+  urgEl.className = 'urgency-badge ' + data.urgencyClass;
+  document.getElementById('prospect-overlay').classList.add('active');
+  document.getElementById('prospect-panel').classList.add('active');
+}
+
+function closeProspectDetail() {
+  document.getElementById('prospect-overlay').classList.remove('active');
+  document.getElementById('prospect-panel').classList.remove('active');
+}
+
+// Strategy form toggle
+function toggleStrategyForm() {
+  const form = document.getElementById('strategy-form');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+// Call form toggle
+function toggleCallForm() {
+  const panel = document.getElementById('call-form-panel');
+  const overlay = document.getElementById('prospect-overlay');
+  panel.classList.toggle('active');
+  overlay.classList.toggle('active');
+}
+
+// Confirm dialog
+function showConfirmDialog(title, message) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').textContent = message;
+  document.getElementById('confirm-dialog').classList.add('active');
+  document.getElementById('prospect-overlay').classList.add('active');
+}
+
+function hideConfirmDialog() {
+  document.getElementById('confirm-dialog').classList.remove('active');
+  document.getElementById('prospect-overlay').classList.remove('active');
+}
+
+// Column chooser toggle
+function toggleColumnChooser(which) {
+  const dd = document.getElementById('col-chooser-' + which);
+  // Close all other dropdowns first
+  document.querySelectorAll('.col-chooser-dropdown').forEach(d => {
+    if (d !== dd) d.classList.remove('open');
+  });
+  dd.classList.toggle('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.col-chooser-wrap')) {
+    document.querySelectorAll('.col-chooser-dropdown').forEach(d => d.classList.remove('open'));
+  }
+});
+
+// Toggle column visibility
+function toggleCol(tableType, colName) {
+  let tableId;
+  if (tableType === 'prospect') tableId = 'prospect-table';
+  else if (tableType === 'daily') tableId = 'daily-table';
+  else return;
+  const table = document.getElementById(tableId);
+  const cells = table.querySelectorAll('[data-col="' + colName + '"]');
+  cells.forEach(cell => {
+    cell.style.display = cell.style.display === 'none' ? '' : 'none';
+  });
+}
+
+// Export CSV
+function exportCSV(tableType) {
+  let tableId;
+  if (tableType === 'prospect') tableId = 'prospect-table';
+  else if (tableType === 'daily') tableId = 'daily-table';
+  else return;
+  const table = document.getElementById(tableId);
+  const rows = table.querySelectorAll('tr');
+  let csv = [];
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('th, td');
+    const rowData = [];
+    cells.forEach(cell => {
+      if (cell.style.display === 'none') return;
+      // Skip checkbox and action columns
+      if (cell.querySelector('input[type="checkbox"]') || cell.querySelector('.btn')) return;
+      let text = cell.textContent.trim().replace(/"/g, '""');
+      rowData.push('"' + text + '"');
+    });
+    if (rowData.length > 0) csv.push(rowData.join(','));
+  });
+  const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = tableType + '-prospects-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ========== SOCIAL ACCOUNTS ==========
+
+// Add Account form toggle
+function toggleAddAccountForm() {
+  const form = document.getElementById('add-account-form');
+  const overlay = document.getElementById('prospect-overlay');
+  const isHidden = form.style.display === 'none';
+  form.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) {
+    overlay.classList.add('active');
+  } else {
+    overlay.classList.remove('active');
+  }
+}
+
+// Sync Config Modal
+function showSyncConfigModal(platform) {
+  document.getElementById('sync-config-platform').textContent = platform;
+  document.getElementById('sync-config-modal').style.display = 'block';
+  document.getElementById('prospect-overlay').classList.add('active');
+}
+
+function hideSyncConfigModal() {
+  document.getElementById('sync-config-modal').style.display = 'none';
+  document.getElementById('prospect-overlay').classList.remove('active');
+}
+
+// Credential Modal
+function showCredentialModal(platform, username) {
+  document.getElementById('cred-platform').textContent = platform;
+  document.getElementById('cred-username').value = username || '';
+  document.getElementById('credential-modal').style.display = 'block';
+  document.getElementById('prospect-overlay').classList.add('active');
+}
+
+function hideCredentialModal() {
+  document.getElementById('credential-modal').style.display = 'none';
+  document.getElementById('prospect-overlay').classList.remove('active');
+}
+
+// ========== KEYWORD CONFIGURATION ==========
+
+// Keyword form toggle
+function toggleKeywordForm() {
+  const form = document.getElementById('keyword-form');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') {
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+// Match type help text
+const matchTypeDescriptions = {
+  exact: '<strong>Exact Match:</strong> Only matches the keyword or phrase exactly as typed. Case-insensitive. Best for very specific terms where you want precise control.',
+  similar: '<strong>Similar / Fuzzy:</strong> Matches the keyword and common variations, synonyms, misspellings, and related phrases. Define custom synonyms below or let the system auto-detect similar terms.',
+  contains: '<strong>Contains:</strong> Matches any post that contains the keyword or phrase anywhere in the text. Simple substring matching. Good for broad capture.',
+  regex: '<strong>Regex Pattern:</strong> Use regular expression syntax for advanced pattern matching. Supports alternation (|), wildcards (.*), character classes, etc. For power users.',
+  semantic: '<strong>Semantic (AI):</strong> Uses AI to understand the intent behind posts, not just exact words. Matches posts where someone is expressing a need related to your keyword, even if they use completely different language.'
+};
+
+function updateMatchTypeHelp() {
+  const select = document.getElementById('keyword-match-type');
+  const helpDiv = document.getElementById('match-type-help');
+  const synonymsGroup = document.getElementById('synonyms-group');
+  helpDiv.innerHTML = matchTypeDescriptions[select.value] || '';
+  // Show synonyms field only for similar/semantic match types
+  if (select.value === 'similar' || select.value === 'semantic') {
+    synonymsGroup.style.display = 'block';
+  } else {
+    synonymsGroup.style.display = 'none';
+  }
+}
+
+// ========== TENANT ADMIN ==========
+
+// Tenant form toggle
+function toggleTenantForm() {
+  const form = document.getElementById('tenant-form');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') {
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+// ========== USER MANAGEMENT ==========
+
+function toggleUserForm() {
+  const form = document.getElementById('user-form');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') {
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+// ========== TENANT SWITCHER (SaaS Multi-Tenant) ==========
+
+function toggleTenantSwitcher() {
+  const dd = document.getElementById('tenant-dropdown');
+  dd.classList.toggle('open');
+}
+
+function switchTenant(name, id, initials, color) {
+  // Update sidebar tenant selector
+  document.getElementById('current-tenant-name').textContent = name;
+  document.querySelector('.tenant-selector .tenant-icon').textContent = initials;
+  document.querySelector('.tenant-selector .tenant-icon').style.background = color;
+  document.querySelector('.tenant-selector .tenant-id').textContent = id;
+
+  // Update topbar tenant badge
+  document.getElementById('topbar-tenant-label').textContent = name;
+
+  // Mark active in dropdown
+  document.querySelectorAll('.td-item').forEach(item => item.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+
+  // Close dropdown
+  document.getElementById('tenant-dropdown').classList.remove('open');
+
+  // In a real app this would reload all data scoped to the new tenant
+  showConfirmDialog('Tenant Switched', 'Now viewing data for: ' + name + ' (' + id + '). All screens will show data scoped to this tenant.');
+}
+
+function filterTenants(query) {
+  const items = document.querySelectorAll('.td-item');
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(query.toLowerCase()) ? 'flex' : 'none';
+  });
+}
+
+// Close tenant dropdown on outside click
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.tenant-bar')) {
+    const dd = document.getElementById('tenant-dropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
+
+// Close all modals when clicking the overlay
+document.getElementById('prospect-overlay').addEventListener('click', function() {
+  // Close all floating modals
+  const modals = ['add-account-form', 'sync-config-modal', 'credential-modal', 'confirm-dialog'];
+  modals.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.display = 'none';
+      el.classList.remove('active');
+    }
+  });
+  // Close slide panels
+  document.getElementById('prospect-panel').classList.remove('active');
+  document.getElementById('call-form-panel').classList.remove('active');
+  // Remove overlay
+  this.classList.remove('active');
+});
+</script>
+</body>
+</html>
