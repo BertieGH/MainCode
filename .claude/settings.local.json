@@ -1,0 +1,9 @@
+{
+  "spinnerTipsEnabled": true,
+  "permissions": {
+    "allow": [
+      "Bash(export PATH=\"$HOME/.fnm:$PATH\")",
+      "Bash(fnm:*)"
+    ]
+  }
+}
