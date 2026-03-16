@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./src
+      dockerfile: LeadPulse.Api/Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__AppDb=Server=mysql;Port=3306;Database=leadpulse_app;User=leadpulse;Password=LeadPulse123!
+      - TenantDb__ServerHost=mysql
+      - TenantDb__Port=3306
+      - TenantDb__Username=leadpulse
+      - TenantDb__DefaultPassword=LeadPulse123!
+      - Jwt__Secret=LeadPulse-JWT-Secret-Key-Change-In-Production-Min32Chars!
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: leadpulse
+      MYSQL_PASSWORD: LeadPulse123!
+      MYSQL_DATABASE: leadpulse_app
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql_data:
