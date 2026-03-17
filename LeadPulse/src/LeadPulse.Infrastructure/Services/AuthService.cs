@@ -82,7 +82,7 @@ public class AuthService : IAuthService
         user.LastLoginAt = DateTime.UtcNow;
         await tenantDb.SaveChangesAsync();
 
-        var token = _jwtService.GenerateToken(user.Id, tenantId, user.Role.ToString(), user.Email);
+        var token = _jwtService.GenerateToken(user.Id, tenantId, user.Role.ToString(), user.Email, tenant.Name);
 
         _logger.LogInformation("Tenant user {Email} logged in to tenant {TenantId}", email, tenantId);
 

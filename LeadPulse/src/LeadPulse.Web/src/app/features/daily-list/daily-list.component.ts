@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StrategyService } from '../../core/services/strategy.service';
 import { GeoService } from '../../core/services/geo.service';
+import { ProspectService } from '../../core/services/prospect.service';
 import { StrategyResponse, CreateStrategyRequest, DailyListResponse } from '../../core/models/strategy.model';
 
 interface ColumnDef {
@@ -17,44 +18,36 @@ interface ColumnDef {
   imports: [CommonModule, FormsModule],
   template: `
     <div class="daily-page">
-      <div class="page-header">
-        <h2>Daily Prospect List</h2>
-        <div class="tab-bar">
-          <button class="tab-btn" [class.active]="activeTab === 'list'" (click)="activeTab = 'list'">Daily List</button>
-          <button class="tab-btn" [class.active]="activeTab === 'strategies'" (click)="activeTab = 'strategies'">Strategies</button>
-        </div>
-      </div>
-
       <!-- ==================== DAILY LIST TAB ==================== -->
       <div *ngIf="activeTab === 'list'">
-        <div class="top-bar">
+        <div class="action-bar">
           <select [(ngModel)]="selectedStrategyId" (change)="onStrategyChange()" name="strategy">
             <option [ngValue]="undefined">-- Select Strategy --</option>
             <option *ngFor="let s of strategies" [ngValue]="s.id">
               {{ s.name }} {{ s.isActive ? '' : '(Inactive)' }}
             </option>
           </select>
+          <div *ngIf="selectedStrategy" class="tune-tags">
+            <span class="tune-tag">Score &ge; {{ selectedStrategy.minScore }}</span>
+            <span *ngIf="selectedStrategy.minUrgency" class="tune-tag">{{ selectedStrategy.minUrgency }}+</span>
+            <span *ngIf="selectedStrategy.targetCategories?.length" class="tune-tag">{{ selectedStrategy.targetCategories!.join(', ') }}</span>
+            <span class="tune-tag">Max {{ selectedStrategy.maxDailyProspects }}/day</span>
+          </div>
+          <div class="action-bar-spacer"></div>
+          <button *ngIf="selectedStrategy" class="btn-sm btn-tune" (click)="showTuning = !showTuning">{{ showTuning ? 'Close Tune' : 'Tune Strategy' }}</button>
           <button class="btn-primary" [disabled]="!selectedStrategyId || generating" (click)="generateList()">
             {{ generating ? 'Generating...' : 'Generate Today\\'s List' }}
           </button>
+          <div class="tab-divider"></div>
+          <div class="tab-bar">
+            <button class="tab-btn" [class.active]="true" (click)="activeTab = 'list'">Daily List</button>
+            <button class="tab-btn" (click)="activeTab = 'strategies'">Strategies</button>
+          </div>
         </div>
 
         <!-- Strategy Tune Panel -->
-        <div *ngIf="selectedStrategy" class="tune-panel">
-          <div class="tune-header" (click)="showTuning = !showTuning">
-            <div class="tune-summary">
-              <strong>{{ selectedStrategy.name }}</strong>
-              <span class="tune-tag">Score &ge; {{ selectedStrategy.minScore }}</span>
-              <span *ngIf="selectedStrategy.minUrgency" class="tune-tag">{{ selectedStrategy.minUrgency }}+</span>
-              <span *ngIf="selectedStrategy.targetCategories?.length" class="tune-tag">{{ selectedStrategy.targetCategories!.join(', ') }}</span>
-              <span class="tune-tag">Max {{ selectedStrategy.maxDailyProspects }}/day</span>
-              <span *ngIf="selectedStrategy.targetStates?.length" class="tune-tag">States: {{ selectedStrategy.targetStates!.join(', ') }}</span>
-              <span class="tune-tag">{{ selectedStrategy.targetZipCodes?.length ? selectedStrategy.targetZipCodes!.length + ' zips' : 'All Zip Codes' }}</span>
-            </div>
-            <button class="btn-sm btn-tune">{{ showTuning ? 'Close' : 'Tune Strategy' }}</button>
-          </div>
-
-          <div *ngIf="showTuning" class="tune-body">
+        <div *ngIf="selectedStrategy && showTuning" class="tune-panel">
+          <div class="tune-body">
             <ng-container *ngTemplateOutlet="strategyFormTpl; context: { $implicit: tuneForm, cats: tuneCategoriesText, zips: tuneZipsText, states: tuneSelectedStates, showStates: showTuneStates, counties: tuneCounties, selectedCounty: tuneSelectedCounty, loadingCounties: tuneLoadingCounties, loadingZips: loadingTuneZips, countyZipCount: tuneCountyZipCount, mode: 'tune' }"></ng-container>
             <div class="tune-actions">
               <label class="toggle-label">
@@ -226,12 +219,18 @@ interface ColumnDef {
 
       <!-- ==================== STRATEGIES TAB ==================== -->
       <div *ngIf="activeTab === 'strategies'">
-        <div class="top-bar">
+        <div class="action-bar">
           <div class="strat-view-toggle">
             <button class="btn-sm" [class.active]="stratViewMode === 'card'" (click)="stratViewMode = 'card'">Cards</button>
             <button class="btn-sm" [class.active]="stratViewMode === 'list'" (click)="stratViewMode = 'list'">List</button>
           </div>
           <button class="btn-primary" (click)="showNewForm = !showNewForm">{{ showNewForm ? 'Cancel' : '+ New Strategy' }}</button>
+          <div class="action-bar-spacer"></div>
+          <div class="tab-divider"></div>
+          <div class="tab-bar">
+            <button class="tab-btn" (click)="activeTab = 'list'">Daily List</button>
+            <button class="tab-btn" [class.active]="true" (click)="activeTab = 'strategies'">Strategies</button>
+          </div>
         </div>
 
         <!-- New Strategy Form -->
@@ -389,9 +388,12 @@ interface ColumnDef {
   `,
   styles: [`
     .daily-page{padding:1.5rem}
-    .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
-    .page-header h2{margin:0}
+    .action-bar{display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap}
+    .action-bar select{padding:.4rem .5rem;border:1px solid #d1d5db;border-radius:6px;font-size:.85rem;font-family:inherit}
+    .action-bar-spacer{flex:1}
+    .tab-divider{width:1px;height:28px;background:#e2e8f0;margin:0 .25rem}
     .tab-bar{display:flex;gap:0}
+    .tune-tags{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
     .tab-btn{padding:.5rem 1.25rem;border:1px solid #d1d5db;background:#fff;cursor:pointer;font-weight:500;font-size:.875rem;color:#6b7280}
     .tab-btn:first-child{border-radius:6px 0 0 6px}
     .tab-btn:last-child{border-radius:0 6px 6px 0;border-left:none}
@@ -627,7 +629,11 @@ export class DailyListComponent implements OnInit {
     {code:'WI',name:'Wisconsin'},{code:'WY',name:'Wyoming'},{code:'DC',name:'District of Columbia'}
   ];
 
-  constructor(private strategyService: StrategyService, private geoService: GeoService) {}
+  lookingUp: Record<number, boolean> = {};
+  lookupMsg: Record<number, string> = {};
+  lookupError: Record<number, boolean> = {};
+
+  constructor(private strategyService: StrategyService, private geoService: GeoService, private prospectService: ProspectService) {}
 
   ngOnInit(): void {
     this.loadStrategies();

@@ -18,34 +18,32 @@ interface ColumnDef {
   imports: [CommonModule, FormsModule],
   template: `
     <div class="signals-page">
-      <div class="page-header">
-        <h2>Scraped Signals Log</h2>
-        <div class="actions">
-          <button class="btn-sm" [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">Table</button>
-          <button class="btn-sm" [class.active]="viewMode === 'card'" (click)="viewMode = 'card'">Cards</button>
-          <div class="column-picker-wrapper">
-            <button class="btn-icon" (click)="toggleColumnPicker($event)" title="Show/Hide Columns">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
-            </button>
-            <div class="column-picker" *ngIf="showColumnPicker" (click)="$event.stopPropagation()">
-              <div class="picker-header">Show/Hide Columns</div>
-              <label *ngFor="let col of columns" class="picker-item">
-                <input type="checkbox" [(ngModel)]="col.visible" />
-                {{ col.label }}
-              </label>
-            </div>
+      <div class="action-bar">
+        <button class="btn-secondary" (click)="analyzeAll()" [disabled]="analyzingAll">
+          {{ analyzingAll ? 'Analyzing...' : 'AI Analyze All' }}
+        </button>
+        <button class="btn-icon" (click)="showSettingsModal = true" title="AI Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+        </button>
+        <button class="btn-primary" (click)="reprocess()" [disabled]="reprocessing">
+          {{ reprocessing ? 'Processing...' : 'Reprocess All Signals' }}
+        </button>
+        <div class="action-spacer"></div>
+        <button class="btn-sm" [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">Table</button>
+        <button class="btn-sm" [class.active]="viewMode === 'card'" (click)="viewMode = 'card'">Cards</button>
+        <div class="column-picker-wrapper">
+          <button class="btn-icon" (click)="toggleColumnPicker($event)" title="Show/Hide Columns">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+          </button>
+          <div class="column-picker" *ngIf="showColumnPicker" (click)="$event.stopPropagation()">
+            <div class="picker-header">Show/Hide Columns</div>
+            <label *ngFor="let col of columns" class="picker-item">
+              <input type="checkbox" [(ngModel)]="col.visible" />
+              {{ col.label }}
+            </label>
           </div>
-          <button class="btn-icon" (click)="showSettingsModal = true" title="AI Settings">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-          </button>
-          <button class="btn-secondary" (click)="exportCsv()">Export CSV</button>
-          <button class="btn-secondary" (click)="analyzeAll()" [disabled]="analyzingAll">
-            {{ analyzingAll ? 'Analyzing...' : 'AI Analyze All' }}
-          </button>
-          <button class="btn-primary" (click)="reprocess()" [disabled]="reprocessing">
-            {{ reprocessing ? 'Processing...' : 'Reprocess All Signals' }}
-          </button>
         </div>
+        <button class="btn-secondary" (click)="exportCsv()">Export CSV</button>
       </div>
 
       <!-- Stats Cards -->
@@ -299,9 +297,8 @@ interface ColumnDef {
   `,
   styles: [`
     .signals-page { padding: 1.5rem; }
-    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-    .page-header h2 { margin: 0; }
-    .actions { display: flex; gap: 0.5rem; align-items: center; }
+    .action-bar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .action-spacer { flex: 1; }
     .stats-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
     .stat-card { background: white; border-radius: 8px; padding: 1rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; flex: 1; min-width: 120px; }
     .stat-card.matched { border-left: 4px solid #059669; }

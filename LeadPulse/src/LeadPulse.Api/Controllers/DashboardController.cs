@@ -42,6 +42,29 @@ public class DashboardController : ControllerBase
         var activeSignals = await _tenantDb.Signals
             .CountAsync(s => s.DetectedAt >= today.AddDays(-7));
 
+        // Prior day comparison for trends
+        var yesterday = today.AddDays(-1);
+        var prevProspects = await _tenantDb.Prospects
+            .CountAsync(p => p.CreatedAt >= yesterday && p.CreatedAt < today);
+        var prevCalls = await _tenantDb.CallLogs
+            .CountAsync(c => c.CreatedAt >= yesterday && c.CreatedAt < today);
+        var prevSignals = await _tenantDb.Signals
+            .CountAsync(s => s.DetectedAt >= today.AddDays(-14) && s.DetectedAt < today.AddDays(-7));
+
+        // Previous week conversion rate
+        var prevContacted = await _tenantDb.Prospects
+            .CountAsync(p => p.CreatedAt < today.AddDays(-7) &&
+                (p.Status == ProspectStatus.Contacted || p.Status == ProspectStatus.Converted));
+        var prevConverted = await _tenantDb.Prospects
+            .CountAsync(p => p.CreatedAt < today.AddDays(-7) &&
+                p.Status == ProspectStatus.Converted);
+        var prevConversionRate = prevContacted > 0
+            ? Math.Round((decimal)prevConverted / prevContacted * 100, 1)
+            : 0m;
+
+        static decimal CalcTrend(int current, int prior)
+            => prior > 0 ? Math.Round((decimal)(current - prior) / prior * 100, 1) : 0;
+
         var topProspects = await _tenantDb.Prospects
             .Where(p => p.Status != ProspectStatus.Dismissed && p.Status != ProspectStatus.Converted)
             .OrderByDescending(p => p.CompositeScore)
@@ -94,6 +117,12 @@ public class DashboardController : ControllerBase
             CallsMadeToday = callsMadeToday,
             ConversionRate = conversionRate,
             ActiveSignals = activeSignals,
+            ProspectsTrend = CalcTrend(newProspectsToday, prevProspects),
+            CallsTrend = CalcTrend(callsMadeToday, prevCalls),
+            ConversionTrend = prevConversionRate > 0
+                ? Math.Round(conversionRate - prevConversionRate, 1)
+                : 0,
+            SignalsTrend = CalcTrend(activeSignals, prevSignals),
             TopProspects = topProspects,
             FollowUpReminders = followUps,
             RecentActivity = recentActivity

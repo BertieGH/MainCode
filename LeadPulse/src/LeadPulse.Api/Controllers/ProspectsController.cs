@@ -6,6 +6,7 @@ using LeadPulse.Domain.Entities.Tenant;
 using LeadPulse.Domain.Enums;
 using LeadPulse.Infrastructure.Authorization;
 using LeadPulse.Infrastructure.Data;
+using LeadPulse.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,12 +22,14 @@ public class ProspectsController : ControllerBase
     private readonly TenantDbContext _tenantDb;
     private readonly ITenantContext _tenantContext;
     private readonly IEncryptionService _encryptionService;
+    private readonly ContactLookupService _contactLookupService;
 
-    public ProspectsController(TenantDbContext tenantDb, ITenantContext tenantContext, IEncryptionService encryptionService)
+    public ProspectsController(TenantDbContext tenantDb, ITenantContext tenantContext, IEncryptionService encryptionService, ContactLookupService contactLookupService)
     {
         _tenantDb = tenantDb;
         _tenantContext = tenantContext;
         _encryptionService = encryptionService;
+        _contactLookupService = contactLookupService;
     }
 
     [HttpGet]
@@ -146,6 +149,44 @@ public class ProspectsController : ControllerBase
 
         await _tenantDb.SaveChangesAsync();
         return Ok(MapToResponse(prospect));
+    }
+
+    [HttpPost("{id}/lookup")]
+    public async Task<IActionResult> LookupContact(int id)
+    {
+        if (!_tenantContext.TenantId.HasValue)
+            return BadRequest(new { error = "Tenant context required" });
+
+        var prospect = await _tenantDb.Prospects
+            .Include(p => p.ProspectSignals!)
+            .ThenInclude(ps => ps.Signal)
+            .FirstOrDefaultAsync(p => p.Id == id);
+        if (prospect == null) return NotFound();
+
+        var postUrl = prospect.ProspectSignals?.Select(ps => ps.Signal?.PostUrl).FirstOrDefault(u => u != null);
+
+        var result = await _contactLookupService.LookupAsync(
+            _tenantContext.TenantId.Value, prospect.Name, prospect.Platform, postUrl);
+
+        if (!result.Success)
+            return Ok(new { success = false, error = result.Error, provider = result.Provider });
+
+        if (result.Phone != null && string.IsNullOrEmpty(prospect.Phone)) prospect.Phone = result.Phone;
+        if (result.Email != null && string.IsNullOrEmpty(prospect.Email)) prospect.Email = result.Email;
+        if (result.Company != null && string.IsNullOrEmpty(prospect.Company)) prospect.Company = result.Company;
+        if (result.LinkedInUrl != null && string.IsNullOrEmpty(prospect.LinkedInUrl)) prospect.LinkedInUrl = result.LinkedInUrl;
+
+        prospect.EnrichmentStatus = EnrichmentStatus.Verified;
+        prospect.UpdatedAt = DateTime.UtcNow;
+
+        await _tenantDb.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            provider = result.Provider,
+            prospect = MapToResponse(prospect)
+        });
     }
 
     [HttpPut("{id}/dismiss")]

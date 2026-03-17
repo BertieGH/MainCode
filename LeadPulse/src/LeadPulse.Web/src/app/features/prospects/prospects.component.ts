@@ -16,27 +16,6 @@ interface ColumnDef {
   imports: [CommonModule, FormsModule],
   template: `
     <div class="prospects-page">
-      <div class="page-header">
-        <h2>Prospects</h2>
-        <div class="actions">
-          <button class="btn-sm" [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">Table</button>
-          <button class="btn-sm" [class.active]="viewMode === 'card'" (click)="viewMode = 'card'">Cards</button>
-          <div class="column-picker-wrapper">
-            <button class="btn-icon" title="Show/Hide Columns" (click)="toggleColumnPicker($event)">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
-            </button>
-            <div class="column-picker" *ngIf="showColumnPicker" (click)="$event.stopPropagation()">
-              <div class="picker-header">Show/Hide Columns</div>
-              <label *ngFor="let col of columns" class="picker-item">
-                <input type="checkbox" [(ngModel)]="col.visible" [name]="'col_' + col.key" />
-                {{ col.label }}
-              </label>
-            </div>
-          </div>
-          <button class="btn-secondary" (click)="exportCsv()">Export CSV</button>
-        </div>
-      </div>
-
       <!-- Filters -->
       <div class="filter-bar">
         <select [(ngModel)]="filter.category" (change)="loadProspects()" name="cat">
@@ -64,6 +43,22 @@ interface ColumnDef {
           <option value="Converted">Converted</option>
           <option value="Dismissed">Dismissed</option>
         </select>
+        <div class="filter-spacer"></div>
+        <button class="btn-sm" [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">Table</button>
+        <button class="btn-sm" [class.active]="viewMode === 'card'" (click)="viewMode = 'card'">Cards</button>
+        <div class="column-picker-wrapper">
+          <button class="btn-icon" title="Show/Hide Columns" (click)="toggleColumnPicker($event)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+          </button>
+          <div class="column-picker" *ngIf="showColumnPicker" (click)="$event.stopPropagation()">
+            <div class="picker-header">Show/Hide Columns</div>
+            <label *ngFor="let col of columns" class="picker-item">
+              <input type="checkbox" [(ngModel)]="col.visible" [name]="'col_' + col.key" />
+              {{ col.label }}
+            </label>
+          </div>
+        </div>
+        <button class="btn-secondary" (click)="exportCsv()">Export CSV</button>
       </div>
 
       <!-- Table View -->
@@ -173,10 +168,8 @@ interface ColumnDef {
   `,
   styles: [`
     .prospects-page { padding: 1.5rem; }
-    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-    .page-header h2 { margin: 0; }
-    .actions { display: flex; gap: 0.5rem; align-items: center; }
-    .filter-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .filter-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+    .filter-spacer { flex: 1; }
     .filter-bar select { padding: 0.4rem; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.875rem; }
     .table-card { background: white; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }

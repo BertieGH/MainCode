@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnChanges, SimpleChanges, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SocialAccountService } from '../../core/services/social-account.service';
@@ -15,11 +15,6 @@ import {
   imports: [CommonModule, FormsModule],
   template: `
     <div class="social-page">
-      <div class="page-header">
-        <h2>Social Accounts</h2>
-        <button class="btn-primary" (click)="showAddForm = !showAddForm">Connect Account</button>
-      </div>
-
       <!-- Add Account Form -->
       <div *ngIf="showAddForm" class="form-card">
         <h3>Connect New Account</h3>
@@ -255,9 +250,7 @@ import {
     </div>
   `,
   styles: [`
-    .social-page{padding:1.5rem}
-    .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
-    .page-header h2{margin:0}
+    .social-page{padding:0.75rem 1.5rem 1.5rem}
     .form-card,.account-card,.empty-state{background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
     .form-card{padding:1.5rem;margin-bottom:1.5rem}
     .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -322,8 +315,9 @@ import {
     .test-post-link{font-size:.8rem;color:#2563eb;display:inline-block;margin-top:.25rem}
   `]
 })
-export class SocialAccountsComponent implements OnInit {
+export class SocialAccountsComponent implements OnInit, OnChanges {
   accounts: SocialAccountResponse[] = [];
+  @Input() toggleAdd = 0;
   showAddForm = false;
   formError = '';
 
@@ -344,6 +338,12 @@ export class SocialAccountsComponent implements OnInit {
   testResultsLabel = '';
 
   constructor(private socialService: SocialAccountService) {}
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['toggleAdd'] && !changes['toggleAdd'].firstChange) {
+      this.showAddForm = !this.showAddForm;
+    }
+  }
 
   ngOnInit(): void {
     this.loadAccounts();

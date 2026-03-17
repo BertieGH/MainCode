@@ -22,5 +22,6 @@ export interface DecodedToken {
   email: string;
   role: string;
   tenantId?: string;
+  tenantName?: string;
   exp: number;
 }

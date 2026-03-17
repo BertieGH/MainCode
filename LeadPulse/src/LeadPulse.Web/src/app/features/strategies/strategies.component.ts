@@ -11,7 +11,6 @@ import { StrategyResponse, CreateStrategyRequest } from '../../core/models/strat
   template: `
     <div class="strategies-page">
       <div class="page-header">
-        <h2>Strategies</h2>
         <button class="btn-primary" (click)="showForm = !showForm">New Strategy</button>
       </div>
 

@@ -6,6 +6,10 @@ public class DashboardResponse
     public int CallsMadeToday { get; set; }
     public decimal ConversionRate { get; set; }
     public int ActiveSignals { get; set; }
+    public decimal ProspectsTrend { get; set; }
+    public decimal CallsTrend { get; set; }
+    public decimal ConversionTrend { get; set; }
+    public decimal SignalsTrend { get; set; }
     public List<TopProspectDto> TopProspects { get; set; } = new();
     public List<FollowUpReminderDto> FollowUpReminders { get; set; } = new();
     public List<ActivityDto> RecentActivity { get; set; } = new();
@@ -74,6 +78,9 @@ public class ConversionFunnelDto
     public int TotalProspects { get; set; }
     public int Contacted { get; set; }
     public int Converted { get; set; }
+    public decimal SignalsTrend { get; set; }
+    public decimal ProspectsTrend { get; set; }
+    public decimal ContactedTrend { get; set; }
 }
 
 public class ApiCostDto

@@ -43,6 +43,8 @@ public static class DependencyInjection
         services.AddScoped<ISignalProcessor, SignalProcessor>();
         services.AddScoped<IDailyListGenerator, DailyListGenerator>();
         services.AddScoped<IntentAnalyzerFactory>();
+        services.AddHttpClient();
+        services.AddScoped<ContactLookupService>();
 
         // Platform adapters
         services.AddScoped<ISocialPlatformAdapter, LinkedInAdapter>();

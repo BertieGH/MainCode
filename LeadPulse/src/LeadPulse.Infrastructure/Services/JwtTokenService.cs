@@ -15,7 +15,7 @@ public class JwtTokenService
         _configuration = configuration;
     }
 
-    public string GenerateToken(int userId, int? tenantId, string role, string email)
+    public string GenerateToken(int userId, int? tenantId, string role, string email, string? tenantName = null)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
             _configuration["Jwt:Secret"] ?? throw new InvalidOperationException("JWT secret not configured")));
@@ -30,6 +30,9 @@ public class JwtTokenService
 
         if (tenantId.HasValue)
             claims.Add(new Claim("tenantId", tenantId.Value.ToString()));
+
+        if (!string.IsNullOrEmpty(tenantName))
+            claims.Add(new Claim("tenantName", tenantName));
 
         var token = new JwtSecurityToken(
             issuer: _configuration["Jwt:Issuer"] ?? "LeadPulse",

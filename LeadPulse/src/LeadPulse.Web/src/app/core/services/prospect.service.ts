@@ -36,6 +36,10 @@ export class ProspectService {
     return this.http.put<ProspectResponse>(`${this.baseUrl}/${id}/enrich`, data);
   }
 
+  lookupContact(id: number): Observable<any> {
+    return this.http.post<any>(`${this.baseUrl}/${id}/lookup`, {});
+  }
+
   exportCsv(filter: ProspectFilter = {}): Observable<Blob> {
     let params = new HttpParams();
     Object.entries(filter).forEach(([key, value]) => {

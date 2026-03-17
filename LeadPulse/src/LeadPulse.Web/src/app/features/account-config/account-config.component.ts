@@ -11,19 +11,25 @@ import { environment } from '../../../environments/environment';
   imports: [CommonModule, FormsModule, SocialAccountsComponent],
   template: `
     <div class="config-page">
-      <div class="page-header">
-        <h2>Account Configuration</h2>
-      </div>
-
-      <div class="tab-bar">
-        <button class="tab-btn" [class.active]="activeTab === 'social'" (click)="activeTab = 'social'">Social Accounts</button>
-        <button class="tab-btn" [class.active]="activeTab === 'ai'" (click)="activeTab = 'ai'">AI Config</button>
-        <button class="tab-btn" [class.active]="activeTab === 'contact'" (click)="activeTab = 'contact'">Contact Data Config</button>
+      <div class="tab-row">
+        <div class="tab-bar">
+          <button class="tab-btn" [class.active]="activeTab === 'social'" (click)="activeTab = 'social'">Social Accounts</button>
+          <button class="tab-btn" [class.active]="activeTab === 'ai'" (click)="activeTab = 'ai'">AI Config</button>
+          <button class="tab-btn" [class.active]="activeTab === 'contact'" (click)="activeTab = 'contact'">Contact Data Config</button>
+        </div>
+        <button *ngIf="activeTab === 'social'" class="btn-new-account" (click)="socialToggle = socialToggle + 1">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Account
+        </button>
+        <button *ngIf="activeTab === 'contact'" class="btn-new-account" (click)="showProviderModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Provider
+        </button>
       </div>
 
       <!-- Social Accounts Tab -->
       <div *ngIf="activeTab === 'social'">
-        <app-social-accounts></app-social-accounts>
+        <app-social-accounts [toggleAdd]="socialToggle"></app-social-accounts>
       </div>
 
       <!-- AI Config Tab -->
@@ -215,7 +221,10 @@ import { environment } from '../../../environments/environment';
     .config-page{padding:1.5rem}
     .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
     .page-header h2{margin:0}
-    .tab-bar{display:flex;gap:0;margin-bottom:1.5rem}
+    .tab-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+    .tab-bar{display:flex;gap:0}
+    .btn-new-account{display:flex;align-items:center;gap:.35rem;padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85rem;font-weight:500}
+    .btn-new-account:hover{background:#1d4ed8}
     .tab-btn{padding:.6rem 1.25rem;border:1px solid #d1d5db;background:#fff;cursor:pointer;font-weight:500;font-size:.875rem;color:#6b7280}
     .tab-btn:first-child{border-radius:6px 0 0 6px}
     .tab-btn:last-child{border-radius:0 6px 6px 0;border-left:none}
@@ -272,6 +281,7 @@ import { environment } from '../../../environments/environment';
 })
 export class AccountConfigComponent implements OnInit {
   activeTab: 'social' | 'ai' | 'contact' = 'social';
+  socialToggle = 0;
 
   // AI Config
   aiSettings: any = null;
@@ -381,6 +391,12 @@ export class AccountConfigComponent implements OnInit {
 
   noEnrichmentConfigured(): boolean {
     return this.enrichmentProviders.every(p => !p.form.username && !p.hasPassword);
+  }
+
+  showProviderModal(): void {
+    const unconfigured = this.enrichmentProviders.find(p => !p.form.username && !p.hasPassword);
+    const target = unconfigured || this.enrichmentProviders[0];
+    this.showProviderConfig(target);
   }
 
   showProviderConfig(p: typeof this.enrichmentProviders[0]): void {

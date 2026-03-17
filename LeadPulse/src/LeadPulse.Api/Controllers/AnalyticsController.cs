@@ -59,14 +59,31 @@ public class AnalyticsController : ControllerBase
             .ToListAsync();
 
         // Conversion funnel
+        var currentSignals = await _tenantDb.Signals.CountAsync(s => s.DetectedAt >= since);
+        var currentContacted = await _tenantDb.Prospects.CountAsync(p => p.CreatedAt >= since &&
+            (p.Status == ProspectStatus.Contacted || p.Status == ProspectStatus.Converted));
+        var currentConverted = await _tenantDb.Prospects.CountAsync(p => p.CreatedAt >= since &&
+            p.Status == ProspectStatus.Converted);
+
+        // Prior period for trend comparison
+        var priorStart = since.AddDays(-days);
+        var priorSignals = await _tenantDb.Signals.CountAsync(s => s.DetectedAt >= priorStart && s.DetectedAt < since);
+        var priorProspects = await _tenantDb.Prospects.CountAsync(p => p.CreatedAt >= priorStart && p.CreatedAt < since);
+        var priorContacted = await _tenantDb.Prospects.CountAsync(p => p.CreatedAt >= priorStart && p.CreatedAt < since &&
+            (p.Status == ProspectStatus.Contacted || p.Status == ProspectStatus.Converted));
+
+        static decimal CalcTrend(int current, int prior)
+            => prior > 0 ? Math.Round((decimal)(current - prior) / prior * 100, 1) : 0;
+
         var funnel = new ConversionFunnelDto
         {
-            TotalSignals = await _tenantDb.Signals.CountAsync(s => s.DetectedAt >= since),
+            TotalSignals = currentSignals,
             TotalProspects = totalProspects,
-            Contacted = await _tenantDb.Prospects.CountAsync(p => p.CreatedAt >= since &&
-                (p.Status == ProspectStatus.Contacted || p.Status == ProspectStatus.Converted)),
-            Converted = await _tenantDb.Prospects.CountAsync(p => p.CreatedAt >= since &&
-                p.Status == ProspectStatus.Converted)
+            Contacted = currentContacted,
+            Converted = currentConverted,
+            SignalsTrend = CalcTrend(currentSignals, priorSignals),
+            ProspectsTrend = CalcTrend(totalProspects, priorProspects),
+            ContactedTrend = CalcTrend(currentContacted, priorContacted)
         };
 
         // API costs

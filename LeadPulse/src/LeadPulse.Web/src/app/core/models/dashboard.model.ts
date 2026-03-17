@@ -3,6 +3,10 @@ export interface DashboardResponse {
   callsMadeToday: number;
   conversionRate: number;
   activeSignals: number;
+  prospectsTrend: number;
+  callsTrend: number;
+  conversionTrend: number;
+  signalsTrend: number;
   topProspects: TopProspectDto[];
   followUpReminders: FollowUpReminderDto[];
   recentActivity: ActivityDto[];
@@ -63,6 +67,9 @@ export interface ConversionFunnelDto {
   totalProspects: number;
   contacted: number;
   converted: number;
+  signalsTrend: number;
+  prospectsTrend: number;
+  contactedTrend: number;
 }
 
 export interface ApiCostDto {
