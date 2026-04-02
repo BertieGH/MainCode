@@ -81,6 +81,11 @@ public class EnrichmentSettingsRequest
     public bool IsEnabled { get; set; }
 }
 
+public class TestConnectionRequest
+{
+    public string Provider { get; set; } = string.Empty;
+}
+
 public class EnrichmentSettingsResponse
 {
     public string Provider { get; set; } = string.Empty;

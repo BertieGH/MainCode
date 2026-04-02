@@ -158,11 +158,14 @@ public class DailyListsController : ControllerBase
             Zip = p.Zip,
             Company = p.Company,
             CompositeScore = p.CompositeScore,
+            IntentScore = p.ProspectSignals?.Select(ps => ps.Signal?.IntentScore).Where(s => s.HasValue).Max(),
+            Sentiment = p.ProspectSignals?.Select(ps => ps.Signal?.Sentiment).FirstOrDefault(s => s != null),
             Urgency = p.Urgency.ToString(),
             Category = p.Category,
             Platform = p.Platform,
             SignalSnippet = p.SignalSnippet,
             PostUrl = p.ProspectSignals?.Select(ps => ps.Signal?.PostUrl).FirstOrDefault(u => u != null),
+            EnrichmentStatus = p.EnrichmentStatus.ToString(),
             Status = p.Status.ToString(),
             CreatedAt = p.CreatedAt
         };

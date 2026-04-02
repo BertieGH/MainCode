@@ -38,7 +38,7 @@ interface ColumnDef {
           <div class="column-picker" *ngIf="showColumnPicker" (click)="$event.stopPropagation()">
             <div class="picker-header">Show/Hide Columns</div>
             <label *ngFor="let col of columns" class="picker-item">
-              <input type="checkbox" [(ngModel)]="col.visible" />
+              <input type="checkbox" [(ngModel)]="col.visible" (ngModelChange)="saveColumnSettings()" />
               {{ col.label }}
             </label>
           </div>
@@ -469,7 +469,10 @@ export class SignalsComponent implements OnInit {
 
   constructor(private http: HttpClient) {}
 
+  private readonly COLUMNS_STORAGE_KEY = 'signals_columnVisibility';
+
   ngOnInit(): void {
+    this.loadColumnSettings();
     this.loadStats();
     this.loadSignals();
     this.loadAiSettings();
@@ -507,6 +510,24 @@ export class SignalsComponent implements OnInit {
   getSortIcon(field: string): string {
     if (this.sortBy !== field) return '';
     return this.sortDir === 'asc' ? '\u25B2' : '\u25BC';
+  }
+
+  loadColumnSettings(): void {
+    try {
+      const saved = localStorage.getItem(this.COLUMNS_STORAGE_KEY);
+      if (saved) {
+        const visibility: Record<string, boolean> = JSON.parse(saved);
+        this.columns.forEach(col => {
+          if (visibility.hasOwnProperty(col.key)) col.visible = visibility[col.key];
+        });
+      }
+    } catch {}
+  }
+
+  saveColumnSettings(): void {
+    const visibility: Record<string, boolean> = {};
+    this.columns.forEach(col => visibility[col.key] = col.visible);
+    localStorage.setItem(this.COLUMNS_STORAGE_KEY, JSON.stringify(visibility));
   }
 
   toggleColumnPicker(event: Event): void {

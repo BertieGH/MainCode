@@ -96,7 +96,19 @@ public class ProspectsController : ControllerBase
         });
     }
 
-    [HttpGet("{id}")]
+    [HttpPost("enrichment-settings/test")]
+    public async Task<IActionResult> TestConnection([FromBody] TestConnectionRequest request)
+    {
+        if (!_tenantContext.TenantId.HasValue)
+            return BadRequest(new { error = "Tenant context required" });
+
+        var result = await _contactLookupService.TestConnectionAsync(_tenantContext.TenantId.Value, request.Provider);
+        var message = result.Success ? $"{request.Provider} connection successful" : null;
+        var warning = result.Success && !string.IsNullOrEmpty(result.Error) ? result.Error : null;
+        return Ok(new { success = result.Success, message, warning, error = result.Success ? null : result.Error, provider = result.Provider });
+    }
+
+    [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
         var prospect = await _tenantDb.Prospects
@@ -109,7 +121,7 @@ public class ProspectsController : ControllerBase
         return Ok(MapToResponse(prospect));
     }
 
-    [HttpPut("{id}/status")]
+    [HttpPut("{id:int}/status")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateProspectStatusRequest request)
     {
         var prospect = await _tenantDb.Prospects.FindAsync(id);
@@ -118,10 +130,6 @@ public class ProspectsController : ControllerBase
         if (!Enum.TryParse<ProspectStatus>(request.Status, true, out var newStatus))
             return BadRequest(new { error = $"Invalid status: {request.Status}" });
 
-        // Validate status transitions
-        if (!IsValidTransition(prospect.Status, newStatus))
-            return BadRequest(new { error = $"Cannot transition from {prospect.Status} to {newStatus}" });
-
         prospect.Status = newStatus;
         prospect.UpdatedAt = DateTime.UtcNow;
         await _tenantDb.SaveChangesAsync();
@@ -129,7 +137,7 @@ public class ProspectsController : ControllerBase
         return Ok(MapToResponse(prospect));
     }
 
-    [HttpPut("{id}/enrich")]
+    [HttpPut("{id:int}/enrich")]
     public async Task<IActionResult> Enrich(int id, [FromBody] EnrichProspectRequest request)
     {
         var prospect = await _tenantDb.Prospects.FindAsync(id);
@@ -151,7 +159,7 @@ public class ProspectsController : ControllerBase
         return Ok(MapToResponse(prospect));
     }
 
-    [HttpPost("{id}/lookup")]
+    [HttpPost("{id:int}/lookup")]
     public async Task<IActionResult> LookupContact(int id)
     {
         if (!_tenantContext.TenantId.HasValue)
@@ -166,7 +174,8 @@ public class ProspectsController : ControllerBase
         var postUrl = prospect.ProspectSignals?.Select(ps => ps.Signal?.PostUrl).FirstOrDefault(u => u != null);
 
         var result = await _contactLookupService.LookupAsync(
-            _tenantContext.TenantId.Value, prospect.Name, prospect.Platform, postUrl);
+            _tenantContext.TenantId.Value, prospect.Name, prospect.Platform, postUrl,
+            prospect.City, prospect.State, prospect.Company);
 
         if (!result.Success)
             return Ok(new { success = false, error = result.Error, provider = result.Provider });
@@ -189,7 +198,7 @@ public class ProspectsController : ControllerBase
         });
     }
 
-    [HttpPut("{id}/dismiss")]
+    [HttpPut("{id:int}/dismiss")]
     public async Task<IActionResult> Dismiss(int id)
     {
         var prospect = await _tenantDb.Prospects.FindAsync(id);

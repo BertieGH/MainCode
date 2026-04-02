@@ -49,14 +49,41 @@ import { environment } from '../../../environments/environment';
               </select>
             </div>
             <div class="form-group" *ngIf="aiForm.aiProvider !== 'Local'">
-              <label>API Key</label>
+              <label>API Key
+                <span *ngIf="aiSettings?.hasApiKey" class="key-status key-ok" title="API key is stored">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  Stored
+                </span>
+                <span *ngIf="aiSettings && !aiSettings.hasApiKey" class="key-status key-missing" title="No API key stored">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Not set
+                </span>
+              </label>
               <input type="password" [(ngModel)]="aiForm.apiKey" name="aiKey"
                      [placeholder]="aiSettings?.hasApiKey ? '(key saved — enter new to update)' : 'Enter API key'" />
             </div>
             <div class="form-group" *ngIf="aiForm.aiProvider !== 'Local'">
               <label>Model</label>
-              <input type="text" [(ngModel)]="aiForm.aiModel" name="aiModel"
-                     [placeholder]="aiForm.aiProvider === 'Claude' ? 'claude-sonnet-4-6' : aiForm.aiProvider === 'Google' ? 'gemini-2.0-flash' : 'gpt-4o-mini'" />
+              <select [(ngModel)]="aiForm.aiModel" name="aiModel">
+                <ng-container *ngIf="aiForm.aiProvider === 'Claude'">
+                  <option value="claude-sonnet-4-6-20250514">Claude Sonnet 4.6 (Recommended)</option>
+                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Fast/Cheap)</option>
+                  <option value="claude-opus-4-6-20250514">Claude Opus 4.6 (Most Capable)</option>
+                </ng-container>
+                <ng-container *ngIf="aiForm.aiProvider === 'OpenAI'">
+                  <option value="gpt-4o-mini">GPT-4o Mini (Recommended)</option>
+                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Cheapest)</option>
+                </ng-container>
+                <ng-container *ngIf="aiForm.aiProvider === 'Google'">
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (Recommended)</option>
+                  <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
+                  <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash</option>
+                  <option value="gemini-2.5-pro-preview-05-06">Gemini 2.5 Pro</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Cheapest)</option>
+                </ng-container>
+              </select>
             </div>
           </div>
 
@@ -76,6 +103,9 @@ import { environment } from '../../../environments/environment';
           <div class="form-actions">
             <button class="btn-primary" (click)="saveAiSettings()" [disabled]="savingAi">
               {{ savingAi ? 'Saving...' : 'Save AI Settings' }}
+            </button>
+            <button *ngIf="aiForm.aiProvider !== 'Local'" class="btn-sm btn-test" (click)="testAiKey()" [disabled]="testingAi" style="margin-left:.5rem">
+              {{ testingAi ? 'Testing...' : 'Test Key' }}
             </button>
           </div>
         </div>
@@ -249,6 +279,12 @@ import { environment } from '../../../environments/environment';
     .btn-primary{padding:.5rem 1rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer}
     .btn-primary:hover{background:#1d4ed8}
     .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+    .btn-test{padding:.45rem .75rem;background:#f8fafc;color:#334155;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;font-size:.85rem}
+    .btn-test:hover{background:#e2e8f0}
+    .btn-test:disabled{opacity:.5;cursor:not-allowed}
+    .key-status{display:inline-flex;align-items:center;gap:3px;font-size:.75rem;font-weight:500;margin-left:.5rem;vertical-align:middle}
+    .key-ok{color:#16a34a}
+    .key-missing{color:#ef4444}
     .btn-secondary{padding:.5rem 1rem;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:4px;cursor:pointer}
     .btn-sm{padding:.3rem .6rem;font-size:.75rem;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#fff}
     .btn-accent{color:#2563eb;border-color:#2563eb}
@@ -287,6 +323,7 @@ export class AccountConfigComponent implements OnInit {
   aiSettings: any = null;
   aiForm = { aiProvider: 'Local', apiKey: '', aiModel: '' };
   savingAi = false;
+  testingAi = false;
   aiMessage = '';
   aiError = false;
 
@@ -341,8 +378,13 @@ export class AccountConfigComponent implements OnInit {
 
   onProviderChange(): void {
     this.aiForm.apiKey = '';
-    this.aiForm.aiModel = '';
     this.aiMessage = '';
+    const defaults: Record<string, string> = {
+      'Claude': 'claude-sonnet-4-6-20250514',
+      'OpenAI': 'gpt-4o-mini',
+      'Google': 'gemini-2.0-flash'
+    };
+    this.aiForm.aiModel = defaults[this.aiForm.aiProvider] || '';
   }
 
   saveAiSettings(): void {
@@ -370,6 +412,25 @@ export class AccountConfigComponent implements OnInit {
         this.aiMessage = 'Failed to save AI settings';
         this.aiError = true;
         this.savingAi = false;
+      }
+    });
+  }
+
+  testAiKey(): void {
+    this.testingAi = true;
+    this.aiMessage = '';
+    this.aiError = false;
+
+    this.http.post<any>(`${this.apiUrl}/signals/ai-settings/test`, {}).subscribe({
+      next: (res) => {
+        this.testingAi = false;
+        this.aiMessage = res.success ? res.message : res.error;
+        this.aiError = !res.success;
+      },
+      error: () => {
+        this.testingAi = false;
+        this.aiMessage = 'Failed to test API key';
+        this.aiError = true;
       }
     });
   }
@@ -439,12 +500,20 @@ export class AccountConfigComponent implements OnInit {
     }
     p.saving = true;
     p.message = '';
-    // Simulate test (actual implementation would call a backend test endpoint)
-    setTimeout(() => {
-      p.message = `${p.provider} connection test — credentials saved and ready`;
-      p.error = false;
-      p.saving = false;
-    }, 1000);
+    this.http.post<any>(`${this.apiUrl}/prospects/enrichment-settings/test`, { provider: p.provider }).subscribe({
+      next: (res) => {
+        p.message = res.success
+          ? (res.warning ? `${p.provider} connected — ${res.warning}` : `${p.provider} connection successful`)
+          : (res.error || 'Connection test failed');
+        p.error = !res.success;
+        p.saving = false;
+      },
+      error: () => {
+        p.message = `Failed to test ${p.provider} connection`;
+        p.error = true;
+        p.saving = false;
+      }
+    });
   }
 
   saveEnrichmentProvider(p: typeof this.enrichmentProviders[0]): void {

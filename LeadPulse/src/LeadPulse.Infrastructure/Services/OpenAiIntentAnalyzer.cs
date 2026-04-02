@@ -43,9 +43,21 @@ public class OpenAiIntentAnalyzer : IIntentAnalyzer
         try
         {
             var response = await _httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
             var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("OpenAI API error {Status}: {Body}", response.StatusCode, responseJson);
+                var errMsg = response.StatusCode.ToString();
+                try
+                {
+                    using var errDoc = JsonDocument.Parse(responseJson);
+                    if (errDoc.RootElement.TryGetProperty("error", out var errObj) && errObj.TryGetProperty("message", out var msg))
+                        errMsg = msg.GetString() ?? errMsg;
+                } catch { }
+                throw new HttpRequestException($"OpenAI API: {errMsg}", null, response.StatusCode);
+            }
+
             using var doc = JsonDocument.Parse(responseJson);
 
             var textContent = doc.RootElement

@@ -18,7 +18,7 @@ public class ClaudeIntentAnalyzer : IIntentAnalyzer
     {
         _httpClient = httpClient;
         _apiKey = apiKey;
-        _model = string.IsNullOrEmpty(model) ? "claude-sonnet-4-6" : model;
+        _model = string.IsNullOrEmpty(model) ? "claude-sonnet-4-6-20250514" : model;
         _logger = logger;
     }
 
@@ -44,9 +44,22 @@ public class ClaudeIntentAnalyzer : IIntentAnalyzer
         try
         {
             var response = await _httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
             var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Claude API error {Status}: {Body}", response.StatusCode, responseJson);
+                // Extract error message from Anthropic response
+                var errMsg = response.StatusCode.ToString();
+                try
+                {
+                    using var errDoc = JsonDocument.Parse(responseJson);
+                    if (errDoc.RootElement.TryGetProperty("error", out var errObj) && errObj.TryGetProperty("message", out var msg))
+                        errMsg = msg.GetString() ?? errMsg;
+                } catch { }
+                throw new HttpRequestException($"Claude API: {errMsg}", null, response.StatusCode);
+            }
+
             using var doc = JsonDocument.Parse(responseJson);
 
             var textContent = doc.RootElement

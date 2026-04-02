@@ -83,7 +83,7 @@ interface ColumnDef {
                   <div *ngIf="showColumnPicker" class="column-picker" (click)="$event.stopPropagation()">
                     <div class="picker-header">Show / Hide Columns</div>
                     <label *ngFor="let col of columns" class="picker-item">
-                      <input type="checkbox" [(ngModel)]="col.visible" [name]="'col_' + col.key">
+                      <input type="checkbox" [(ngModel)]="col.visible" [name]="'col_' + col.key" (ngModelChange)="saveColumnSettings()">
                       {{ col.label }}
                     </label>
                   </div>
@@ -160,11 +160,18 @@ interface ColumnDef {
                 <td *ngIf="isVisible('phone')">{{ item.prospect.phone || '—' }}</td>
                 <td *ngIf="isVisible('company')">{{ item.prospect.company || '—' }}</td>
                 <td class="actions-cell">
+                  <button class="btn-sm btn-view" (click)="viewProspect(item.prospect)">View</button>
                   <a *ngIf="item.prospect.postUrl" [href]="item.prospect.postUrl" target="_blank" class="btn-sm btn-link">Link</a>
-                  <button *ngIf="item.status === 'New'" class="btn-sm" (click)="updateStatus(item.id, 'Viewed')">Mark Viewed</button>
-                  <button *ngIf="item.status === 'Viewed'" class="btn-sm btn-accent" (click)="updateStatus(item.id, 'Contacted')">Contacted</button>
-                  <button *ngIf="item.status === 'Contacted'" class="btn-sm btn-success" (click)="updateStatus(item.id, 'Converted')">Converted</button>
-                  <button *ngIf="item.status !== 'Dismissed' && item.status !== 'Converted'" class="btn-sm btn-danger" (click)="updateStatus(item.id, 'Dismissed')">Dismiss</button>
+                  <button *ngIf="item.prospect.enrichmentStatus === 'Pending' || item.prospect.enrichmentStatus === 'Failed'" class="btn-sm btn-enrich" (click)="enrichProspect(item)" [disabled]="lookingUp[item.prospect.id]">{{ lookingUp[item.prospect.id] ? 'Enriching...' : 'Enrich' }}</button>
+                  <span *ngIf="item.prospect.enrichmentStatus === 'Verified'" class="enrich-badge enrich-verified" title="Contact data verified">&#10003;</span>
+                  <span *ngIf="lookupMsg[item.prospect.id]" [class]="lookupError[item.prospect.id] ? 'enrich-msg-error' : 'enrich-msg-ok'">{{ lookupMsg[item.prospect.id] }}</span>
+                  <select class="status-select" [ngModel]="item.status" (ngModelChange)="updateStatus(item.id, $event)" [name]="'status_' + item.id">
+                    <option value="New">New</option>
+                    <option value="Viewed">Viewed</option>
+                    <option value="Contacted">Contacted</option>
+                    <option value="Converted">Converted</option>
+                    <option value="Dismissed">Dismissed</option>
+                  </select>
                 </td>
               </tr>
             </tbody>
@@ -198,12 +205,19 @@ interface ColumnDef {
                   <small *ngIf="item.prospect.email">{{ item.prospect.email }}</small>
                 </div>
                 <div class="dl-card-actions">
+                  <button class="btn-sm btn-view" (click)="viewProspect(item.prospect)">View</button>
                   <a *ngIf="item.prospect.postUrl" [href]="item.prospect.postUrl" target="_blank" class="btn-sm btn-link">Link</a>
-                  <button *ngIf="item.status === 'New'" class="btn-sm" (click)="updateStatus(item.id, 'Viewed')">Viewed</button>
-                  <button *ngIf="item.status === 'Viewed'" class="btn-sm btn-accent" (click)="updateStatus(item.id, 'Contacted')">Contacted</button>
-                  <button *ngIf="item.status === 'Contacted'" class="btn-sm btn-success" (click)="updateStatus(item.id, 'Converted')">Converted</button>
-                  <button *ngIf="item.status !== 'Dismissed' && item.status !== 'Converted'" class="btn-sm btn-danger" (click)="updateStatus(item.id, 'Dismissed')">Dismiss</button>
+                  <button *ngIf="item.prospect.enrichmentStatus === 'Pending' || item.prospect.enrichmentStatus === 'Failed'" class="btn-sm btn-enrich" (click)="enrichProspect(item)" [disabled]="lookingUp[item.prospect.id]">{{ lookingUp[item.prospect.id] ? 'Enriching...' : 'Enrich' }}</button>
+                  <span *ngIf="item.prospect.enrichmentStatus === 'Verified'" class="enrich-badge enrich-verified" title="Contact data verified">&#10003;</span>
+                  <select class="status-select" [ngModel]="item.status" (ngModelChange)="updateStatus(item.id, $event)" [name]="'cstatus_' + item.id">
+                    <option value="New">New</option>
+                    <option value="Viewed">Viewed</option>
+                    <option value="Contacted">Contacted</option>
+                    <option value="Converted">Converted</option>
+                    <option value="Dismissed">Dismissed</option>
+                  </select>
                 </div>
+                <div *ngIf="lookupMsg[item.prospect.id]" [class]="lookupError[item.prospect.id] ? 'enrich-msg-error' : 'enrich-msg-ok'" style="margin-top:.3rem;font-size:.75rem">{{ lookupMsg[item.prospect.id] }}</div>
               </div>
             </div>
           </div>
@@ -309,6 +323,38 @@ interface ColumnDef {
         </div>
 
         <p *ngIf="strategies.length === 0 && !showNewForm" class="empty-text">No strategies configured yet. Click "+ New Strategy" to create one.</p>
+      </div>
+
+      <!-- Prospect View Modal -->
+      <div *ngIf="viewingProspect" class="prospect-modal-overlay" (click)="viewingProspect = null">
+        <div class="prospect-modal" (click)="$event.stopPropagation()">
+          <h3>{{ viewingProspect.name }}</h3>
+          <div class="modal-grid">
+            <span class="label">Score</span><span class="value">{{ viewingProspect.compositeScore }}</span>
+            <span class="label">Intent</span><span class="value">{{ viewingProspect.intentScore ?? '—' }}</span>
+            <span class="label">Urgency</span><span class="value">{{ viewingProspect.urgency }}</span>
+            <span class="label">Category</span><span class="value">{{ viewingProspect.category || '—' }}</span>
+            <span class="label">Platform</span><span class="value">{{ viewingProspect.platform || '—' }}</span>
+            <span class="label">Status</span><span class="value">{{ viewingProspect.status }}</span>
+            <span class="label">City</span><span class="value">{{ viewingProspect.city || '—' }}</span>
+            <span class="label">State</span><span class="value">{{ viewingProspect.state || '—' }}</span>
+            <span class="label">Zip</span><span class="value">{{ viewingProspect.zip || '—' }}</span>
+            <span class="label">Phone</span><span class="value">{{ viewingProspect.phone || '—' }}</span>
+            <span class="label">Email</span><span class="value">{{ viewingProspect.email || '—' }}</span>
+            <span class="label">Company</span><span class="value">{{ viewingProspect.company || '—' }}</span>
+            <span class="label">LinkedIn</span><span class="value"><a *ngIf="viewingProspect.linkedInUrl" [href]="viewingProspect.linkedInUrl" target="_blank">{{ viewingProspect.linkedInUrl }}</a><span *ngIf="!viewingProspect.linkedInUrl">—</span></span>
+            <span class="label">Enrichment</span><span class="value">{{ viewingProspect.enrichmentStatus || '—' }}</span>
+          </div>
+          <div *ngIf="viewingProspect.signalSnippet" class="modal-signal">
+            <strong>Signal:</strong> {{ viewingProspect.signalSnippet }}
+          </div>
+          <div *ngIf="viewingProspect.postUrl" style="margin-bottom:1rem">
+            <a [href]="viewingProspect.postUrl" target="_blank" class="btn-sm btn-link">View Original Post</a>
+          </div>
+          <div class="modal-actions">
+            <button class="btn-sm" (click)="viewingProspect = null">Close</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -534,6 +580,24 @@ interface ColumnDef {
     .sort-icon{font-size:.7rem;margin-left:2px;color:#9ca3af}
     .filter-bar{display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap}
     .filter-bar select{padding:.35rem .5rem;border:1px solid #d1d5db;border-radius:4px;font-size:.8rem}
+    .btn-enrich{color:#7c3aed;border-color:#7c3aed;font-weight:600}
+    .btn-enrich:hover{background:#f5f3ff}
+    .btn-enrich:disabled{opacity:.5;cursor:not-allowed}
+    .enrich-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;font-size:.7rem;font-weight:700}
+    .enrich-verified{background:#d1fae5;color:#059669}
+    .enrich-msg-ok{font-size:.7rem;color:#059669;margin-left:.25rem}
+    .enrich-msg-error{font-size:.7rem;color:#dc2626;margin-left:.25rem}
+    .status-select{padding:.2rem .3rem;font-size:.75rem;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer}
+    .btn-view{color:#2563eb;border-color:#2563eb;font-weight:600}
+    .btn-view:hover{background:#eff6ff}
+    .prospect-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:center;justify-content:center}
+    .prospect-modal{background:#fff;border-radius:12px;padding:1.5rem;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.2)}
+    .prospect-modal h3{margin:0 0 1rem}
+    .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem .75rem;font-size:.85rem;margin-bottom:1rem}
+    .modal-grid .label{font-weight:600;color:#374151}
+    .modal-grid .value{color:#6b7280}
+    .modal-signal{background:#f9fafb;border-radius:6px;padding:.75rem;font-size:.85rem;color:#374151;margin-bottom:1rem}
+    .modal-actions{display:flex;gap:.5rem;justify-content:flex-end}
   `]
 })
 export class DailyListComponent implements OnInit {
@@ -568,6 +632,8 @@ export class DailyListComponent implements OnInit {
     { key: 'phone', label: 'Phone', visible: false },
     { key: 'company', label: 'Company', visible: false },
   ];
+
+  private readonly COLUMNS_STORAGE_KEY = 'dailyList_columnVisibility';
 
   // Sorting
   sortBy: string = 'score';
@@ -632,10 +698,12 @@ export class DailyListComponent implements OnInit {
   lookingUp: Record<number, boolean> = {};
   lookupMsg: Record<number, string> = {};
   lookupError: Record<number, boolean> = {};
+  viewingProspect: any = null;
 
   constructor(private strategyService: StrategyService, private geoService: GeoService, private prospectService: ProspectService) {}
 
   ngOnInit(): void {
+    this.loadColumnSettings();
     this.loadStrategies();
   }
 
@@ -917,11 +985,65 @@ export class DailyListComponent implements OnInit {
     return text ? text.split(',').map(z => z.trim()).filter(z => z).length : 0;
   }
 
+  enrichProspect(item: any): void {
+    const prospectId = item.prospect.id;
+    this.lookingUp[prospectId] = true;
+    this.lookupMsg[prospectId] = '';
+    this.lookupError[prospectId] = false;
+
+    this.prospectService.lookupContact(prospectId).subscribe({
+      next: (res: any) => {
+        this.lookingUp[prospectId] = false;
+        if (res.success) {
+          item.prospect = res.prospect;
+          this.lookupMsg[prospectId] = 'Contact data enriched';
+          this.lookupError[prospectId] = false;
+        } else {
+          this.lookupMsg[prospectId] = res.error || 'Enrichment failed';
+          this.lookupError[prospectId] = true;
+          item.prospect.enrichmentStatus = 'Failed';
+        }
+        setTimeout(() => { this.lookupMsg[prospectId] = ''; }, 4000);
+      },
+      error: () => {
+        this.lookingUp[prospectId] = false;
+        this.lookupMsg[prospectId] = 'Enrichment request failed';
+        this.lookupError[prospectId] = true;
+        item.prospect.enrichmentStatus = 'Failed';
+        setTimeout(() => { this.lookupMsg[prospectId] = ''; }, 4000);
+      }
+    });
+  }
+
+  viewProspect(prospect: any): void {
+    this.viewingProspect = prospect;
+  }
+
   updateStatus(itemId: number, status: string): void {
     this.strategyService.updateItemStatus(itemId, status).subscribe(() => this.loadList());
   }
 
   // Column picker
+  loadColumnSettings(): void {
+    try {
+      const saved = localStorage.getItem(this.COLUMNS_STORAGE_KEY);
+      if (saved) {
+        const visibility: Record<string, boolean> = JSON.parse(saved);
+        this.columns.forEach(col => {
+          if (visibility.hasOwnProperty(col.key)) {
+            col.visible = visibility[col.key];
+          }
+        });
+      }
+    } catch {}
+  }
+
+  saveColumnSettings(): void {
+    const visibility: Record<string, boolean> = {};
+    this.columns.forEach(col => visibility[col.key] = col.visible);
+    localStorage.setItem(this.COLUMNS_STORAGE_KEY, JSON.stringify(visibility));
+  }
+
   toggleColumnPicker($event: Event): void {
     $event.stopPropagation();
     this.showColumnPicker = !this.showColumnPicker;

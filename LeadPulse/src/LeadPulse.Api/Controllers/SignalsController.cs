@@ -202,8 +202,21 @@ public class SignalsController : ControllerBase
             return NotFound(new { error = "Signal not found" });
 
         var settings = await _tenantDb.AiSettings.FirstOrDefaultAsync();
-        var analyzer = _analyzerFactory.Create(settings, _tenantContext.TenantId.Value);
-        var result = await analyzer.AnalyzeAsync(signal.PostContent, signal.Platform);
+
+        IntentAnalysisResult result;
+        try
+        {
+            var analyzer = _analyzerFactory.Create(settings, _tenantContext.TenantId.Value);
+            result = await analyzer.AnalyzeAsync(signal.PostContent, signal.Platform);
+        }
+        catch (HttpRequestException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
 
         signal.IntentScore = result.IntentScore;
         signal.IntentCategory = result.IntentCategory;
@@ -357,5 +370,35 @@ public class SignalsController : ControllerBase
             AiModel = settings.AiModel,
             UpdatedAt = settings.UpdatedAt
         });
+    }
+
+    [HttpPost("ai-settings/test")]
+    public async Task<IActionResult> TestAiKey()
+    {
+        if (!_tenantContext.TenantId.HasValue)
+            return BadRequest(new { error = "Tenant context required" });
+
+        var settings = await _tenantDb.AiSettings.FirstOrDefaultAsync();
+        if (settings == null || string.IsNullOrEmpty(settings.EncryptedApiKey))
+            return BadRequest(new { success = false, error = "No API key configured. Save your settings first." });
+
+        try
+        {
+            var analyzer = _analyzerFactory.Create(settings, _tenantContext.TenantId.Value);
+            var result = await analyzer.AnalyzeAsync("I just had a fender bender and need to file a claim on my auto insurance.", "Test");
+            return Ok(new { success = true, message = $"Key is valid. Test analysis returned: {result.IntentCategory} (score: {result.IntentScore})" });
+        }
+        catch (HttpRequestException ex)
+        {
+            return Ok(new { success = false, error = $"{ex.Message}" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Ok(new { success = false, error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { success = false, error = $"Test failed: {ex.Message}" });
+        }
     }
 }

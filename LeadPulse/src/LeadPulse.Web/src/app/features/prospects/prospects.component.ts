@@ -53,7 +53,7 @@ interface ColumnDef {
           <div class="column-picker" *ngIf="showColumnPicker" (click)="$event.stopPropagation()">
             <div class="picker-header">Show/Hide Columns</div>
             <label *ngFor="let col of columns" class="picker-item">
-              <input type="checkbox" [(ngModel)]="col.visible" [name]="'col_' + col.key" />
+              <input type="checkbox" [(ngModel)]="col.visible" [name]="'col_' + col.key" (ngModelChange)="saveColumnSettings()" />
               {{ col.label }}
             </label>
           </div>
@@ -98,9 +98,15 @@ interface ColumnDef {
               <td *ngIf="isVisible('enrichment')">{{ p.enrichmentStatus || '—' }}</td>
               <td *ngIf="isVisible('createdAt')">{{ p.createdAt | date:'short' }}</td>
               <td class="actions-cell">
-                <button class="btn-sm" (click)="selectProspect(p)">View</button>
+                <button class="btn-sm btn-view" (click)="selectProspect(p)">View</button>
                 <a *ngIf="p.postUrl" [href]="p.postUrl" target="_blank" class="btn-sm btn-link">Link</a>
-                <button *ngIf="p.status !== 'Dismissed'" class="btn-sm btn-danger" (click)="dismiss(p)">Dismiss</button>
+                <select class="status-select" [ngModel]="p.status" (ngModelChange)="changeStatus(p, $event)" [name]="'pstatus_' + p.id">
+                  <option value="New">New</option>
+                  <option value="Viewed">Viewed</option>
+                  <option value="Contacted">Contacted</option>
+                  <option value="Converted">Converted</option>
+                  <option value="Dismissed">Dismissed</option>
+                </select>
               </td>
             </tr>
           </tbody>
@@ -159,8 +165,13 @@ interface ColumnDef {
           </div>
           <div class="form-actions">
             <button class="btn-secondary" (click)="selectedProspect = null">Close</button>
-            <button *ngIf="selectedProspect.status === 'New'" class="btn-primary" (click)="markViewed()">Mark Viewed</button>
-            <button *ngIf="selectedProspect.status === 'Viewed'" class="btn-primary" (click)="markContacted()">Mark Contacted</button>
+            <select class="status-select" [ngModel]="selectedProspect.status" (ngModelChange)="changeStatus(selectedProspect!, $event)" [name]="'detailStatus'">
+              <option value="New">New</option>
+              <option value="Viewed">Viewed</option>
+              <option value="Contacted">Contacted</option>
+              <option value="Converted">Converted</option>
+              <option value="Dismissed">Dismissed</option>
+            </select>
           </div>
         </div>
       </div>
@@ -218,6 +229,9 @@ interface ColumnDef {
     .btn-sm.active { background: #2563eb; color: white; border-color: #2563eb; }
     .btn-danger { color: #dc2626; border-color: #dc2626; }
     .btn-link { color: #2563eb; border-color: #2563eb; text-decoration: none; }
+    .btn-view { color: #2563eb; border-color: #2563eb; font-weight: 600; }
+    .btn-view:hover { background: #eff6ff; }
+    .status-select { padding: .2rem .3rem; font-size: .75rem; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; cursor: pointer; }
     /* Column Picker */
     .column-picker-wrapper{position:relative;display:inline-block}
     .column-picker{position:absolute;top:100%;right:0;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:100;min-width:180px;padding:.5rem 0}
@@ -271,7 +285,9 @@ export class ProspectsComponent implements OnInit {
 
   constructor(private prospectService: ProspectService) {}
 
-  ngOnInit(): void { this.loadProspects(); }
+  private readonly COLUMNS_STORAGE_KEY = 'prospects_columnVisibility';
+
+  ngOnInit(): void { this.loadColumnSettings(); this.loadProspects(); }
 
   loadProspects(): void {
     this.prospectService.getAll(this.filter).subscribe(res => {
@@ -288,18 +304,9 @@ export class ProspectsComponent implements OnInit {
     this.prospectService.dismiss(p.id).subscribe(() => this.loadProspects());
   }
 
-  markViewed(): void {
-    if (!this.selectedProspect) return;
-    this.prospectService.updateStatus(this.selectedProspect.id, 'Viewed').subscribe(updated => {
-      this.selectedProspect = updated;
-      this.loadProspects();
-    });
-  }
-
-  markContacted(): void {
-    if (!this.selectedProspect) return;
-    this.prospectService.updateStatus(this.selectedProspect.id, 'Contacted').subscribe(updated => {
-      this.selectedProspect = updated;
+  changeStatus(p: ProspectResponse, newStatus: string): void {
+    this.prospectService.updateStatus(p.id, newStatus).subscribe(updated => {
+      if (this.selectedProspect?.id === p.id) this.selectedProspect = updated;
       this.loadProspects();
     });
   }
@@ -331,6 +338,24 @@ export class ProspectsComponent implements OnInit {
   }
 
   // Column Picker
+  loadColumnSettings(): void {
+    try {
+      const saved = localStorage.getItem(this.COLUMNS_STORAGE_KEY);
+      if (saved) {
+        const visibility: Record<string, boolean> = JSON.parse(saved);
+        this.columns.forEach(col => {
+          if (visibility.hasOwnProperty(col.key)) col.visible = visibility[col.key];
+        });
+      }
+    } catch {}
+  }
+
+  saveColumnSettings(): void {
+    const visibility: Record<string, boolean> = {};
+    this.columns.forEach(col => visibility[col.key] = col.visible);
+    localStorage.setItem(this.COLUMNS_STORAGE_KEY, JSON.stringify(visibility));
+  }
+
   toggleColumnPicker($event: Event): void {
     $event.stopPropagation();
     this.showColumnPicker = !this.showColumnPicker;
