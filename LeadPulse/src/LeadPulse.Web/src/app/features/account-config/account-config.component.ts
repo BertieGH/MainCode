@@ -66,9 +66,9 @@ import { environment } from '../../../environments/environment';
               <label>Model</label>
               <select [(ngModel)]="aiForm.aiModel" name="aiModel">
                 <ng-container *ngIf="aiForm.aiProvider === 'Claude'">
-                  <option value="claude-sonnet-4-6-20250514">Claude Sonnet 4.6 (Recommended)</option>
+                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Recommended)</option>
                   <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Fast/Cheap)</option>
-                  <option value="claude-opus-4-6-20250514">Claude Opus 4.6 (Most Capable)</option>
+                  <option value="claude-opus-4-6">Claude Opus 4.6 (Most Capable)</option>
                 </ng-container>
                 <ng-container *ngIf="aiForm.aiProvider === 'OpenAI'">
                   <option value="gpt-4o-mini">GPT-4o Mini (Recommended)</option>
@@ -106,6 +106,59 @@ import { environment } from '../../../environments/environment';
             </button>
             <button *ngIf="aiForm.aiProvider !== 'Local'" class="btn-sm btn-test" (click)="testAiKey()" [disabled]="testingAi" style="margin-left:.5rem">
               {{ testingAi ? 'Testing...' : 'Test Key' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="config-card" style="margin-top:1.25rem">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#0a66c2" style="vertical-align:middle;margin-right:6px"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+            LinkedIn Scraper Settings
+          </h3>
+          <p class="help-text">Configure the Claude API key used for LinkedIn profile &amp; post scraping. This uses Claude Vision to extract structured data from LinkedIn page screenshots.</p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Claude API Key
+                <span *ngIf="scraperSettings?.hasApiKey" class="key-status key-ok">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  Stored
+                </span>
+                <span *ngIf="scraperSettings && !scraperSettings.hasApiKey" class="key-status key-missing">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Not set
+                </span>
+              </label>
+              <input type="password" [(ngModel)]="scraperForm.apiKey" name="scraperKey"
+                     [placeholder]="scraperSettings?.hasApiKey ? '(key saved — enter new to update)' : 'Enter Claude API key (sk-ant-...)'" />
+            </div>
+            <div class="form-group">
+              <label>Claude Model</label>
+              <select [(ngModel)]="scraperForm.aiModel" name="scraperModel">
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Recommended)</option>
+                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Faster / Cheaper)</option>
+                <option value="claude-opus-4-6">Claude Opus 4.6 (Most Capable)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="info-row" *ngIf="scraperSettings">
+            <span class="info-label">API Key:</span>
+            <span class="info-value">{{ scraperSettings.hasApiKey ? 'Configured' : 'Not set' }}</span>
+            <span class="info-label" style="margin-left:1.5rem">Model:</span>
+            <span class="info-value">{{ scraperSettings.aiModel }}</span>
+            <span *ngIf="scraperSettings.updatedAt" class="info-label" style="margin-left:1.5rem">Last Updated:</span>
+            <span *ngIf="scraperSettings.updatedAt" class="info-value">{{ scraperSettings.updatedAt | date:'medium' }}</span>
+          </div>
+
+          <div *ngIf="scraperMessage" class="msg" [class.error]="scraperError">{{ scraperMessage }}</div>
+
+          <div class="form-actions">
+            <button class="btn-primary" (click)="saveScraperSettings()" [disabled]="savingScraper">
+              {{ savingScraper ? 'Saving...' : 'Save Scraper Settings' }}
+            </button>
+            <button class="btn-sm btn-test" (click)="testScraperKey()" [disabled]="testingScraper" style="margin-left:.5rem">
+              {{ testingScraper ? 'Testing...' : 'Test Key' }}
             </button>
           </div>
         </div>
@@ -171,7 +224,7 @@ import { environment } from '../../../environments/environment';
             <div class="enrich-header">
               <div class="enrich-platform-info">
                 <span class="enrich-icon" [class]="'enrich-icon-' + p.provider.toLowerCase()">
-                  {{ p.provider === 'ContactOut' ? 'person_search' : 'rocket_launch' }}
+                  {{ p.provider === 'ContactOut' ? 'person_search' : p.provider === 'SerpApi' ? 'search' : 'rocket_launch' }}
                 </span>
                 <div>
                   <div class="enrich-platform-name">{{ p.provider }}</div>
@@ -211,14 +264,14 @@ import { environment } from '../../../environments/environment';
         <div *ngIf="noEnrichmentConfigured()" class="enrich-empty">
           <span class="icon">contacts</span>
           <p>No enrichment accounts configured yet.</p>
-          <p class="enrich-empty-sub">Connect ContactOut or Apollo to auto-fill phone numbers and emails on your prospects.</p>
+          <p class="enrich-empty-sub">Connect ContactOut or Apollo to auto-fill phone numbers and emails. Add SerpApi for LinkedIn profile search.</p>
         </div>
 
         <!-- Configure Provider Modal -->
         <div *ngIf="configProvider" class="modal-overlay" (click)="configProvider = null">
           <div class="modal" (click)="$event.stopPropagation()">
             <h3>Configure {{ configProvider.provider }}</h3>
-            <p class="help-text">{{ configProvider.provider === 'ContactOut' ? 'Find emails and phone numbers from social profiles. Used to enrich prospect contact data.' : 'Sales intelligence platform for finding verified emails and direct dials.' }}</p>
+            <p class="help-text">{{ configProvider.provider === 'ContactOut' ? 'Find emails and phone numbers from social profiles. Used to enrich prospect contact data.' : configProvider.provider === 'SerpApi' ? 'Google search API used to find LinkedIn profiles for prospects. Get a key at serpapi.com.' : 'Sales intelligence platform for finding verified emails and direct dials.' }}</p>
             <div class="form-grid">
               <div class="form-group">
                 <label>Email / Username</label>
@@ -327,6 +380,14 @@ export class AccountConfigComponent implements OnInit {
   aiMessage = '';
   aiError = false;
 
+  // LinkedIn Scraper
+  scraperSettings: any = null;
+  scraperForm = { apiKey: '', aiModel: 'claude-sonnet-4-6' };
+  savingScraper = false;
+  testingScraper = false;
+  scraperMessage = '';
+  scraperError = false;
+
   // Enrichment Providers
   enrichmentProviders: {
     provider: string;
@@ -339,7 +400,8 @@ export class AccountConfigComponent implements OnInit {
     error: boolean;
   }[] = [
     { provider: 'ContactOut', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false },
-    { provider: 'Apollo', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false }
+    { provider: 'Apollo', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false },
+    { provider: 'SerpApi', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false }
   ];
 
   configProvider: typeof this.enrichmentProviders[0] | null = null;
@@ -364,6 +426,7 @@ export class AccountConfigComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadAiSettings();
+    this.loadScraperSettings();
     this.loadEnrichmentSettings();
     this.loadContactConfig();
   }
@@ -380,7 +443,7 @@ export class AccountConfigComponent implements OnInit {
     this.aiForm.apiKey = '';
     this.aiMessage = '';
     const defaults: Record<string, string> = {
-      'Claude': 'claude-sonnet-4-6-20250514',
+      'Claude': 'claude-sonnet-4-6',
       'OpenAI': 'gpt-4o-mini',
       'Google': 'gemini-2.0-flash'
     };
@@ -431,6 +494,55 @@ export class AccountConfigComponent implements OnInit {
         this.testingAi = false;
         this.aiMessage = 'Failed to test API key';
         this.aiError = true;
+      }
+    });
+  }
+
+  // === LinkedIn Scraper Settings ===
+
+  loadScraperSettings(): void {
+    this.http.get<any>(`${this.apiUrl}/prospects/scraper-settings`).subscribe(s => {
+      this.scraperSettings = s;
+      this.scraperForm.aiModel = s.aiModel || 'claude-sonnet-4-6';
+    });
+  }
+
+  saveScraperSettings(): void {
+    this.savingScraper = true;
+    this.scraperMessage = '';
+    this.scraperError = false;
+    const body: any = { aiModel: this.scraperForm.aiModel };
+    if (this.scraperForm.apiKey) body.apiKey = this.scraperForm.apiKey;
+    this.http.put<any>(`${this.apiUrl}/prospects/scraper-settings`, body).subscribe({
+      next: (res) => {
+        this.scraperSettings = res;
+        this.scraperMessage = 'LinkedIn scraper settings saved successfully';
+        this.scraperError = false;
+        this.savingScraper = false;
+        this.scraperForm.apiKey = '';
+      },
+      error: () => {
+        this.scraperMessage = 'Failed to save scraper settings';
+        this.scraperError = true;
+        this.savingScraper = false;
+      }
+    });
+  }
+
+  testScraperKey(): void {
+    this.testingScraper = true;
+    this.scraperMessage = '';
+    this.scraperError = false;
+    this.http.post<any>(`${this.apiUrl}/prospects/scraper-settings/test`, {}).subscribe({
+      next: (res) => {
+        this.testingScraper = false;
+        this.scraperMessage = res.success ? res.message : res.error;
+        this.scraperError = !res.success;
+      },
+      error: () => {
+        this.testingScraper = false;
+        this.scraperMessage = 'Failed to test scraper key';
+        this.scraperError = true;
       }
     });
   }

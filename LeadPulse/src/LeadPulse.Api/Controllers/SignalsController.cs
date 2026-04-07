@@ -77,6 +77,9 @@ public class SignalsController : ControllerBase
             "intentcategory" or "category" => desc ? query.OrderByDescending(s => s.IntentCategory) : query.OrderBy(s => s.IntentCategory),
             "sentiment" => desc ? query.OrderByDescending(s => s.Sentiment) : query.OrderBy(s => s.Sentiment),
             "analyzedat" => desc ? query.OrderByDescending(s => s.AnalyzedAt) : query.OrderBy(s => s.AnalyzedAt),
+            "compositescore" => desc
+                ? query.OrderByDescending(s => _tenantDb.ProspectSignals.Where(ps => ps.SignalId == s.Id).Select(ps => ps.Prospect.CompositeScore).FirstOrDefault())
+                : query.OrderBy(s => _tenantDb.ProspectSignals.Where(ps => ps.SignalId == s.Id).Select(ps => ps.Prospect.CompositeScore).FirstOrDefault()),
             _ => desc ? query.OrderByDescending(s => s.DetectedAt) : query.OrderBy(s => s.DetectedAt),
         };
 
@@ -102,6 +105,8 @@ public class SignalsController : ControllerBase
                     m.MatchScore,
                     m.MatchedText
                 }).ToList(),
+                // Prospect composite/match score
+                CompositeScore = _tenantDb.ProspectSignals.Where(ps => ps.SignalId == s.Id).Select(ps => ps.Prospect.CompositeScore).FirstOrDefault(),
                 // AI fields
                 s.IntentScore,
                 s.IntentCategory,

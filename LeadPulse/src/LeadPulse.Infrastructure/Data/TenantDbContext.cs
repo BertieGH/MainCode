@@ -26,6 +26,8 @@ public class TenantDbContext : DbContext
     public DbSet<ApiUsageLog> ApiUsageLogs => Set<ApiUsageLog>();
     public DbSet<AiSettings> AiSettings => Set<AiSettings>();
     public DbSet<EnrichmentSettings> EnrichmentSettings => Set<EnrichmentSettings>();
+    public DbSet<LinkedInPost> LinkedInPosts => Set<LinkedInPost>();
+    public DbSet<LinkedInScraperSettings> LinkedInScraperSettings => Set<LinkedInScraperSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -97,6 +99,11 @@ public class TenantDbContext : DbContext
             entity.HasOne(e => e.Signal).WithMany().HasForeignKey(e => e.SignalId);
         });
 
+        modelBuilder.Entity<LinkedInPost>(entity =>
+        {
+            entity.HasOne(e => e.Prospect).WithMany(e => e.LinkedInPosts).HasForeignKey(e => e.ProspectId);
+        });
+
         modelBuilder.Entity<DailyList>(entity =>
         {
             entity.HasOne(e => e.Strategy).WithMany().HasForeignKey(e => e.StrategyId);
@@ -134,6 +141,11 @@ public class TenantDbContext : DbContext
         modelBuilder.Entity<AiSettings>(entity =>
         {
             entity.Property(e => e.AiProvider).HasMaxLength(20);
+            entity.Property(e => e.AiModel).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<LinkedInScraperSettings>(entity =>
+        {
             entity.Property(e => e.AiModel).HasMaxLength(100);
         });
 

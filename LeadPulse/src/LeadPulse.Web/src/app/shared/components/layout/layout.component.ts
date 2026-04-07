@@ -34,13 +34,17 @@ import { AuthService } from '../../../core/services/auth.service';
             <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             Dashboard
           </a>
-          <a routerLink="/prospects" routerLinkActive="active">
-            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-            Prospects
-          </a>
           <a routerLink="/daily-list" routerLinkActive="active">
             <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
             Daily List
+          </a>
+          <a routerLink="/prospects" routerLinkActive="active">
+            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            Prospect List
+          </a>
+          <a routerLink="/signals" routerLinkActive="active">
+            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2m4-7v2m8-2v2m4 5h2M7.8 7.8l1.4 1.4m7.6-1.4l-1.4 1.4"/><circle cx="12" cy="12" r="3"/><path d="M12 2a10 10 0 0110 10"/><path d="M12 6a6 6 0 016 6"/></svg>
+            Signal Log
           </a>
 
           <div class="nav-section">Manage</div>
@@ -52,9 +56,9 @@ import { AuthService } from '../../../core/services/auth.service';
             <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M12 21V3M20 21v-11"/><path d="M4 14l4-4 4 4 8-8"/></svg>
             Strategies
           </a>
-          <a routerLink="/signals" routerLinkActive="active">
-            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h2m4-7v2m8-2v2m4 5h2M7.8 7.8l1.4 1.4m7.6-1.4l-1.4 1.4"/><circle cx="12" cy="12" r="3"/><path d="M12 2a10 10 0 0110 10"/><path d="M12 6a6 6 0 016 6"/></svg>
-            Signals Log
+          <a routerLink="/keywords" routerLinkActive="active">
+            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+            Keywords
           </a>
 
           <div class="nav-section">Insights</div>
@@ -64,10 +68,6 @@ import { AuthService } from '../../../core/services/auth.service';
           </a>
 
           <div class="nav-section">Admin</div>
-          <a routerLink="/keywords" routerLinkActive="active">
-            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
-            Keywords
-          </a>
           <a routerLink="/users" routerLinkActive="active">
             <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
             Users

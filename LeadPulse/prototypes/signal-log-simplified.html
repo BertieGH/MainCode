@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LeadPulse - Signal Log (Simplified Prototype)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; color: #1e293b; font-size: 14px; }
+
+  /* Sidebar */
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 200px; background: #1e293b; color: #e2e8f0; padding: 1rem 0; }
+  .sidebar h2 { padding: 0 1rem .75rem; font-size: 1.1rem; color: #fff; border-bottom: 1px solid #334155; margin-bottom: .5rem; }
+  .nav-item { display: block; padding: .55rem 1rem; color: #94a3b8; text-decoration: none; font-size: .85rem; cursor: pointer; }
+  .nav-item:hover { background: #334155; color: #e2e8f0; }
+  .nav-item.active { background: #2563eb; color: #fff; font-weight: 600; }
+
+  /* Main */
+  .main { margin-left: 200px; padding: 1.25rem; }
+  .page-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+  .page-title { font-size: 1.35rem; font-weight: 700; }
+  .page-subtitle { font-size: .82rem; color: #64748b; background: #f1f5f9; padding: .25rem .6rem; border-radius: 4px; }
+
+  /* Stats Cards */
+  .stats-row { display: flex; gap: .75rem; margin-bottom: 1rem; }
+  .stat-card { flex: 1; background: #fff; padding: .75rem 1rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .stat-card .label { font-size: .72rem; color: #64748b; text-transform: uppercase; letter-spacing: .3px; font-weight: 600; }
+  .stat-card .value { font-size: 1.4rem; font-weight: 700; color: #1e293b; margin-top: .15rem; }
+  .stat-card .sub { font-size: .72rem; color: #94a3b8; margin-top: .1rem; }
+
+  /* Filter Bar */
+  .filter-bar { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; background: #fff; padding: .6rem 1rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .filter-bar select, .filter-bar input[type="text"] { padding: .35rem .5rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: .8rem; background: #fff; color: #334155; }
+  .filter-bar input[type="text"] { width: 160px; }
+  .bar-spacer { flex: 1; }
+  .btn { padding: .4rem .7rem; border: none; border-radius: 5px; cursor: pointer; font-size: .8rem; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+  .btn-ghost { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+  .btn-ghost:hover { background: #e2e8f0; }
+  .btn-sm { padding: .3rem .5rem; font-size: .75rem; border-radius: 4px; }
+  .view-toggle { display: flex; border: 1px solid #e2e8f0; border-radius: 5px; overflow: hidden; }
+  .view-btn { padding: .35rem .6rem; background: #fff; border: none; cursor: pointer; font-size: .78rem; color: #64748b; }
+  .view-btn.active { background: #2563eb; color: #fff; }
+
+  /* Note banner */
+  .note-banner { padding: .5rem 1rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; color: #1e40af; font-size: .8rem; margin-bottom: .75rem; display: flex; align-items: center; gap: .5rem; }
+  .note-banner svg { flex-shrink: 0; }
+
+  /* Table */
+  .table-wrap { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #f8fafc; text-align: left; padding: .55rem .65rem; font-size: .73rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .3px; border-bottom: 2px solid #e2e8f0; white-space: nowrap; cursor: pointer; }
+  th .sort-icon { color: #94a3b8; font-size: .65rem; }
+  td { padding: .5rem .65rem; border-bottom: 1px solid #f1f5f9; font-size: .8rem; vertical-align: middle; }
+  tr:hover { background: #f8fafc; }
+
+  /* Badges */
+  .platform-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .72rem; font-weight: 500; }
+  .plat-nextdoor { background: #ecfdf5; color: #059669; }
+  .plat-facebook { background: #eff6ff; color: #2563eb; }
+  .plat-linkedin { background: #eef2ff; color: #4f46e5; }
+
+  .match-count { display: inline-block; background: #fef3c7; color: #92400e; padding: 1px 8px; border-radius: 10px; font-weight: 600; font-size: .76rem; }
+
+  .intent { display: inline-block; padding: 1px 8px; border-radius: 10px; font-weight: 600; font-size: .76rem; }
+  .intent-high { background: #ede9fe; color: #6d28d9; }
+  .intent-med { background: #fef3c7; color: #92400e; }
+  .intent-low { background: #f1f5f9; color: #64748b; }
+
+  .category-tag { display: inline-block; padding: 2px 8px; background: #f5f3ff; color: #7c3aed; border-radius: 10px; font-size: .72rem; font-weight: 500; }
+
+  .sentiment { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .72rem; font-weight: 500; }
+  .sentiment-urgent { background: #fef2f2; color: #dc2626; }
+  .sentiment-negative { background: #fff7ed; color: #c2410c; }
+  .sentiment-positive { background: #ecfdf5; color: #059669; }
+  .sentiment-neutral { background: #f1f5f9; color: #64748b; }
+
+  /* Snippet */
+  .snippet-cell { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #475569; font-size: .78rem; cursor: pointer; }
+  .snippet-cell:hover { color: #2563eb; text-decoration: underline; }
+
+  /* Post link */
+  .post-link { color: #2563eb; text-decoration: none; font-size: .78rem; }
+  .post-link:hover { text-decoration: underline; }
+
+  /* Pagination */
+  .pagination { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1rem; font-size: .82rem; color: #64748b; }
+  .pagination .pages { display: flex; gap: .3rem; }
+  .page-btn { padding: .3rem .6rem; border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; cursor: pointer; font-size: .78rem; }
+  .page-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+  /* Analyzed indicator */
+  .analyzed-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; margin-right: 4px; }
+  .not-analyzed { color: #cbd5e1; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <h2>LeadPulse</h2>
+  <a class="nav-item" href="#">Dashboard</a>
+  <a class="nav-item active" href="#">Signal Log</a>
+  <a class="nav-item" href="#">Prospects</a>
+  <a class="nav-item" href="#">Daily List</a>
+  <a class="nav-item" href="#">Analytics</a>
+  <a class="nav-item" href="#">Social Accounts</a>
+  <a class="nav-item" href="#">Account Config</a>
+</div>
+
+<!-- Main Content -->
+<div class="main">
+  <div class="page-header">
+    <h1 class="page-title">Signal Log</h1>
+    <span class="page-subtitle">Read-only view of scraped &amp; matched signals</span>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="label">Total Signals</div>
+      <div class="value">413</div>
+      <div class="sub">Matched only</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">AI Analyzed</div>
+      <div class="value">312</div>
+      <div class="sub">75% complete</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Prospects Created</div>
+      <div class="value">395</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Active Keywords</div>
+      <div class="value">12</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Platforms</div>
+      <div class="value" style="font-size:1rem">Nextdoor: 380 &middot; FB: 33</div>
+    </div>
+  </div>
+
+  <!-- Note -->
+  <div class="note-banner">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    Actions moved to <strong style="margin: 0 3px">Prospects</strong> page. Use Reprocess, AI Analyze, and AI Settings from there.
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <input type="text" placeholder="Search content..." />
+    <select>
+      <option>All Platforms</option>
+      <option>Nextdoor</option>
+      <option>Facebook</option>
+      <option>LinkedIn</option>
+    </select>
+    <select>
+      <option>All</option>
+      <option>AI Analyzed</option>
+      <option>Not Analyzed</option>
+    </select>
+    <select>
+      <option>All Categories</option>
+      <option>Auto Insurance</option>
+      <option>Home Insurance</option>
+      <option>Health Insurance</option>
+      <option>Life Insurance</option>
+    </select>
+
+    <div class="bar-spacer"></div>
+
+    <div class="view-toggle">
+      <button class="view-btn active">Table</button>
+      <button class="view-btn">Cards</button>
+    </div>
+    <button class="btn btn-ghost btn-sm">Columns</button>
+    <button class="btn btn-ghost btn-sm">Export CSV</button>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Author <span class="sort-icon">&#8597;</span></th>
+          <th>Platform <span class="sort-icon">&#8597;</span></th>
+          <th>Content</th>
+          <th>Matches <span class="sort-icon">&#8597;</span></th>
+          <th>Intent <span class="sort-icon">&#9660;</span></th>
+          <th>Category <span class="sort-icon">&#8597;</span></th>
+          <th>Sentiment <span class="sort-icon">&#8597;</span></th>
+          <th>Post Date <span class="sort-icon">&#8597;</span></th>
+          <th>Detected <span class="sort-icon">&#8597;</span></th>
+          <th>Post</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color:#94a3b8">538</td>
+          <td><strong>Karen Allen</strong></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td class="snippet-cell" title="I just got my property insurance bill and it's up 16% over last year. Do people have suggestions for insurance companies?">I just got my property insurance bill and it's up 16% over last year. Do people have suggestions...</td>
+          <td><span class="match-count">3</span></td>
+          <td><span class="intent intent-high">85</span></td>
+          <td><span class="category-tag">Home Insurance</span></td>
+          <td><span class="sentiment sentiment-urgent">Urgent</span></td>
+          <td style="white-space:nowrap">3/16/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/16/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+        <tr>
+          <td style="color:#94a3b8">541</td>
+          <td><strong>Dan Fulmer</strong></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td class="snippet-cell" title="Just a short follow up on a driver insurance post. In CA, the statewide average of drivers NOT having any insurance is approx. 16%">Just a short follow up on a driver insurance post. In CA, the statewide average of drivers NOT...</td>
+          <td><span class="match-count">2</span></td>
+          <td><span class="intent intent-high">78</span></td>
+          <td><span class="category-tag">Auto Insurance</span></td>
+          <td><span class="sentiment sentiment-negative">Negative</span></td>
+          <td style="white-space:nowrap">3/18/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/18/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+        <tr>
+          <td style="color:#94a3b8">540</td>
+          <td><strong>Jamie C.</strong></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td class="snippet-cell">Overwhelmed here :) Anyone know of a Life Insurance Agent who can guide me through all of these confusing...</td>
+          <td><span class="match-count">2</span></td>
+          <td><span class="intent intent-high">72</span></td>
+          <td><span class="category-tag">Life Insurance</span></td>
+          <td><span class="sentiment sentiment-positive">Positive</span></td>
+          <td style="white-space:nowrap">3/20/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/20/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+        <tr>
+          <td style="color:#94a3b8">539</td>
+          <td><strong>Michael Chen</strong></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td class="snippet-cell">Hi, Some time ago someone requested for reference to a property insurance. I wrote down info for one of them...</td>
+          <td><span class="match-count">2</span></td>
+          <td><span class="intent intent-med">55</span></td>
+          <td><span class="category-tag">Home Insurance</span></td>
+          <td><span class="sentiment sentiment-positive">Positive</span></td>
+          <td style="white-space:nowrap">3/21/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/21/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+        <tr>
+          <td style="color:#94a3b8">536</td>
+          <td><strong>Matt Chris</strong></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td class="snippet-cell">I'm looking for a reliable home/property insurance agency that offers good coverage at a reasonable cost...</td>
+          <td><span class="match-count">3</span></td>
+          <td><span class="intent intent-med">48</span></td>
+          <td><span class="category-tag">Home Insurance</span></td>
+          <td><span class="sentiment sentiment-neutral">Neutral</span></td>
+          <td style="white-space:nowrap">3/22/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/22/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+        <tr>
+          <td style="color:#94a3b8">535</td>
+          <td><strong>Harish Chinai</strong></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td class="snippet-cell">Can someone recommend a good home owners insurance? My home owners insurance premium has gone up by more than 25%!</td>
+          <td><span class="match-count">3</span></td>
+          <td><span class="intent intent-none" style="color:#cbd5e1">&mdash;</span></td>
+          <td class="not-analyzed">&mdash;</td>
+          <td class="not-analyzed">&mdash;</td>
+          <td style="white-space:nowrap">3/24/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/24/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+        <tr>
+          <td style="color:#94a3b8">543</td>
+          <td><strong>Brenda Dickinson</strong></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td class="snippet-cell">If you are on Medicare and traveling out of the country, do you get private health insurance? If so, can you recommend...</td>
+          <td><span class="match-count">1</span></td>
+          <td><span class="intent intent-low">28</span></td>
+          <td><span class="category-tag">Health Insurance</span></td>
+          <td><span class="sentiment sentiment-neutral">Neutral</span></td>
+          <td style="white-space:nowrap">3/24/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/24/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+        <tr>
+          <td style="color:#94a3b8">534</td>
+          <td><strong>Linda Wosskow</strong></td>
+          <td><span class="platform-tag plat-facebook">Facebook</span></td>
+          <td class="snippet-cell">Does anyone have a recommendation for good homeowner insurance? We just got dropped by our carrier after 15 years...</td>
+          <td><span class="match-count">2</span></td>
+          <td><span class="intent intent-none" style="color:#cbd5e1">&mdash;</span></td>
+          <td class="not-analyzed">&mdash;</td>
+          <td class="not-analyzed">&mdash;</td>
+          <td style="white-space:nowrap">3/19/26</td>
+          <td style="white-space:nowrap;color:#94a3b8">3/19/26</td>
+          <td><a href="#" class="post-link">View</a></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <div class="pagination">
+      <span>Showing 1-50 of 413 signals</span>
+      <div class="pages">
+        <button class="page-btn active">1</button>
+        <button class="page-btn">2</button>
+        <button class="page-btn">3</button>
+        <button class="page-btn">...</button>
+        <button class="page-btn">9</button>
+        <button class="page-btn">Next &rarr;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -18,7 +18,7 @@ public class ClaudeIntentAnalyzer : IIntentAnalyzer
     {
         _httpClient = httpClient;
         _apiKey = apiKey;
-        _model = string.IsNullOrEmpty(model) ? "claude-sonnet-4-6-20250514" : model;
+        _model = string.IsNullOrEmpty(model) ? "claude-sonnet-4-6" : model;
         _logger = logger;
     }
 

@@ -19,15 +19,6 @@ interface ColumnDef {
   template: `
     <div class="signals-page">
       <div class="action-bar">
-        <button class="btn-secondary" (click)="analyzeAll()" [disabled]="analyzingAll">
-          {{ analyzingAll ? 'Analyzing...' : 'AI Analyze All' }}
-        </button>
-        <button class="btn-icon" (click)="showSettingsModal = true" title="AI Settings">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
-        </button>
-        <button class="btn-primary" (click)="reprocess()" [disabled]="reprocessing">
-          {{ reprocessing ? 'Processing...' : 'Reprocess All Signals' }}
-        </button>
         <div class="action-spacer"></div>
         <button class="btn-sm" [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">Table</button>
         <button class="btn-sm" [class.active]="viewMode === 'card'" (click)="viewMode = 'card'">Cards</button>
@@ -111,6 +102,9 @@ interface ColumnDef {
               <th *ngIf="isVisible('author')" class="sortable-th" (click)="toggleSort('author')">
                 Author <span class="sort-icon">{{ getSortIcon('author') }}</span>
               </th>
+              <th *ngIf="isVisible('compositeScore')" class="sortable-th" (click)="toggleSort('compositeScore')">
+                Match <span class="sort-icon">{{ getSortIcon('compositeScore') }}</span>
+              </th>
               <th *ngIf="isVisible('platform')" class="sortable-th" (click)="toggleSort('platform')">
                 Platform <span class="sort-icon">{{ getSortIcon('platform') }}</span>
               </th>
@@ -121,16 +115,9 @@ interface ColumnDef {
               <th *ngIf="isVisible('detectedAt')" class="sortable-th" (click)="toggleSort('detectedAt')">
                 Detected <span class="sort-icon">{{ getSortIcon('detectedAt') }}</span>
               </th>
-              <th *ngIf="isVisible('intentScore')" class="sortable-th" (click)="toggleSort('intentScore')">
-                Intent Score <span class="sort-icon">{{ getSortIcon('intentScore') }}</span>
-              </th>
               <th *ngIf="isVisible('category')" class="sortable-th" (click)="toggleSort('category')">
                 Category <span class="sort-icon">{{ getSortIcon('category') }}</span>
               </th>
-              <th *ngIf="isVisible('sentiment')" class="sortable-th" (click)="toggleSort('sentiment')">
-                Sentiment <span class="sort-icon">{{ getSortIcon('sentiment') }}</span>
-              </th>
-              <th *ngIf="isVisible('aiSummary')">AI Summary</th>
               <th *ngIf="isVisible('matches')">Matches</th>
               <th>Actions</th>
             </tr>
@@ -144,6 +131,7 @@ interface ColumnDef {
                 </a>
                 <span *ngIf="!signal.authorProfileUrl">{{ signal.authorName }}</span>
               </td>
+              <td *ngIf="isVisible('compositeScore')"><span class="match-score" [class]="getMatchClass(signal.compositeScore)">{{ signal.compositeScore || '—' }}</span></td>
               <td *ngIf="isVisible('platform')"><span class="platform-badge" [class]="'platform-' + signal.platform.toLowerCase()">{{ signal.platform }}</span></td>
               <td *ngIf="isVisible('postContent')" class="content-cell">
                 <div class="content-preview">
@@ -154,22 +142,8 @@ interface ColumnDef {
               </td>
               <td *ngIf="isVisible('postDate')">{{ signal.postDate ? (signal.postDate | date:'short') : '—' }}</td>
               <td *ngIf="isVisible('detectedAt')">{{ signal.detectedAt | date:'short' }}</td>
-              <td *ngIf="isVisible('intentScore')">
-                <span *ngIf="signal.intentScore !== null" class="intent-badge" [class]="getIntentClass(signal.intentScore)">
-                  {{ signal.intentScore }}
-                </span>
-                <span *ngIf="signal.intentScore === null" class="intent-badge pending">—</span>
-              </td>
               <td *ngIf="isVisible('category')">
                 <span *ngIf="signal.intentCategory" class="category-tag">{{ signal.intentCategory }}</span>
-              </td>
-              <td *ngIf="isVisible('sentiment')">
-                <span *ngIf="signal.sentiment" class="sentiment-tag" [class]="'sentiment-' + signal.sentiment?.toLowerCase()">
-                  {{ signal.sentiment }}
-                </span>
-              </td>
-              <td *ngIf="isVisible('aiSummary')" class="summary-cell">
-                <small *ngIf="signal.aiSummary">{{ signal.aiSummary }}</small>
               </td>
               <td *ngIf="isVisible('matches')">
                 <span *ngIf="signal.matchCount > 0" class="match-badge matched">{{ signal.matchCount }} match{{ signal.matchCount > 1 ? 'es' : '' }}</span>
@@ -203,12 +177,9 @@ interface ColumnDef {
               <strong class="card-author">{{ signal.authorName || 'Unknown' }}</strong>
               <span class="platform-badge" [class]="'platform-' + signal.platform.toLowerCase()">{{ signal.platform }}</span>
             </div>
-            <span *ngIf="signal.intentScore !== null" class="intent-badge" [class]="getIntentClass(signal.intentScore)">{{ signal.intentScore }}</span>
-            <span *ngIf="signal.intentScore === null" class="intent-badge pending">—</span>
           </div>
           <div class="card-badges">
             <span *ngIf="signal.intentCategory" class="category-tag">{{ signal.intentCategory }}</span>
-            <span *ngIf="signal.sentiment" class="sentiment-tag" [class]="'sentiment-' + signal.sentiment?.toLowerCase()">{{ signal.sentiment }}</span>
             <span *ngIf="signal.matchCount > 0" class="match-badge matched">{{ signal.matchCount }} match{{ signal.matchCount > 1 ? 'es' : '' }}</span>
           </div>
           <p class="card-snippet">{{ signal.fullContent | slice:0:150 }}{{ signal.fullContent?.length > 150 ? '...' : '' }}</p>
@@ -257,43 +228,6 @@ interface ColumnDef {
       </div>
     </div>
 
-    <!-- AI Settings Modal -->
-    <div class="modal-overlay" *ngIf="showSettingsModal" (click)="showSettingsModal = false">
-      <div class="modal" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h3>AI Analysis Settings</h3>
-          <button class="btn-close" (click)="showSettingsModal = false">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>AI Provider</label>
-            <select [(ngModel)]="settingsForm.aiProvider" (ngModelChange)="onProviderChange()">
-              <option value="Local">Local (Free - Rule-based)</option>
-              <option value="Claude">Claude (Anthropic API)</option>
-              <option value="OpenAI">OpenAI</option>
-              <option value="Google">Google AI (Gemini)</option>
-            </select>
-          </div>
-          <div class="form-group" *ngIf="settingsForm.aiProvider !== 'Local'">
-            <label>API Key</label>
-            <input type="password" [(ngModel)]="settingsForm.apiKey"
-                   [placeholder]="aiSettings?.hasApiKey ? '(key saved — enter new to update)' : 'Enter API key'" />
-          </div>
-          <div class="form-group" *ngIf="settingsForm.aiProvider !== 'Local'">
-            <label>Model</label>
-            <input type="text" [(ngModel)]="settingsForm.aiModel"
-                   [placeholder]="settingsForm.aiProvider === 'Claude' ? 'claude-sonnet-4-6' : settingsForm.aiProvider === 'Google' ? 'gemini-2.0-flash' : 'gpt-4o-mini'" />
-          </div>
-          <div *ngIf="settingsMessage" class="settings-message" [class.error]="settingsError">{{ settingsMessage }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-sm" (click)="showSettingsModal = false">Cancel</button>
-          <button class="btn-primary" (click)="saveSettings()" [disabled]="savingSettings">
-            {{ savingSettings ? 'Saving...' : 'Save Settings' }}
-          </button>
-        </div>
-      </div>
-    </div>
   `,
   styles: [`
     .signals-page { padding: 1.5rem; }
@@ -339,6 +273,10 @@ interface ColumnDef {
     .intent-medium { background: #f59e0b; color: white; }
     .intent-low { background: #6b7280; color: white; }
     .intent-badge.pending { background: #e5e7eb; color: #9ca3af; }
+    .match-score { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: 700; }
+    .match-high { background: #d1fae5; color: #065f46; }
+    .match-med { background: #fef3c7; color: #92400e; }
+    .match-low { background: #f1f5f9; color: #64748b; }
     .category-tag { padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; background: #ede9fe; color: #6d28d9; }
     .sentiment-tag { padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
     .sentiment-urgent { background: #fef2f2; color: #dc2626; }
@@ -446,14 +384,12 @@ export class SignalsComponent implements OnInit {
   columns: ColumnDef[] = [
     { key: 'id', label: '#', sortable: true, sortField: 'id', visible: true },
     { key: 'author', label: 'Author', sortable: true, sortField: 'author', visible: true },
+    { key: 'compositeScore', label: 'Match', sortable: true, sortField: 'compositeScore', visible: true },
     { key: 'platform', label: 'Platform', sortable: true, sortField: 'platform', visible: true },
     { key: 'postContent', label: 'Post Content', sortable: false, visible: true },
     { key: 'postDate', label: 'Post Date', sortable: true, sortField: 'postDate', visible: true },
     { key: 'detectedAt', label: 'Detected', sortable: true, sortField: 'detectedAt', visible: true },
-    { key: 'intentScore', label: 'Intent Score', sortable: true, sortField: 'intentScore', visible: true },
     { key: 'category', label: 'Category', sortable: true, sortField: 'category', visible: true },
-    { key: 'sentiment', label: 'Sentiment', sortable: true, sortField: 'sentiment', visible: true },
-    { key: 'aiSummary', label: 'AI Summary', sortable: false, visible: true },
     { key: 'matches', label: 'Matches', sortable: false, visible: true },
   ];
 
@@ -494,6 +430,12 @@ export class SignalsComponent implements OnInit {
     if (score >= 60) return 'intent-high';
     if (score >= 30) return 'intent-medium';
     return 'intent-low';
+  }
+
+  getMatchClass(score: number): string {
+    if (score >= 70) return 'match-high';
+    if (score >= 40) return 'match-med';
+    return 'match-low';
   }
 
   toggleSort(field: string): void {

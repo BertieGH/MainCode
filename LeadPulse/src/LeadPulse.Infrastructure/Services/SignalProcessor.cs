@@ -82,7 +82,12 @@ public class SignalProcessor : ISignalProcessor
 
             var matches = _matchEngine.FindMatches(signal.PostContent, activeRules, signal.Platform);
 
-            if (matches.Count == 0) continue;
+            if (matches.Count == 0)
+            {
+                // Remove unmatched signals — only keep signals with keyword matches
+                db.Signals.Remove(signal);
+                continue;
+            }
 
             // Store keyword matches
             foreach (var match in matches)
@@ -140,6 +145,52 @@ public class SignalProcessor : ISignalProcessor
             await db.SaveChangesAsync();
 
         _logger.LogInformation("Fixed {Count} generic author names for tenant {TenantId}", fixedCount, tenantId);
+        return fixedCount;
+    }
+
+    public async Task<int> FixProspectNamesAsync(int tenantId)
+    {
+        await using var db = await _tenantDbFactory.CreateContextAsync(tenantId);
+
+        // Get prospects with generic names that have linked signals
+        var prospects = await db.Prospects
+            .Include(p => p.ProspectSignals!)
+                .ThenInclude(ps => ps.Signal)
+            .Where(p => GenericNames.Contains(p.Name) || p.Name == "Unknown")
+            .ToListAsync();
+
+        var fixedCount = 0;
+        foreach (var prospect in prospects)
+        {
+            // First try signal author name (already fixed by FixGenericAuthorNamesAsync)
+            var signal = prospect.ProspectSignals?.FirstOrDefault()?.Signal;
+            if (signal == null) continue;
+
+            string? newName = null;
+
+            // If signal has a good author name, use it
+            if (!string.IsNullOrEmpty(signal.AuthorName) && !GenericNames.Contains(signal.AuthorName))
+            {
+                newName = signal.AuthorName;
+            }
+            else
+            {
+                // Try to extract from content
+                newName = ExtractAuthorFromContent(signal.PostContent);
+            }
+
+            if (newName != null && newName != prospect.Name)
+            {
+                prospect.Name = newName;
+                prospect.UpdatedAt = DateTime.UtcNow;
+                fixedCount++;
+            }
+        }
+
+        if (fixedCount > 0)
+            await db.SaveChangesAsync();
+
+        _logger.LogInformation("Fixed {Count} prospect names for tenant {TenantId}", fixedCount, tenantId);
         return fixedCount;
     }
 
@@ -359,34 +410,93 @@ public class SignalProcessor : ISignalProcessor
         if (string.IsNullOrEmpty(content)) return null;
 
         var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 2) return null;
 
-        // Pattern 1: Single char initial on line 0, full name on line 1
-        // e.g. "L\nLinda Whitehouse\nCrow Canyon..."
-        if (lines[0].Trim().Length <= 2)
+        // Multi-line patterns
+        if (lines.Length >= 2)
         {
-            var candidate = lines[1].Trim();
-            // Name should be 2-40 chars, contain a space or period, and not look like a location
-            if (candidate.Length >= 2 && candidate.Length <= 40 &&
-                (candidate.Contains(' ') || candidate.Contains('.')) &&
-                !candidate.Contains("·") && !candidate.Contains(','))
+            // Pattern 1: Single char initial on line 0, full name on line 1
+            // e.g. "L\nLinda Whitehouse\nCrow Canyon..."
+            if (lines[0].Trim().Length <= 2)
             {
-                return candidate;
+                var candidate = lines[1].Trim();
+                if (candidate.Length >= 2 && candidate.Length <= 40 &&
+                    (candidate.Contains(' ') || candidate.Contains('.')) &&
+                    !candidate.Contains("\u00b7") && !candidate.Contains(','))
+                {
+                    return candidate;
+                }
+            }
+
+            // Pattern 2: Name with period/initial on line 0
+            // e.g. "Candy V.\nDel Amigo..."
+            var firstLine = lines[0].Trim();
+            if (firstLine.Length >= 2 && firstLine.Length <= 40 &&
+                (firstLine.Contains(' ') || firstLine.Contains('.')) &&
+                !firstLine.Contains("\u00b7") && !firstLine.Contains(',') &&
+                !firstLine.Any(char.IsDigit))
+            {
+                return firstLine;
             }
         }
 
-        // Pattern 2: Name with period/initial on line 0
-        // e.g. "Candy V.\nDel Amigo..."
-        var firstLine = lines[0].Trim();
-        if (firstLine.Length >= 2 && firstLine.Length <= 40 &&
-            (firstLine.Contains(' ') || firstLine.Contains('.')) &&
-            !firstLine.Contains("·") && !firstLine.Contains(',') &&
-            !firstLine.Any(char.IsDigit))
+        // Pattern 3: Single-line Nextdoor content (no newlines)
+        // Content starts with the author name followed by location/neighborhood then "·" then date
+        // Examples:
+        //   "Noelle BronsonGale Ranch Phase IV · 22 Jan..."
+        //   "Dan FulmerSan Francisco, CA · 6 days ago..."
+        //   "Bob R.Arrivare · 18 Mar..."
+        //   "BBrenda DickinsonClayton, CA · 24 Mar..."
+        //   "AAmir AmiriHayward, CA · 4 days ago..."
+        var text = lines.Length > 0 ? lines[0] : content;
+        var dotIdx = text.IndexOf("\u00b7"); // middle dot ·
+        if (dotIdx < 0) dotIdx = text.IndexOf("\u00c2\u00b7"); // UTF-8 mangled middle dot
+        if (dotIdx > 0)
         {
-            return firstLine;
+            // The section before · contains: Name + Location/Neighborhood
+            var beforeDot = text[..dotIdx].Trim();
+
+            // Pattern 3a: "City, ST" at end — name is everything before the city
+            // e.g. "Dan FulmerSan Francisco, CA" → "Dan Fulmer"
+            var cityStateMatch = Regex.Match(beforeDot, @"[A-Z][a-z]+(?:\s[A-Z][a-z]+)*,\s*[A-Z]{2}\s*$");
+            if (cityStateMatch.Success && cityStateMatch.Index > 2)
+            {
+                var namepart = beforeDot[..cityStateMatch.Index].Trim();
+                namepart = StripDuplicateInitial(namepart);
+                if (namepart.Length >= 3 && (namepart.Contains(' ') || namepart.Contains('.')))
+                    return namepart;
+            }
+
+            // Pattern 3b: Name followed by a neighborhood (no comma/state)
+            // e.g. "Noelle BronsonGale Ranch Phase IV" or "Michael ChenWindemere"
+            // Look for where a lowercase letter is followed by an uppercase letter (name→location boundary)
+            var boundary = Regex.Match(beforeDot, @"([a-z.])([A-Z][a-z])");
+            if (boundary.Success && boundary.Index >= 3)
+            {
+                var namepart = beforeDot[..(boundary.Index + 1)].Trim();
+                namepart = StripDuplicateInitial(namepart);
+                if (namepart.Length >= 3 && (namepart.Contains(' ') || namepart.Contains('.')))
+                    return namepart;
+            }
+
+            // Pattern 3c: Fallback — short name with initial e.g. "Bob R." when before dot is just the name
+            // Only if beforeDot is short enough to be just a name (no location appended)
+            if (beforeDot.Length <= 30 && (beforeDot.Contains(' ') || beforeDot.Contains('.')))
+            {
+                var namepart = StripDuplicateInitial(beforeDot);
+                if (namepart.Length >= 3)
+                    return namepart;
+            }
         }
 
         return null;
+    }
+
+    private static string StripDuplicateInitial(string name)
+    {
+        // Nextdoor sometimes prepends a duplicate first letter: "BBrenda" → "Brenda", "AAmir" → "Amir"
+        if (name.Length > 2 && char.IsUpper(name[0]) && name[0] == char.ToUpper(name[1]))
+            return name[1..];
+        return name;
     }
 
     /// <summary>

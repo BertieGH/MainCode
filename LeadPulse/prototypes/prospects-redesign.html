@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LeadPulse - Prospects (Redesign Prototype)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; color: #1e293b; font-size: 14px; }
+
+  /* Sidebar */
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 200px; background: #1e293b; color: #e2e8f0; padding: 1rem 0; }
+  .sidebar h2 { padding: 0 1rem .75rem; font-size: 1.1rem; color: #fff; border-bottom: 1px solid #334155; margin-bottom: .5rem; }
+  .nav-item { display: block; padding: .55rem 1rem; color: #94a3b8; text-decoration: none; font-size: .85rem; cursor: pointer; }
+  .nav-item:hover { background: #334155; color: #e2e8f0; }
+  .nav-item.active { background: #2563eb; color: #fff; font-weight: 600; }
+
+  /* Main */
+  .main { margin-left: 200px; padding: 1.25rem; }
+  .page-title { font-size: 1.35rem; font-weight: 700; margin-bottom: 1rem; }
+
+  /* Action Bar */
+  .action-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; background: #fff; padding: .75rem 1rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .btn { padding: .45rem .75rem; border: none; border-radius: 5px; cursor: pointer; font-size: .82rem; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-purple { background: #7c3aed; color: #fff; }
+  .btn-purple:hover { background: #6d28d9; }
+  .btn-ghost { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+  .btn-ghost:hover { background: #e2e8f0; }
+  .btn-sm { padding: .3rem .55rem; font-size: .75rem; border-radius: 4px; }
+  .bar-spacer { flex: 1; }
+  .bar-divider { width: 1px; height: 24px; background: #e2e8f0; margin: 0 .25rem; }
+
+  /* Filters */
+  .filter-row { display: flex; gap: .4rem; align-items: center; }
+  .filter-row select { padding: .35rem .5rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: .8rem; background: #fff; color: #334155; }
+  .filter-row input[type="text"] { padding: .35rem .5rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: .8rem; width: 140px; }
+
+  /* Info Message */
+  .info-msg { padding: .6rem 1rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; color: #065f46; font-size: .82rem; margin-bottom: .75rem; display: flex; align-items: center; gap: .5rem; }
+  .info-msg .close { cursor: pointer; margin-left: auto; color: #6ee7b7; font-weight: bold; }
+
+  /* Table */
+  .table-wrap { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #f8fafc; text-align: left; padding: .55rem .65rem; font-size: .75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .3px; border-bottom: 2px solid #e2e8f0; white-space: nowrap; cursor: pointer; }
+  th .sort-icon { color: #94a3b8; font-size: .65rem; }
+  td { padding: .55rem .65rem; border-bottom: 1px solid #f1f5f9; font-size: .82rem; vertical-align: middle; }
+  tr:hover { background: #f8fafc; }
+  .name-cell strong { font-weight: 600; }
+  .name-cell .company { font-size: .72rem; color: #94a3b8; }
+
+  /* Badges */
+  .score { display: inline-block; background: #dbeafe; color: #1e40af; padding: 1px 8px; border-radius: 10px; font-weight: 600; font-size: .78rem; }
+  .intent { display: inline-block; padding: 1px 8px; border-radius: 10px; font-weight: 600; font-size: .78rem; }
+  .intent-high { background: #ede9fe; color: #6d28d9; }
+  .intent-med { background: #fef3c7; color: #92400e; }
+  .intent-low { background: #f1f5f9; color: #64748b; }
+  .intent-none { color: #cbd5e1; }
+
+  .urgency { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .73rem; font-weight: 600; }
+  .urgency-hot { background: #fef2f2; color: #dc2626; }
+  .urgency-warm { background: #fffbeb; color: #d97706; }
+  .urgency-cool { background: #f0f9ff; color: #0284c7; }
+
+  .sentiment { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .73rem; font-weight: 500; }
+  .sentiment-urgent { background: #fef2f2; color: #dc2626; }
+  .sentiment-negative { background: #fff7ed; color: #c2410c; }
+  .sentiment-positive { background: #ecfdf5; color: #059669; }
+  .sentiment-neutral { background: #f1f5f9; color: #64748b; }
+
+  .category-tag { display: inline-block; padding: 2px 8px; background: #f5f3ff; color: #7c3aed; border-radius: 10px; font-size: .73rem; font-weight: 500; }
+
+  .platform-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .72rem; font-weight: 500; }
+  .plat-nextdoor { background: #ecfdf5; color: #059669; }
+  .plat-facebook { background: #eff6ff; color: #2563eb; }
+  .plat-linkedin { background: #eef2ff; color: #4f46e5; }
+
+  .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .73rem; font-weight: 500; }
+  .status-new { background: #dbeafe; color: #1e40af; }
+  .status-viewed { background: #fef9c3; color: #854d0e; }
+  .status-contacted { background: #d1fae5; color: #065f46; }
+
+  /* Actions cell */
+  .actions-cell { display: flex; gap: .3rem; align-items: center; flex-wrap: nowrap; }
+  .btn-analyze { background: #f5f3ff; color: #7c3aed; border: 1px solid #ddd6fe; }
+  .btn-analyze:hover { background: #ede9fe; }
+  .btn-view { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+  .btn-view:hover { background: #e2e8f0; }
+  .btn-link { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; text-decoration: none; }
+  .status-select { padding: .25rem .35rem; border: 1px solid #e2e8f0; border-radius: 4px; font-size: .72rem; background: #fff; }
+
+  /* Signal snippet */
+  .snippet-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; font-size: .78rem; }
+
+  /* Pagination */
+  .pagination { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1rem; font-size: .82rem; color: #64748b; }
+  .pagination .pages { display: flex; gap: .3rem; }
+  .page-btn { padding: .3rem .6rem; border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; cursor: pointer; font-size: .78rem; }
+  .page-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+  /* View Toggle */
+  .view-toggle { display: flex; border: 1px solid #e2e8f0; border-radius: 5px; overflow: hidden; }
+  .view-btn { padding: .35rem .6rem; background: #fff; border: none; cursor: pointer; font-size: .78rem; color: #64748b; }
+  .view-btn.active { background: #2563eb; color: #fff; }
+
+  /* AI Summary Tooltip */
+  .ai-summary-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #64748b; font-size: .78rem; cursor: help; }
+
+  /* Gear icon */
+  .gear-icon { width: 16px; height: 16px; }
+
+  /* Stats strip */
+  .stats-strip { display: flex; gap: 1.5rem; padding: .5rem 1rem; background: #fff; border-radius: 6px; margin-bottom: .75rem; box-shadow: 0 1px 2px rgba(0,0,0,.05); font-size: .78rem; color: #64748b; }
+  .stats-strip strong { color: #1e293b; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <h2>LeadPulse</h2>
+  <a class="nav-item" href="#">Dashboard</a>
+  <a class="nav-item" href="#">Signal Log</a>
+  <a class="nav-item active" href="#">Prospects</a>
+  <a class="nav-item" href="#">Daily List</a>
+  <a class="nav-item" href="#">Analytics</a>
+  <a class="nav-item" href="#">Social Accounts</a>
+  <a class="nav-item" href="#">Account Config</a>
+</div>
+
+<!-- Main Content -->
+<div class="main">
+  <h1 class="page-title">Prospects</h1>
+
+  <!-- Action Bar -->
+  <div class="action-bar">
+    <button class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      Reprocess All
+    </button>
+    <button class="btn btn-purple">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      AI Analyze All
+    </button>
+    <button class="btn btn-ghost" title="AI Settings">
+      <svg class="gear-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+
+    <div class="bar-divider"></div>
+
+    <!-- Filters -->
+    <div class="filter-row">
+      <input type="text" placeholder="Search name..." />
+      <select><option>All Categories</option><option>Auto Insurance</option><option>Home Insurance</option><option>Health Insurance</option><option>Life Insurance</option></select>
+      <select><option>All Urgency</option><option>Hot</option><option>Warm</option><option>Cool</option></select>
+      <select><option>All Platforms</option><option>Nextdoor</option><option>Facebook</option><option>LinkedIn</option></select>
+      <select><option>All Status</option><option>New</option><option>Viewed</option><option>Contacted</option><option>Converted</option></select>
+    </div>
+
+    <div class="bar-spacer"></div>
+
+    <div class="view-toggle">
+      <button class="view-btn active">Table</button>
+      <button class="view-btn">Cards</button>
+    </div>
+    <button class="btn btn-ghost btn-sm">Columns</button>
+    <button class="btn btn-ghost btn-sm">Export CSV</button>
+  </div>
+
+  <!-- Stats Strip -->
+  <div class="stats-strip">
+    <span>Total: <strong>395</strong></span>
+    <span>AI Analyzed: <strong>312</strong> / 395</span>
+    <span>Hot: <strong>47</strong></span>
+    <span>Warm: <strong>128</strong></span>
+    <span>New: <strong>186</strong></span>
+    <span>Contacted: <strong>89</strong></span>
+  </div>
+
+  <!-- Info Message (shown after action) -->
+  <div class="info-msg">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    AI analysis complete — 83 signals analyzed (Google Gemini 3.1 Flash Lite)
+    <span class="close">&times;</span>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name <span class="sort-icon">&#8597;</span></th>
+          <th>Score <span class="sort-icon">&#9660;</span></th>
+          <th>Intent <span class="sort-icon">&#8597;</span></th>
+          <th>Category <span class="sort-icon">&#8597;</span></th>
+          <th>Sentiment <span class="sort-icon">&#8597;</span></th>
+          <th>Urgency <span class="sort-icon">&#8597;</span></th>
+          <th>Platform <span class="sort-icon">&#8597;</span></th>
+          <th>Location</th>
+          <th>Post Date <span class="sort-icon">&#8597;</span></th>
+          <th>Status <span class="sort-icon">&#8597;</span></th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name-cell"><strong>Karen Allen</strong><div class="company">State Farm</div></td>
+          <td><span class="score">92</span></td>
+          <td><span class="intent intent-high">85</span></td>
+          <td><span class="category-tag">Home Insurance</span></td>
+          <td><span class="sentiment sentiment-urgent">Urgent</span></td>
+          <td><span class="urgency urgency-hot">Hot</span></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td>Concord, CA</td>
+          <td style="white-space:nowrap">3/16/26</td>
+          <td><span class="status-badge status-new">New</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze">Analyze</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <a href="#" class="btn btn-sm btn-link">Link</a>
+              <select class="status-select"><option>New</option><option>Viewed</option><option>Contacted</option></select>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="name-cell"><strong>Dan Fulmer</strong></td>
+          <td><span class="score">85</span></td>
+          <td><span class="intent intent-high">78</span></td>
+          <td><span class="category-tag">Auto Insurance</span></td>
+          <td><span class="sentiment sentiment-negative">Negative</span></td>
+          <td><span class="urgency urgency-hot">Hot</span></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td>San Francisco, CA</td>
+          <td style="white-space:nowrap">3/18/26</td>
+          <td><span class="status-badge status-contacted">Contacted</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze" disabled style="opacity:.5">Analyzed</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <a href="#" class="btn btn-sm btn-link">Link</a>
+              <select class="status-select"><option>Contacted</option><option>Converted</option></select>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="name-cell"><strong>Jamie C.</strong></td>
+          <td><span class="score">78</span></td>
+          <td><span class="intent intent-high">72</span></td>
+          <td><span class="category-tag">Life Insurance</span></td>
+          <td><span class="sentiment sentiment-positive">Positive</span></td>
+          <td><span class="urgency urgency-warm">Warm</span></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td>San Francisco, CA</td>
+          <td style="white-space:nowrap">3/20/26</td>
+          <td><span class="status-badge status-viewed">Viewed</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze" disabled style="opacity:.5">Analyzed</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <a href="#" class="btn btn-sm btn-link">Link</a>
+              <select class="status-select"><option>Viewed</option><option>Contacted</option></select>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="name-cell"><strong>Michael Chen</strong></td>
+          <td><span class="score">71</span></td>
+          <td><span class="intent intent-med">55</span></td>
+          <td><span class="category-tag">Home Insurance</span></td>
+          <td><span class="sentiment sentiment-positive">Positive</span></td>
+          <td><span class="urgency urgency-warm">Warm</span></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td>Windemere</td>
+          <td style="white-space:nowrap">3/21/26</td>
+          <td><span class="status-badge status-new">New</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze">Analyze</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <a href="#" class="btn btn-sm btn-link">Link</a>
+              <select class="status-select"><option>New</option><option>Viewed</option></select>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="name-cell"><strong>Matt Chris</strong></td>
+          <td><span class="score">68</span></td>
+          <td><span class="intent intent-med">48</span></td>
+          <td><span class="category-tag">Home Insurance</span></td>
+          <td><span class="sentiment sentiment-neutral">Neutral</span></td>
+          <td><span class="urgency urgency-warm">Warm</span></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td>Mountain House, CA</td>
+          <td style="white-space:nowrap">3/22/26</td>
+          <td><span class="status-badge status-new">New</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze" disabled style="opacity:.5">Analyzed</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <a href="#" class="btn btn-sm btn-link">Link</a>
+              <select class="status-select"><option>New</option><option>Viewed</option></select>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="name-cell"><strong>Harish Chinai</strong></td>
+          <td><span class="score">64</span></td>
+          <td><span class="intent intent-none">&mdash;</span></td>
+          <td>&mdash;</td>
+          <td>&mdash;</td>
+          <td><span class="urgency urgency-warm">Warm</span></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td>Rio Vista, CA</td>
+          <td style="white-space:nowrap">3/24/26</td>
+          <td><span class="status-badge status-new">New</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze">Analyze</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <a href="#" class="btn btn-sm btn-link">Link</a>
+              <select class="status-select"><option>New</option><option>Viewed</option></select>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="name-cell"><strong>Brenda Dickinson</strong></td>
+          <td><span class="score">52</span></td>
+          <td><span class="intent intent-low">28</span></td>
+          <td><span class="category-tag">Health Insurance</span></td>
+          <td><span class="sentiment sentiment-neutral">Neutral</span></td>
+          <td><span class="urgency urgency-cool">Cool</span></td>
+          <td><span class="platform-tag plat-nextdoor">Nextdoor</span></td>
+          <td>Clayton, CA</td>
+          <td style="white-space:nowrap">3/24/26</td>
+          <td><span class="status-badge status-new">New</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze" disabled style="opacity:.5">Analyzed</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <select class="status-select"><option>New</option><option>Viewed</option></select>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td class="name-cell"><strong>Linda Wosskow</strong></td>
+          <td><span class="score">45</span></td>
+          <td><span class="intent intent-none">&mdash;</span></td>
+          <td>&mdash;</td>
+          <td>&mdash;</td>
+          <td><span class="urgency urgency-cool">Cool</span></td>
+          <td><span class="platform-tag plat-facebook">Facebook</span></td>
+          <td>Walnut Creek, CA</td>
+          <td style="white-space:nowrap">3/19/26</td>
+          <td><span class="status-badge status-new">New</span></td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-sm btn-analyze">Analyze</button>
+              <button class="btn btn-sm btn-view">View</button>
+              <select class="status-select"><option>New</option><option>Viewed</option></select>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <div class="pagination">
+      <span>Showing 1-20 of 395 prospects</span>
+      <div class="pages">
+        <button class="page-btn active">1</button>
+        <button class="page-btn">2</button>
+        <button class="page-btn">3</button>
+        <button class="page-btn">...</button>
+        <button class="page-btn">20</button>
+        <button class="page-btn">Next &rarr;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

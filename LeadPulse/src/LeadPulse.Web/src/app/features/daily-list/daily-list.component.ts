@@ -140,6 +140,7 @@ interface ColumnDef {
                 <th *ngIf="isVisible('email')">Email</th>
                 <th *ngIf="isVisible('phone')">Phone</th>
                 <th *ngIf="isVisible('company')">Company</th>
+                <th *ngIf="isVisible('postDate')" class="sortable-th" (click)="toggleSort('postDate')">Post Date <span class="sort-icon">{{ getSortIcon('postDate') }}</span></th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -159,11 +160,20 @@ interface ColumnDef {
                 <td *ngIf="isVisible('email')">{{ item.prospect.email || '—' }}</td>
                 <td *ngIf="isVisible('phone')">{{ item.prospect.phone || '—' }}</td>
                 <td *ngIf="isVisible('company')">{{ item.prospect.company || '—' }}</td>
+                <td *ngIf="isVisible('postDate')">{{ item.prospect.postDate ? (item.prospect.postDate | date:'shortDate') : '—' }}</td>
                 <td class="actions-cell">
                   <button class="btn-sm btn-view" (click)="viewProspect(item.prospect)">View</button>
                   <a *ngIf="item.prospect.postUrl" [href]="item.prospect.postUrl" target="_blank" class="btn-sm btn-link">Link</a>
                   <button *ngIf="item.prospect.enrichmentStatus === 'Pending' || item.prospect.enrichmentStatus === 'Failed'" class="btn-sm btn-enrich" (click)="enrichProspect(item)" [disabled]="lookingUp[item.prospect.id]">{{ lookingUp[item.prospect.id] ? 'Enriching...' : 'Enrich' }}</button>
-                  <span *ngIf="item.prospect.enrichmentStatus === 'Verified'" class="enrich-badge enrich-verified" title="Contact data verified">&#10003;</span>
+                  <button *ngIf="item.prospect.enrichmentStatus === 'Verified'" class="enrich-badge enrich-verified enrich-btn" (click)="enrichProspect(item)" [disabled]="lookingUp[item.prospect.id]" title="Re-enrich contact">{{ lookingUp[item.prospect.id] ? '...' : '&#10003;' }}</button>
+                  <button *ngIf="!item.prospect.linkedInUrl" class="btn-sm btn-linkedin" (click)="searchLinkedIn(item)" [disabled]="searchingLinkedIn[item.prospect.id]" title="Find LinkedIn Profile">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                    {{ searchingLinkedIn[item.prospect.id] ? '...' : 'Find' }}
+                  </button>
+                  <a *ngIf="item.prospect.linkedInUrl" [href]="item.prospect.linkedInUrl" target="_blank" class="btn-sm btn-linkedin-link" title="View LinkedIn Profile">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                    LI
+                  </a>
                   <span *ngIf="lookupMsg[item.prospect.id]" [class]="lookupError[item.prospect.id] ? 'enrich-msg-error' : 'enrich-msg-ok'">{{ lookupMsg[item.prospect.id] }}</span>
                   <select class="status-select" [ngModel]="item.status" (ngModelChange)="updateStatus(item.id, $event)" [name]="'status_' + item.id">
                     <option value="New">New</option>
@@ -198,6 +208,7 @@ interface ColumnDef {
               <div *ngIf="item.prospect.city || item.prospect.state" class="dl-card-location">
                 {{ item.prospect.city }}{{ item.prospect.city && item.prospect.state ? ', ' : '' }}{{ item.prospect.state }}
               </div>
+              <small *ngIf="item.prospect.postDate" class="dl-card-date">{{ item.prospect.postDate | date:'mediumDate' }}</small>
               <p class="dl-card-snippet" *ngIf="item.prospect.signalSnippet">{{ item.prospect.signalSnippet | slice:0:120 }}...</p>
               <div class="dl-card-footer">
                 <div class="dl-card-contact">
@@ -208,7 +219,7 @@ interface ColumnDef {
                   <button class="btn-sm btn-view" (click)="viewProspect(item.prospect)">View</button>
                   <a *ngIf="item.prospect.postUrl" [href]="item.prospect.postUrl" target="_blank" class="btn-sm btn-link">Link</a>
                   <button *ngIf="item.prospect.enrichmentStatus === 'Pending' || item.prospect.enrichmentStatus === 'Failed'" class="btn-sm btn-enrich" (click)="enrichProspect(item)" [disabled]="lookingUp[item.prospect.id]">{{ lookingUp[item.prospect.id] ? 'Enriching...' : 'Enrich' }}</button>
-                  <span *ngIf="item.prospect.enrichmentStatus === 'Verified'" class="enrich-badge enrich-verified" title="Contact data verified">&#10003;</span>
+                  <button *ngIf="item.prospect.enrichmentStatus === 'Verified'" class="enrich-badge enrich-verified enrich-btn" (click)="enrichProspect(item)" [disabled]="lookingUp[item.prospect.id]" title="Re-enrich contact">{{ lookingUp[item.prospect.id] ? '...' : '&#10003;' }}</button>
                   <select class="status-select" [ngModel]="item.status" (ngModelChange)="updateStatus(item.id, $event)" [name]="'cstatus_' + item.id">
                     <option value="New">New</option>
                     <option value="Viewed">Viewed</option>
@@ -323,6 +334,23 @@ interface ColumnDef {
         </div>
 
         <p *ngIf="strategies.length === 0 && !showNewForm" class="empty-text">No strategies configured yet. Click "+ New Strategy" to create one.</p>
+      </div>
+
+      <!-- LinkedIn Picker Modal -->
+      <div *ngIf="linkedInCandidates.length > 0" class="prospect-modal-overlay" (click)="linkedInCandidates = []">
+        <div class="prospect-modal" (click)="$event.stopPropagation()" style="max-width:500px">
+          <h3>Select LinkedIn Profile</h3>
+          <p class="sub-text">Choose the correct profile for <strong>{{ linkedInPickerName }}</strong></p>
+          <div *ngFor="let c of linkedInCandidates" class="li-candidate" (click)="pickLinkedIn(c.url)">
+            <div class="li-candidate-name">{{ c.name }}</div>
+            <div class="li-candidate-headline">{{ c.headline }}</div>
+            <div class="li-candidate-snippet">{{ c.snippet }}</div>
+            <div class="li-candidate-url">{{ c.url }}</div>
+          </div>
+          <div style="margin-top:1rem;text-align:right">
+            <button class="btn-sm" (click)="linkedInCandidates = []">Cancel</button>
+          </div>
+        </div>
       </div>
 
       <!-- Prospect View Modal -->
@@ -571,6 +599,7 @@ interface ColumnDef {
     .dl-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.3rem}
     .dl-card-badges{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.3rem}
     .dl-card-location{font-size:.72rem;color:#6b7280;margin-bottom:.3rem}
+    .dl-card-date{font-size:.72rem;color:#9ca3af;display:block;margin-bottom:.2rem}
     .dl-card-snippet{font-size:.78rem;color:#6b7280;margin:0 0 .5rem;line-height:1.3}
     .dl-card-footer{display:flex;justify-content:space-between;align-items:center}
     .dl-card-contact small{font-size:.7rem;color:#6b7280;display:block}
@@ -585,8 +614,23 @@ interface ColumnDef {
     .btn-enrich:disabled{opacity:.5;cursor:not-allowed}
     .enrich-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;font-size:.7rem;font-weight:700}
     .enrich-verified{background:#d1fae5;color:#059669}
+    .enrich-btn{cursor:pointer;border:1px solid #a7f3d0;transition:all .15s}
+    .enrich-btn:hover{background:#bbf7d0;border-color:#059669}
+    .enrich-btn:disabled{opacity:.5;cursor:not-allowed}
     .enrich-msg-ok{font-size:.7rem;color:#059669;margin-left:.25rem}
     .enrich-msg-error{font-size:.7rem;color:#dc2626;margin-left:.25rem}
+    .btn-linkedin{color:#0a66c2;border-color:#0a66c2;font-weight:600;display:inline-flex;align-items:center;gap:3px}
+    .btn-linkedin:hover{background:#e8f4fd}
+    .btn-linkedin:disabled{opacity:.5;cursor:not-allowed}
+    .btn-linkedin-link{color:#fff;background:#0a66c2;border-color:#0a66c2;font-weight:600;display:inline-flex;align-items:center;gap:3px;text-decoration:none}
+    .btn-linkedin-link:hover{background:#004182}
+    .btn-linkedin-link svg{fill:#fff}
+    .li-candidate{padding:.75rem;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:.5rem;cursor:pointer;transition:all .15s}
+    .li-candidate:hover{border-color:#0a66c2;background:#f0f7ff}
+    .li-candidate-name{font-weight:600;color:#1a1f36}
+    .li-candidate-headline{font-size:.8rem;color:#0a66c2;margin-top:2px}
+    .li-candidate-snippet{font-size:.75rem;color:#6b7280;margin-top:4px;line-height:1.3}
+    .li-candidate-url{font-size:.7rem;color:#9ca3af;margin-top:4px;word-break:break-all}
     .status-select{padding:.2rem .3rem;font-size:.75rem;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer}
     .btn-view{color:#2563eb;border-color:#2563eb;font-weight:600}
     .btn-view:hover{background:#eff6ff}
@@ -631,6 +675,7 @@ export class DailyListComponent implements OnInit {
     { key: 'email', label: 'Email', visible: false },
     { key: 'phone', label: 'Phone', visible: false },
     { key: 'company', label: 'Company', visible: false },
+    { key: 'postDate', label: 'Post Date', visible: true },
   ];
 
   private readonly COLUMNS_STORAGE_KEY = 'dailyList_columnVisibility';
@@ -698,6 +743,10 @@ export class DailyListComponent implements OnInit {
   lookingUp: Record<number, boolean> = {};
   lookupMsg: Record<number, string> = {};
   lookupError: Record<number, boolean> = {};
+  searchingLinkedIn: Record<number, boolean> = {};
+  linkedInCandidates: any[] = [];
+  linkedInPickerName = '';
+  linkedInPickerItem: any = null;
   viewingProspect: any = null;
 
   constructor(private strategyService: StrategyService, private geoService: GeoService, private prospectService: ProspectService) {}
@@ -1015,6 +1064,56 @@ export class DailyListComponent implements OnInit {
     });
   }
 
+  searchLinkedIn(item: any): void {
+    const prospectId = item.prospect.id;
+    this.searchingLinkedIn[prospectId] = true;
+    this.prospectService.searchLinkedIn(prospectId).subscribe({
+      next: (res: any) => {
+        this.searchingLinkedIn[prospectId] = false;
+        if (res.alreadyHasUrl) {
+          item.prospect.linkedInUrl = res.linkedInUrl;
+          return;
+        }
+        if (!res.success) {
+          this.lookupMsg[prospectId] = res.error || 'LinkedIn search failed';
+          this.lookupError[prospectId] = true;
+          setTimeout(() => { this.lookupMsg[prospectId] = ''; }, 4000);
+          return;
+        }
+        this.linkedInCandidates = res.candidates;
+        this.linkedInPickerName = item.prospect.name;
+        this.linkedInPickerItem = item;
+      },
+      error: () => {
+        this.searchingLinkedIn[prospectId] = false;
+        this.lookupMsg[prospectId] = 'LinkedIn search failed';
+        this.lookupError[prospectId] = true;
+        setTimeout(() => { this.lookupMsg[prospectId] = ''; }, 4000);
+      }
+    });
+  }
+
+  pickLinkedIn(url: string): void {
+    const item = this.linkedInPickerItem;
+    if (!item) return;
+    this.prospectService.saveLinkedIn(item.prospect.id, url).subscribe({
+      next: (res: any) => {
+        if (res.success && res.prospect) {
+          item.prospect = res.prospect;
+        } else {
+          item.prospect.linkedInUrl = url;
+        }
+        this.linkedInCandidates = [];
+        this.linkedInPickerItem = null;
+      },
+      error: () => {
+        item.prospect.linkedInUrl = url;
+        this.linkedInCandidates = [];
+        this.linkedInPickerItem = null;
+      }
+    });
+  }
+
   viewProspect(prospect: any): void {
     this.viewingProspect = prospect;
   }
@@ -1091,6 +1190,7 @@ export class DailyListComponent implements OnInit {
       else if (field === 'status') { valA = a.status || ''; valB = b.status || ''; }
       else if (field === 'city') { valA = a.prospect.city || ''; valB = b.prospect.city || ''; }
       else if (field === 'state') { valA = a.prospect.state || ''; valB = b.prospect.state || ''; }
+      else if (field === 'postDate') { valA = a.prospect.postDate || ''; valB = b.prospect.postDate || ''; }
       else { valA = ''; valB = ''; }
       if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = (valB as string).toLowerCase(); }
       if (valA < valB) return -1 * dir;

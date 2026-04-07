@@ -14,6 +14,12 @@ public class Prospect
     public string? Zip { get; set; }
     public string? Company { get; set; }
     public string? LinkedInUrl { get; set; }
+    public string? LinkedInType { get; set; } // "Individual" or "Company"
+    public string? LinkedInHeadline { get; set; }
+    public string? LinkedInAbout { get; set; }
+    public string? LinkedInContactInfo { get; set; } // JSON: email, phone, website, etc.
+    public string? LinkedInPhotoUrl { get; set; }
+    public DateTime? LinkedInScrapedAt { get; set; }
     public int CompositeScore { get; set; }
     public Urgency Urgency { get; set; } = Urgency.Cool;
     public string? Category { get; set; }
@@ -28,4 +34,5 @@ public class Prospect
     public User? AssignedTo { get; set; }
     public ICollection<ProspectSignal> ProspectSignals { get; set; } = new List<ProspectSignal>();
     public ICollection<CallLog> CallLogs { get; set; } = new List<CallLog>();
+    public ICollection<LinkedInPost> LinkedInPosts { get; set; } = new List<LinkedInPost>();
 }

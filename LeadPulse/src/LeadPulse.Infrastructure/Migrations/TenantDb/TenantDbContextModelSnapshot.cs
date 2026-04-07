@@ -344,6 +344,67 @@ namespace LeadPulse.Infrastructure.Migrations.TenantDb
                     b.ToTable("KeywordRules");
                 });
 
+            modelBuilder.Entity("LeadPulse.Domain.Entities.Tenant.LinkedInPost", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Comments")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("Likes")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PostDate")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("PostUrl")
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("ProspectId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ScrapedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProspectId");
+
+                    b.ToTable("LinkedInPosts");
+                });
+
+            modelBuilder.Entity("LeadPulse.Domain.Entities.Tenant.LinkedInScraperSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AiModel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("EncryptedApiKey")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LinkedInScraperSettings");
+                });
+
             modelBuilder.Entity("LeadPulse.Domain.Entities.Tenant.MonitoredGroup", b =>
                 {
                     b.Property<int>("Id")
@@ -410,6 +471,24 @@ namespace LeadPulse.Infrastructure.Migrations.TenantDb
 
                     b.Property<string>("EnrichmentStatus")
                         .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("LinkedInAbout")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("LinkedInContactInfo")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("LinkedInHeadline")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("LinkedInPhotoUrl")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime?>("LinkedInScrapedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("LinkedInType")
                         .HasColumnType("longtext");
 
                     b.Property<string>("LinkedInUrl")
@@ -902,6 +981,17 @@ namespace LeadPulse.Infrastructure.Migrations.TenantDb
                     b.Navigation("Prospect");
                 });
 
+            modelBuilder.Entity("LeadPulse.Domain.Entities.Tenant.LinkedInPost", b =>
+                {
+                    b.HasOne("LeadPulse.Domain.Entities.Tenant.Prospect", "Prospect")
+                        .WithMany("LinkedInPosts")
+                        .HasForeignKey("ProspectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Prospect");
+                });
+
             modelBuilder.Entity("LeadPulse.Domain.Entities.Tenant.MonitoredGroup", b =>
                 {
                     b.HasOne("LeadPulse.Domain.Entities.Tenant.SocialAccount", "SocialAccount")
@@ -1001,6 +1091,8 @@ namespace LeadPulse.Infrastructure.Migrations.TenantDb
             modelBuilder.Entity("LeadPulse.Domain.Entities.Tenant.Prospect", b =>
                 {
                     b.Navigation("CallLogs");
+
+                    b.Navigation("LinkedInPosts");
 
                     b.Navigation("ProspectSignals");
                 });

@@ -24,3 +24,16 @@ public class AiSettingsResponse
     public string? AiModel { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
+
+public class ScraperSettingsRequest
+{
+    public string? ApiKey { get; set; }
+    public string? AiModel { get; set; }
+}
+
+public class ScraperSettingsResponse
+{
+    public bool HasApiKey { get; set; }
+    public string AiModel { get; set; } = "claude-sonnet-4-6";
+    public DateTime? UpdatedAt { get; set; }
+}
