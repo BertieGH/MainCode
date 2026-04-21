@@ -13,6 +13,7 @@ import { AnalyticsComponent } from './features/analytics/analytics.component';
 import { TenantsComponent } from './features/tenants/tenants.component';
 import { SignalsComponent } from './features/signals/signals.component';
 import { AccountConfigComponent } from './features/account-config/account-config.component';
+import { ScraperTestComponent } from './features/scraper-test/scraper-test.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -32,6 +33,7 @@ export const routes: Routes = [
       { path: 'keywords', component: KeywordsComponent },
       { path: 'users', component: UsersComponent },
       { path: 'tenants', component: TenantsComponent },
+      { path: 'scraper-test', component: ScraperTestComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ]
   },

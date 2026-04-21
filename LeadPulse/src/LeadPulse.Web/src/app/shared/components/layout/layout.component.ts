@@ -80,6 +80,10 @@ import { AuthService } from '../../../core/services/auth.service';
             <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
             Tenants
           </a>
+          <a routerLink="/scraper-test" routerLinkActive="active">
+            <svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+            Scraper Test
+          </a>
         </nav>
         <div class="sidebar-footer">
           <div class="user-info">

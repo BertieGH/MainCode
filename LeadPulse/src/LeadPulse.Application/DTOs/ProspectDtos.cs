@@ -103,6 +103,17 @@ public class TestConnectionRequest
     public string Provider { get; set; } = string.Empty;
 }
 
+public class TestEnrichRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Email { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? Company { get; set; }
+    public string? LinkedInUrl { get; set; }
+    public string? Platform { get; set; }
+}
+
 public class ProspectFullDataResponse
 {
     public ProspectResponse Prospect { get; set; } = null!;
@@ -147,4 +158,14 @@ public class EnrichmentSettingsResponse
     public bool HasApiKey { get; set; }
     public bool IsEnabled { get; set; }
     public DateTime? UpdatedAt { get; set; }
+}
+
+public class TestEnhancedScrapeRequest
+{
+    public string LinkedInUrl { get; set; } = string.Empty;
+}
+
+public class SaveLinkedInCookieRequest
+{
+    public string? Cookie { get; set; }
 }

@@ -224,7 +224,7 @@ import { environment } from '../../../environments/environment';
             <div class="enrich-header">
               <div class="enrich-platform-info">
                 <span class="enrich-icon" [class]="'enrich-icon-' + p.provider.toLowerCase()">
-                  {{ p.provider === 'ContactOut' ? 'person_search' : p.provider === 'SerpApi' ? 'search' : 'rocket_launch' }}
+                  {{ p.provider === 'ContactOut' ? 'person_search' : p.provider === 'SerpApi' ? 'search' : p.provider === 'PeopleDataLabs' ? 'group' : 'rocket_launch' }}
                 </span>
                 <div>
                   <div class="enrich-platform-name">{{ p.provider }}</div>
@@ -264,14 +264,14 @@ import { environment } from '../../../environments/environment';
         <div *ngIf="noEnrichmentConfigured()" class="enrich-empty">
           <span class="icon">contacts</span>
           <p>No enrichment accounts configured yet.</p>
-          <p class="enrich-empty-sub">Connect ContactOut or Apollo to auto-fill phone numbers and emails. Add SerpApi for LinkedIn profile search.</p>
+          <p class="enrich-empty-sub">Connect ContactOut, Apollo, or People Data Labs to auto-fill phone numbers and emails. Add SerpApi for LinkedIn profile search.</p>
         </div>
 
         <!-- Configure Provider Modal -->
         <div *ngIf="configProvider" class="modal-overlay" (click)="configProvider = null">
           <div class="modal" (click)="$event.stopPropagation()">
             <h3>Configure {{ configProvider.provider }}</h3>
-            <p class="help-text">{{ configProvider.provider === 'ContactOut' ? 'Find emails and phone numbers from social profiles. Used to enrich prospect contact data.' : configProvider.provider === 'SerpApi' ? 'Google search API used to find LinkedIn profiles for prospects. Get a key at serpapi.com.' : 'Sales intelligence platform for finding verified emails and direct dials.' }}</p>
+            <p class="help-text">{{ configProvider.provider === 'ContactOut' ? 'Find emails and phone numbers from social profiles. Used to enrich prospect contact data.' : configProvider.provider === 'SerpApi' ? 'Google search API used to find LinkedIn profiles for prospects. Get a key at serpapi.com.' : configProvider.provider === 'PeopleDataLabs' ? 'Person enrichment API — finds emails, phones, and social profiles from name + location. Great for Nextdoor leads. Get a key at peopledatalabs.com.' : 'Sales intelligence platform for finding verified emails and direct dials.' }}</p>
             <div class="form-grid">
               <div class="form-group">
                 <label>Email / Username</label>
@@ -349,6 +349,8 @@ import { environment } from '../../../environments/environment';
     .enrich-icon{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'Material Icons';font-size:1.25rem;color:#fff}
     .enrich-icon-contactout{background:#2563eb}
     .enrich-icon-apollo{background:#7c3aed}
+    .enrich-icon-peopledatalabs{background:#0ea5e9}
+    .enrich-icon-serpapi{background:#f59e0b}
     .enrich-platform-name{font-weight:600;color:#1a1f36}
     .enrich-username{color:#6b7280;font-size:.875rem}
     .enrich-status-badge{padding:.2rem .6rem;border-radius:12px;font-size:.75rem;font-weight:600}
@@ -401,7 +403,8 @@ export class AccountConfigComponent implements OnInit {
   }[] = [
     { provider: 'ContactOut', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false },
     { provider: 'Apollo', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false },
-    { provider: 'SerpApi', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false }
+    { provider: 'SerpApi', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false },
+    { provider: 'PeopleDataLabs', form: { username: '', password: '', apiKey: '', isEnabled: false }, hasPassword: false, hasApiKey: false, updatedAt: null, saving: false, message: '', error: false }
   ];
 
   configProvider: typeof this.enrichmentProviders[0] | null = null;

@@ -9,6 +9,7 @@ public class LinkedInPost
     public DateTime? PostDate { get; set; }
     public int Likes { get; set; }
     public int Comments { get; set; }
+    public string? CommentsJson { get; set; }
     public DateTime ScrapedAt { get; set; }
 
     public Prospect Prospect { get; set; } = null!;

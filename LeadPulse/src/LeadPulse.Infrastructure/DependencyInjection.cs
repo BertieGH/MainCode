@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddScoped<ContactLookupService>();
         services.AddScoped<LinkedInSearchService>();
         services.AddScoped<LinkedInScraperService>();
+        services.AddScoped<EnhancedLinkedInScraperService>();
 
         // Platform adapters
         services.AddScoped<ISocialPlatformAdapter, LinkedInAdapter>();

@@ -25,6 +25,7 @@ public class ProspectsController : ControllerBase
     private readonly ContactLookupService _contactLookupService;
     private readonly LinkedInSearchService _linkedInSearchService;
     private readonly LinkedInScraperService _linkedInScraperService;
+    private readonly EnhancedLinkedInScraperService _enhancedScraperService;
     private readonly ISignalProcessor _signalProcessor;
     private readonly IntentAnalyzerFactory _analyzerFactory;
 
@@ -35,6 +36,7 @@ public class ProspectsController : ControllerBase
         ContactLookupService contactLookupService,
         LinkedInSearchService linkedInSearchService,
         LinkedInScraperService linkedInScraperService,
+        EnhancedLinkedInScraperService enhancedScraperService,
         ISignalProcessor signalProcessor,
         IntentAnalyzerFactory analyzerFactory)
     {
@@ -44,6 +46,7 @@ public class ProspectsController : ControllerBase
         _contactLookupService = contactLookupService;
         _linkedInSearchService = linkedInSearchService;
         _linkedInScraperService = linkedInScraperService;
+        _enhancedScraperService = enhancedScraperService;
         _signalProcessor = signalProcessor;
         _analyzerFactory = analyzerFactory;
     }
@@ -134,6 +137,28 @@ public class ProspectsController : ControllerBase
         var message = result.Success ? $"{request.Provider} connection successful" : null;
         var warning = result.Success && !string.IsNullOrEmpty(result.Error) ? result.Error : null;
         return Ok(new { success = result.Success, message, warning, error = result.Success ? null : result.Error, provider = result.Provider });
+    }
+
+    [HttpPost("test-enrich")]
+    public async Task<IActionResult> TestEnrich([FromBody] TestEnrichRequest request)
+    {
+        if (!_tenantContext.TenantId.HasValue)
+            return BadRequest(new { error = "Tenant context required" });
+
+        var result = await _contactLookupService.LookupAsync(
+            _tenantContext.TenantId.Value, request.Name, request.Platform, null,
+            request.City, request.State, request.Company, request.LinkedInUrl, request.Email);
+
+        return Ok(new
+        {
+            success = result.Success,
+            email = result.Email,
+            phone = result.Phone,
+            company = result.Company,
+            linkedInUrl = result.LinkedInUrl,
+            provider = result.Provider,
+            error = result.Error
+        });
     }
 
     [HttpGet("{id:int}")]
@@ -286,7 +311,7 @@ public class ProspectsController : ControllerBase
         var result = await _linkedInScraperService.ScrapeProfileAsync(_tenantContext.TenantId.Value, prospect.LinkedInUrl);
 
         if (!result.Success)
-            return Ok(new { success = false, error = result.Error });
+            return Ok(new { success = false, error = result.Error, warnings = result.Warnings });
 
         // Save profile data to prospect
         var profile = result.Profile!;
@@ -305,6 +330,7 @@ public class ProspectsController : ControllerBase
         return Ok(new
         {
             success = true,
+            warnings = result.Warnings,
             profile = new
             {
                 prospect.LinkedInType,
@@ -332,7 +358,7 @@ public class ProspectsController : ControllerBase
         var result = await _linkedInScraperService.ScrapePostsAsync(_tenantContext.TenantId.Value, prospect.LinkedInUrl);
 
         if (!result.Success)
-            return Ok(new { success = false, error = result.Error });
+            return Ok(new { success = false, error = result.Error, warnings = result.Warnings });
 
         // Save posts - remove existing posts first to avoid duplicates
         var existingPosts = await _tenantDb.LinkedInPosts.Where(p => p.ProspectId == id).ToListAsync();
@@ -348,6 +374,7 @@ public class ProspectsController : ControllerBase
                 PostDate = postData.PostDate,
                 Likes = postData.Likes,
                 Comments = postData.Comments,
+                CommentsJson = postData.CommentsJson,
                 ScrapedAt = DateTime.UtcNow
             });
         }
@@ -358,8 +385,9 @@ public class ProspectsController : ControllerBase
         return Ok(new
         {
             success = true,
+            warnings = result.Warnings,
             postsCount = result.Posts.Count,
-            posts = result.Posts.Select(p => new { p.Content, p.PostDate, p.Likes, p.Comments })
+            posts = result.Posts.Select(p => new { p.Content, p.PostUrl, p.PostDate, p.Likes, p.Comments, p.CommentsJson })
         });
     }
 
@@ -859,7 +887,7 @@ public class ProspectsController : ControllerBase
     {
         var settings = await _tenantDb.EnrichmentSettings.ToListAsync();
 
-        var result = new[] { "ContactOut", "Apollo" }.Select(provider =>
+        var result = new[] { "ContactOut", "Apollo", "PeopleDataLabs" }.Select(provider =>
         {
             var s = settings.FirstOrDefault(x => x.Provider == provider);
             return new EnrichmentSettingsResponse
@@ -882,8 +910,9 @@ public class ProspectsController : ControllerBase
         if (!_tenantContext.TenantId.HasValue)
             return BadRequest(new { error = "Tenant context required" });
 
-        if (request.Provider != "ContactOut" && request.Provider != "Apollo" && request.Provider != "SerpApi")
-            return BadRequest(new { error = "Provider must be 'ContactOut', 'Apollo', or 'SerpApi'" });
+        var validProviders = new[] { "ContactOut", "Apollo", "SerpApi", "PeopleDataLabs" };
+        if (!validProviders.Contains(request.Provider))
+            return BadRequest(new { error = "Provider must be 'ContactOut', 'Apollo', 'SerpApi', or 'PeopleDataLabs'" });
 
         var settings = await _tenantDb.EnrichmentSettings
             .FirstOrDefaultAsync(s => s.Provider == request.Provider);
@@ -919,5 +948,76 @@ public class ProspectsController : ControllerBase
             IsEnabled = settings.IsEnabled,
             UpdatedAt = settings.UpdatedAt
         });
+    }
+
+    // ========== Enhanced Scraping Test Endpoints ==========
+
+    [HttpPost("test-enhanced-profile")]
+    public async Task<IActionResult> TestEnhancedProfile([FromBody] TestEnhancedScrapeRequest request)
+    {
+        if (!_tenantContext.TenantId.HasValue)
+            return BadRequest(new { error = "Tenant context required" });
+
+        if (string.IsNullOrEmpty(request.LinkedInUrl))
+            return BadRequest(new { error = "LinkedIn URL is required" });
+
+        var result = await _linkedInScraperService.ScrapeProfileAsync(_tenantContext.TenantId.Value, request.LinkedInUrl);
+        return Ok(result);
+    }
+
+    [HttpPost("test-enhanced-posts")]
+    public async Task<IActionResult> TestEnhancedPosts([FromBody] TestEnhancedScrapeRequest request)
+    {
+        if (!_tenantContext.TenantId.HasValue)
+            return BadRequest(new { error = "Tenant context required" });
+
+        if (string.IsNullOrEmpty(request.LinkedInUrl))
+            return BadRequest(new { error = "LinkedIn URL is required" });
+
+        var result = await _linkedInScraperService.ScrapePostsAsync(_tenantContext.TenantId.Value, request.LinkedInUrl);
+        return Ok(result);
+    }
+
+    // ========== LinkedIn Cookie Management ==========
+
+    [HttpGet("linkedin-cookie-status")]
+    public async Task<IActionResult> GetLinkedInCookieStatus()
+    {
+        var settings = await _tenantDb.LinkedInScraperSettings.FirstOrDefaultAsync();
+        return Ok(new
+        {
+            hasCookie = settings?.EncryptedLinkedInCookie != null,
+            expiresAt = settings?.LinkedInCookieExpiresAt
+        });
+    }
+
+    [HttpPut("linkedin-cookie")]
+    public async Task<IActionResult> SaveLinkedInCookie([FromBody] SaveLinkedInCookieRequest request)
+    {
+        if (!_tenantContext.TenantId.HasValue)
+            return BadRequest(new { error = "Tenant context required" });
+
+        var settings = await _tenantDb.LinkedInScraperSettings.FirstOrDefaultAsync();
+        if (settings == null)
+        {
+            settings = new LinkedInScraperSettings();
+            _tenantDb.LinkedInScraperSettings.Add(settings);
+        }
+
+        if (string.IsNullOrEmpty(request.Cookie))
+        {
+            settings.EncryptedLinkedInCookie = null;
+            settings.LinkedInCookieExpiresAt = null;
+        }
+        else
+        {
+            settings.EncryptedLinkedInCookie = _encryptionService.Encrypt(request.Cookie, _tenantContext.TenantId.Value);
+            settings.LinkedInCookieExpiresAt = DateTime.UtcNow.AddDays(90); // LinkedIn cookies typically last ~90 days
+        }
+
+        settings.UpdatedAt = DateTime.UtcNow;
+        await _tenantDb.SaveChangesAsync();
+
+        return Ok(new { success = true, hasCookie = settings.EncryptedLinkedInCookie != null, expiresAt = settings.LinkedInCookieExpiresAt });
     }
 }

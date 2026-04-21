@@ -355,6 +355,9 @@ namespace LeadPulse.Infrastructure.Migrations.TenantDb
                     b.Property<int>("Comments")
                         .HasColumnType("int");
 
+                    b.Property<string>("CommentsJson")
+                        .HasColumnType("longtext");
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -396,6 +399,12 @@ namespace LeadPulse.Infrastructure.Migrations.TenantDb
 
                     b.Property<string>("EncryptedApiKey")
                         .HasColumnType("longtext");
+
+                    b.Property<string>("EncryptedLinkedInCookie")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTime?>("LinkedInCookieExpiresAt")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime(6)");

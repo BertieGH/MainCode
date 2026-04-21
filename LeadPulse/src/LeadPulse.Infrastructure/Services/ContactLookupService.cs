@@ -38,7 +38,7 @@ public class ContactLookupService
     public async Task<ContactLookupResult> LookupAsync(int tenantId, string prospectName, string? platform, string? postUrl, string? city = null, string? state = null, string? company = null, string? linkedInUrl = null, string? existingEmail = null)
     {
         // Get all enabled enrichment providers (exclude SerpApi — it's for LinkedIn search only)
-        var enrichmentProviders = new[] { "Apollo", "ContactOut" };
+        var enrichmentProviders = new[] { "Apollo", "ContactOut", "PeopleDataLabs" };
         var allSettings = await _tenantDb.EnrichmentSettings
             .Where(s => s.IsEnabled && enrichmentProviders.Contains(s.Provider) && (!string.IsNullOrEmpty(s.EncryptedApiKey) || !string.IsNullOrEmpty(s.EncryptedPassword)))
             .OrderBy(s => s.Provider)
@@ -64,6 +64,7 @@ public class ContactLookupService
                 {
                     "ContactOut" => await LookupContactOut(apiKey, prospectName, platform, postUrl, city, state, company, linkedInUrl),
                     "Apollo" => await LookupApollo(apiKey, prospectName, platform, postUrl, city, state, company, linkedInUrl, existingEmail),
+                    "PeopleDataLabs" => await LookupPeopleDataLabs(apiKey, prospectName, city, state, company, linkedInUrl, existingEmail),
                     _ => new ContactLookupResult { Success = false, Error = $"Unknown provider: {settings.Provider}" }
                 };
 
@@ -146,7 +147,7 @@ public class ContactLookupService
                 {
                     // Use /v1/auth/health to validate the API key without needing endpoint access
                     client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
-                    var response = await client.GetAsync("https://api.apollo.io/v1/auth/health");
+                    var response = await client.GetAsync("https://api.apollo.io/api/v1/auth/health");
                     _logger.LogInformation("Apollo health check returned {Status}", response.StatusCode);
                     var body = await response.Content.ReadAsStringAsync();
                     _logger.LogInformation("Apollo health response: {Body}", body);
@@ -162,6 +163,27 @@ public class ContactLookupService
                     return new ContactLookupResult { Success = true, Error = "Credentials saved, but an API key is needed for enrichment lookups.", Provider = provider };
 
                 return new ContactLookupResult { Success = false, Error = "Apollo requires an API key for enrichment.", Provider = provider };
+            }
+            else if (provider == "PeopleDataLabs")
+            {
+                if (!string.IsNullOrEmpty(apiKey))
+                {
+                    // Test with a minimal query to validate the API key
+                    client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+                    var response = await client.GetAsync("https://api.peopledatalabs.com/v5/person/enrich?name=test&min_likelihood=10");
+                    var body = await response.Content.ReadAsStringAsync();
+                    _logger.LogInformation("PDL test returned {Status}: {Body}", response.StatusCode, body.Length > 200 ? body[..200] : body);
+                    // 404/422/400 means key works but no match or bad params (expected for "test")
+                    if (response.IsSuccessStatusCode ||
+                        response.StatusCode == System.Net.HttpStatusCode.NotFound ||
+                        response.StatusCode == System.Net.HttpStatusCode.BadRequest ||
+                        response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity)
+                        return new ContactLookupResult { Success = true, Provider = provider };
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                        return new ContactLookupResult { Success = false, Error = "People Data Labs API key is invalid.", Provider = provider };
+                    return new ContactLookupResult { Success = false, Error = $"People Data Labs returned {response.StatusCode}", Provider = provider };
+                }
+                return new ContactLookupResult { Success = false, Error = "People Data Labs requires an API key.", Provider = provider };
             }
 
             return new ContactLookupResult { Success = false, Error = $"Unknown provider: {provider}", Provider = provider };
@@ -315,132 +337,102 @@ public class ContactLookupService
             return new ContactLookupResult { Success = false, Error = "Apollo API key is required for enrichment lookups. Add an API key in Account Config > Contact Data Config.", Provider = "Apollo" };
 
         var client = _httpClientFactory.CreateClient();
-
         var parts = name.Split(' ', 2);
         var firstName = parts[0];
         var lastName = parts.Length > 1 ? parts[1] : "";
 
-        // Strategy 1: If we have a LinkedIn URL, use /v1/people/match with it (highest accuracy)
+        // Strategy 1: LinkedIn URL (highest accuracy)
         if (!string.IsNullOrEmpty(linkedInUrl))
         {
-            _logger.LogInformation("Apollo: trying /v1/people/match with LinkedIn URL for {Name}", name);
-            var matchDict = new Dictionary<string, object>
+            _logger.LogInformation("Apollo Strategy 1: match by LinkedIn URL for {Name}", name);
+            var qp = new Dictionary<string, string>
             {
                 ["linkedin_url"] = linkedInUrl,
-                ["reveal_personal_emails"] = true,
-                ["reveal_phone_number"] = true
+                ["reveal_personal_emails"] = "true"
             };
-            var (email, phone, company, linkedIn) = await CallApolloEndpoint(client, apiKey, "https://api.apollo.io/v1/people/match", matchDict);
+            var (email, phone, company, linkedIn) = await CallApolloMatch(client, apiKey, qp);
             if (email != null || phone != null)
                 return new ContactLookupResult { Success = true, Email = email, Phone = phone, Company = company, LinkedInUrl = linkedIn ?? linkedInUrl, Provider = "Apollo" };
         }
 
-        // Strategy 2: If we have an email, use /v1/people/match with it
+        // Strategy 2: Email (second strongest identifier)
         if (!string.IsNullOrEmpty(existingEmail) && !existingEmail.Contains("@example.com"))
         {
-            _logger.LogInformation("Apollo: trying /v1/people/match with email for {Name}", name);
-            var matchDict = new Dictionary<string, object>
+            _logger.LogInformation("Apollo Strategy 2: match by email for {Name}", name);
+            var qp = new Dictionary<string, string>
             {
                 ["email"] = existingEmail,
-                ["first_name"] = firstName,
-                ["last_name"] = lastName,
-                ["reveal_personal_emails"] = true,
-                ["reveal_phone_number"] = true
+                ["reveal_personal_emails"] = "true"
             };
-            var (email, phone, company, linkedIn) = await CallApolloEndpoint(client, apiKey, "https://api.apollo.io/v1/people/match", matchDict);
+            var (email, phone, company, linkedIn) = await CallApolloMatch(client, apiKey, qp);
             if (email != null || phone != null)
                 return new ContactLookupResult { Success = true, Email = email, Phone = phone, Company = company, LinkedInUrl = linkedIn, Provider = "Apollo" };
         }
 
-        // Strategy 3: Name + location + company match
+        // Strategy 3: Name + company + domain
         {
-            _logger.LogInformation("Apollo: trying /v1/people/match with name+location for {Name}", name);
-            var matchDict = new Dictionary<string, object>
+            _logger.LogInformation("Apollo Strategy 3: match by name + org for {Name}", name);
+            var qp = new Dictionary<string, string>
             {
                 ["first_name"] = firstName,
                 ["last_name"] = lastName,
-                ["reveal_personal_emails"] = true,
-                ["reveal_phone_number"] = true
+                ["reveal_personal_emails"] = "true"
             };
             if (!string.IsNullOrEmpty(companyName))
-                matchDict["organization_name"] = companyName;
-            if (!string.IsNullOrEmpty(city))
-                matchDict["city"] = city;
-            if (!string.IsNullOrEmpty(state))
-                matchDict["state"] = state;
-
-            var (email, phone, company, linkedIn) = await CallApolloEndpoint(client, apiKey, "https://api.apollo.io/v1/people/match", matchDict);
+                qp["organization_name"] = companyName;
+            var (email, phone, company, linkedIn) = await CallApolloMatch(client, apiKey, qp);
             if (email != null || phone != null)
                 return new ContactLookupResult { Success = true, Email = email, Phone = phone, Company = company, LinkedInUrl = linkedIn, Provider = "Apollo" };
         }
 
-        // Strategy 4: Broader search with /v1/people/search
+        // Strategy 4: Just name (broadest match)
+        if (!string.IsNullOrEmpty(companyName))
         {
-            _logger.LogInformation("Apollo: trying /v1/people/search fallback for {Name}", name);
-            var (email, phone, company, linkedIn) = await ApolloSearchFallback(client, apiKey, name, firstName, lastName, city, state, companyName);
+            _logger.LogInformation("Apollo Strategy 4: match by name only for {Name}", name);
+            var qp = new Dictionary<string, string>
+            {
+                ["first_name"] = firstName,
+                ["last_name"] = lastName,
+                ["reveal_personal_emails"] = "true"
+            };
+            var (email, phone, company, linkedIn) = await CallApolloMatch(client, apiKey, qp);
             if (email != null || phone != null)
                 return new ContactLookupResult { Success = true, Email = email, Phone = phone, Company = company, LinkedInUrl = linkedIn, Provider = "Apollo" };
         }
 
-        return new ContactLookupResult { Success = false, Error = "Apollo found no contact data for this prospect", Provider = "Apollo" };
+        return new ContactLookupResult { Success = false, Error = "Apollo found no contact data for this prospect across all strategies", Provider = "Apollo" };
     }
 
-    private async Task<(string? email, string? phone, string? company, string? linkedIn)> CallApolloEndpoint(
-        HttpClient client, string apiKey, string url, Dictionary<string, object> body)
+    /// <summary>
+    /// Calls Apollo /api/v1/people/match with parameters as QUERY PARAMS (per Apollo docs).
+    /// </summary>
+    private async Task<(string? email, string? phone, string? company, string? linkedIn)> CallApolloMatch(
+        HttpClient client, string apiKey, Dictionary<string, string> queryParams)
     {
-        // Create a new client for each call to avoid duplicate headers
+        // Build URL with query parameters (Apollo docs: all params are query params for people/match)
+        var queryString = string.Join("&", queryParams.Select(kvp =>
+            $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
+        var url = $"https://api.apollo.io/api/v1/people/match?{queryString}";
+
         var req = new HttpRequestMessage(HttpMethod.Post, url);
         req.Headers.Add("X-Api-Key", apiKey);
-        req.Content = new StringContent(
-            System.Text.Json.JsonSerializer.Serialize(body),
-            System.Text.Encoding.UTF8, "application/json");
+        req.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
 
-        _logger.LogInformation("Apollo request to {Url}: {Body}",
-            url, System.Text.Json.JsonSerializer.Serialize(body).Length > 300
-                ? System.Text.Json.JsonSerializer.Serialize(body)[..300]
-                : System.Text.Json.JsonSerializer.Serialize(body));
+        _logger.LogInformation("Apollo match request: {Url}", url.Replace(apiKey, "***"));
 
         var response = await client.SendAsync(req);
 
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync();
-            _logger.LogWarning("Apollo {Url} returned {Status}: {Body}", url, response.StatusCode, errorBody.Length > 300 ? errorBody[..300] : errorBody);
+            _logger.LogWarning("Apollo match returned {Status}: {Body}", response.StatusCode, errorBody.Length > 500 ? errorBody[..500] : errorBody);
             return (null, null, null, null);
         }
 
         var json = await response.Content.ReadAsStringAsync();
-        _logger.LogInformation("Apollo response ({Len} chars): {Json}", json.Length, json.Length > 500 ? json[..500] : json);
+        _logger.LogInformation("Apollo match response ({Len} chars): {Json}", json.Length, json.Length > 800 ? json[..800] : json);
 
         return ParseApolloJson(json);
-    }
-
-    private async Task<(string? email, string? phone, string? company, string? linkedIn)> ApolloSearchFallback(
-        HttpClient client, string apiKey, string name, string firstName, string lastName, string? city, string? state, string? companyName)
-    {
-        var searchDict = new Dictionary<string, object>
-        {
-            ["page"] = 1,
-            ["per_page"] = 3,
-            ["reveal_personal_emails"] = true,
-            ["reveal_phone_number"] = true,
-            ["person_titles"] = Array.Empty<string>()
-        };
-
-        // Use first/last name for better matching
-        searchDict["q_person_name"] = name;
-
-        // Add location filters
-        if (!string.IsNullOrEmpty(city) && !string.IsNullOrEmpty(state))
-            searchDict["person_locations"] = new[] { $"{city}, {state}" };
-        else if (!string.IsNullOrEmpty(state))
-            searchDict["person_locations"] = new[] { state };
-
-        // Add company domain or name if available
-        if (!string.IsNullOrEmpty(companyName))
-            searchDict["q_organization_name"] = companyName;
-
-        return await CallApolloEndpoint(client, apiKey, "https://api.apollo.io/v1/mixed_people/search", searchDict);
     }
 
     private (string? email, string? phone, string? company, string? linkedIn) ParseApolloJson(string json)
@@ -448,62 +440,205 @@ public class ContactLookupService
         var doc = System.Text.Json.JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        string? email = null, phone = null, company = null, linkedIn = null;
-
+        // Find the person element — match returns {person:{}}, search returns {people:[]}
         System.Text.Json.JsonElement? person = null;
         if (root.TryGetProperty("person", out var singlePerson) && singlePerson.ValueKind == System.Text.Json.JsonValueKind.Object)
             person = singlePerson;
         else if (root.TryGetProperty("people", out var people) && people.ValueKind == System.Text.Json.JsonValueKind.Array && people.GetArrayLength() > 0)
             person = people[0];
 
-        if (person.HasValue)
+        if (!person.HasValue) return (null, null, null, null);
+        return ExtractApolloPersonData(person.Value);
+    }
+
+    private (string? email, string? phone, string? company, string? linkedIn) ExtractApolloPersonData(System.Text.Json.JsonElement p)
+    {
+        string? email = null, phone = null, company = null, linkedIn = null;
+
+        // Email: work email > personal_emails > revealed email
+        if (p.TryGetProperty("email", out var em) && em.ValueKind == System.Text.Json.JsonValueKind.String)
+            email = em.GetString();
+        if (email == null && p.TryGetProperty("personal_emails", out var personalEmails) && personalEmails.ValueKind == System.Text.Json.JsonValueKind.Array && personalEmails.GetArrayLength() > 0)
+            email = personalEmails[0].GetString();
+        if (email == null && p.TryGetProperty("contact_emails", out var contactEmails) && contactEmails.ValueKind == System.Text.Json.JsonValueKind.Array && contactEmails.GetArrayLength() > 0)
+            email = contactEmails[0].GetString();
+
+        // Phone: phone_numbers array > sanitized_phone > direct fields
+        if (p.TryGetProperty("phone_numbers", out var phones) && phones.ValueKind == System.Text.Json.JsonValueKind.Array && phones.GetArrayLength() > 0)
         {
-            var p = person.Value;
-
-            // Email: try email field, then personal_emails array, then revealed email
-            if (p.TryGetProperty("email", out var em) && em.ValueKind == System.Text.Json.JsonValueKind.String)
-                email = em.GetString();
-            if (email == null && p.TryGetProperty("personal_emails", out var personalEmails) && personalEmails.ValueKind == System.Text.Json.JsonValueKind.Array && personalEmails.GetArrayLength() > 0)
-                email = personalEmails[0].GetString();
-            if (email == null && p.TryGetProperty("revealed_for_current_team", out var revealed) && revealed.GetBoolean())
+            var phoneObj = phones[0];
+            if (phoneObj.ValueKind == System.Text.Json.JsonValueKind.Object)
             {
-                // Check if there's a contact object with email
-                if (p.TryGetProperty("contact", out var contact) && contact.TryGetProperty("email", out var cEmail))
-                    email = cEmail.GetString();
+                phone = phoneObj.TryGetProperty("sanitized_number", out var sn) ? sn.GetString() : null;
+                phone ??= phoneObj.TryGetProperty("raw_number", out var rn) ? rn.GetString() : null;
+                phone ??= phoneObj.TryGetProperty("number", out var n) ? n.GetString() : null;
             }
-
-            // Phone: try phone_numbers array, then direct_phone, then contact.phone
-            if (p.TryGetProperty("phone_numbers", out var phones) && phones.ValueKind == System.Text.Json.JsonValueKind.Array && phones.GetArrayLength() > 0)
-            {
-                var phoneObj = phones[0];
-                if (phoneObj.ValueKind == System.Text.Json.JsonValueKind.Object)
-                {
-                    if (phoneObj.TryGetProperty("sanitized_number", out var num))
-                        phone = num.GetString();
-                    else if (phoneObj.TryGetProperty("raw_number", out var raw))
-                        phone = raw.GetString();
-                    else if (phoneObj.TryGetProperty("number", out var n))
-                        phone = n.GetString();
-                }
-                else if (phoneObj.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    phone = phoneObj.GetString();
-                }
-            }
-            if (phone == null && p.TryGetProperty("sanitized_phone", out var sPhone) && sPhone.ValueKind == System.Text.Json.JsonValueKind.String)
-                phone = sPhone.GetString();
-
-            // Company
-            if (p.TryGetProperty("organization", out var org) && org.TryGetProperty("name", out var orgName))
-                company = orgName.GetString();
-            if (company == null && p.TryGetProperty("organization_name", out var orgN))
-                company = orgN.GetString();
-
-            // LinkedIn
-            if (p.TryGetProperty("linkedin_url", out var li) && li.ValueKind == System.Text.Json.JsonValueKind.String)
-                linkedIn = li.GetString();
+            else if (phoneObj.ValueKind == System.Text.Json.JsonValueKind.String)
+                phone = phoneObj.GetString();
         }
+        if (phone == null && p.TryGetProperty("sanitized_phone", out var sPhone) && sPhone.ValueKind == System.Text.Json.JsonValueKind.String)
+            phone = sPhone.GetString();
+        if (phone == null && p.TryGetProperty("phone", out var directPhone) && directPhone.ValueKind == System.Text.Json.JsonValueKind.String)
+            phone = directPhone.GetString();
+
+        // Company
+        if (p.TryGetProperty("organization", out var org) && org.TryGetProperty("name", out var orgName))
+            company = orgName.GetString();
+        if (company == null && p.TryGetProperty("organization_name", out var orgN))
+            company = orgN.GetString();
+
+        // LinkedIn
+        if (p.TryGetProperty("linkedin_url", out var li) && li.ValueKind == System.Text.Json.JsonValueKind.String)
+            linkedIn = li.GetString();
 
         return (email, phone, company, linkedIn);
+    }
+
+    // === People Data Labs ===
+
+    private async Task<ContactLookupResult> LookupPeopleDataLabs(string? apiKey, string name, string? city, string? state, string? company, string? linkedInUrl, string? existingEmail)
+    {
+        if (string.IsNullOrEmpty(apiKey))
+            return new ContactLookupResult { Success = false, Error = "People Data Labs API key is required. Add it in Account Config > Contact Data Config.", Provider = "PeopleDataLabs" };
+
+        var client = _httpClientFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+
+        // Build query params per PDL docs:
+        // Required: (first_name AND last_name OR name) AND (locality OR region OR company OR location)
+        var qp = new List<string> { $"name={Uri.EscapeDataString(name)}", "titlecase=true" };
+
+        if (!string.IsNullOrEmpty(city))
+            qp.Add($"locality={Uri.EscapeDataString(city)}");
+        if (!string.IsNullOrEmpty(state))
+            qp.Add($"region={Uri.EscapeDataString(state)}");
+        if (!string.IsNullOrEmpty(company))
+            qp.Add($"company={Uri.EscapeDataString(company)}");
+        if (!string.IsNullOrEmpty(linkedInUrl))
+            qp.Add($"profile={Uri.EscapeDataString(linkedInUrl)}");
+        if (!string.IsNullOrEmpty(existingEmail) && !existingEmail.Contains("@example.com"))
+            qp.Add($"email={Uri.EscapeDataString(existingEmail)}");
+
+        // min_likelihood=5 to avoid weak matches
+        qp.Add("min_likelihood=5");
+
+        var url = $"https://api.peopledatalabs.com/v5/person/enrich?{string.Join("&", qp)}";
+        _logger.LogInformation("PDL enrich request: {Url}", url);
+
+        try
+        {
+            var response = await client.GetAsync(url);
+            var json = await response.Content.ReadAsStringAsync();
+            _logger.LogInformation("PDL response {Status} ({Len} chars): {Json}", response.StatusCode, json.Length, json.Length > 800 ? json[..800] : json);
+
+            // 404 = no match found
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return new ContactLookupResult { Success = false, Error = "People Data Labs found no match for this person", Provider = "PeopleDataLabs" };
+
+            if (!response.IsSuccessStatusCode)
+                return new ContactLookupResult { Success = false, Error = $"People Data Labs API error: {response.StatusCode}", Provider = "PeopleDataLabs" };
+
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            string? email = null, phone = null, companyResult = null, linkedIn = null;
+
+            if (root.TryGetProperty("data", out var data))
+            {
+                // NOTE: PDL free/standard tier returns boolean true/false for email/phone fields
+                // to indicate data EXISTS but is not revealed. Only paid credits return actual values.
+                // We must check ValueKind to avoid treating "true" as actual data.
+
+                // Emails: work_email, personal_emails array, or recommended_personal_email
+                if (data.TryGetProperty("work_email", out var workEmail) && workEmail.ValueKind == System.Text.Json.JsonValueKind.String)
+                    email = workEmail.GetString();
+
+                if (email == null && data.TryGetProperty("recommended_personal_email", out var recEmail) && recEmail.ValueKind == System.Text.Json.JsonValueKind.String)
+                    email = recEmail.GetString();
+
+                if (email == null && data.TryGetProperty("personal_emails", out var pEmails) && pEmails.ValueKind == System.Text.Json.JsonValueKind.Array && pEmails.GetArrayLength() > 0)
+                {
+                    var firstEmail = pEmails[0];
+                    if (firstEmail.ValueKind == System.Text.Json.JsonValueKind.String)
+                        email = firstEmail.GetString();
+                }
+
+                if (email == null && data.TryGetProperty("emails", out var emails) && emails.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var em in emails.EnumerateArray())
+                    {
+                        var addr = em.TryGetProperty("address", out var a) ? a.GetString() : null;
+                        if (!string.IsNullOrEmpty(addr)) { email = addr; break; }
+                    }
+                }
+
+                // Phone: mobile_phone, phone_numbers array
+                if (data.TryGetProperty("mobile_phone", out var mobile) && mobile.ValueKind == System.Text.Json.JsonValueKind.String)
+                    phone = mobile.GetString();
+
+                if (phone == null && data.TryGetProperty("phone_numbers", out var phones) && phones.ValueKind == System.Text.Json.JsonValueKind.Array && phones.GetArrayLength() > 0)
+                {
+                    var firstPhone = phones[0];
+                    if (firstPhone.ValueKind == System.Text.Json.JsonValueKind.String)
+                        phone = firstPhone.GetString();
+                }
+
+                // Track what PDL says exists but won't reveal (boolean true fields)
+                bool emailExists = email == null && (
+                    (data.TryGetProperty("work_email", out var we2) && we2.ValueKind == System.Text.Json.JsonValueKind.True) ||
+                    (data.TryGetProperty("recommended_personal_email", out var rpe2) && rpe2.ValueKind == System.Text.Json.JsonValueKind.True) ||
+                    (data.TryGetProperty("personal_emails", out var pe2) && pe2.ValueKind == System.Text.Json.JsonValueKind.True));
+                bool phoneExists = phone == null && (
+                    (data.TryGetProperty("mobile_phone", out var mp2) && mp2.ValueKind == System.Text.Json.JsonValueKind.True));
+
+                // Company: job_company_name
+                if (data.TryGetProperty("job_company_name", out var jcn) && jcn.ValueKind == System.Text.Json.JsonValueKind.String)
+                    companyResult = jcn.GetString();
+
+                // LinkedIn
+                if (data.TryGetProperty("linkedin_url", out var li) && li.ValueKind == System.Text.Json.JsonValueKind.String)
+                    linkedIn = li.GetString();
+                if (linkedIn == null && data.TryGetProperty("linkedin_username", out var liUser) && liUser.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    var username = liUser.GetString();
+                    if (!string.IsNullOrEmpty(username))
+                        linkedIn = $"https://www.linkedin.com/in/{username}";
+                }
+
+                // Also check profiles array for linkedin
+                if (linkedIn == null && data.TryGetProperty("profiles", out var profiles) && profiles.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var prof in profiles.EnumerateArray())
+                    {
+                        var network = prof.TryGetProperty("network", out var n) ? n.GetString() : null;
+                        var profUrl = prof.TryGetProperty("url", out var u) ? u.GetString() : null;
+                        if (network == "linkedin" && !string.IsNullOrEmpty(profUrl)) { linkedIn = profUrl; break; }
+                    }
+                }
+
+                // If PDL matched but only returned booleans (no actual data), report clearly
+                if (email == null && phone == null && (emailExists || phoneExists))
+                {
+                    var hint = "PDL found a match and data exists";
+                    if (emailExists) hint += " (email available)";
+                    if (phoneExists) hint += " (phone available)";
+                    hint += " — but your PDL plan does not include credits to reveal it. Upgrade at peopledatalabs.com to get actual contact data.";
+                    // Still return LinkedIn/company if we got them
+                    if (linkedIn != null || companyResult != null)
+                        return new ContactLookupResult { Success = true, Email = null, Phone = null, Company = companyResult, LinkedInUrl = linkedIn, Provider = "PeopleDataLabs", Error = hint };
+                    return new ContactLookupResult { Success = false, Error = hint, Provider = "PeopleDataLabs" };
+                }
+            }
+
+            if (email == null && phone == null)
+                return new ContactLookupResult { Success = false, Error = "People Data Labs matched but returned no contact data", Provider = "PeopleDataLabs" };
+
+            return new ContactLookupResult { Success = true, Email = email, Phone = phone, Company = companyResult, LinkedInUrl = linkedIn, Provider = "PeopleDataLabs" };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "People Data Labs lookup failed");
+            return new ContactLookupResult { Success = false, Error = $"PDL error: {ex.Message}", Provider = "PeopleDataLabs" };
+        }
     }
 }
