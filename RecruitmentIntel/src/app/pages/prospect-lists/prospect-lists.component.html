@@ -1,0 +1,100 @@
+<div class="page-header">
+  <h1>Prospect Lists</h1>
+  <button mat-raised-button color="primary" (click)="showNewForm = !showNewForm">
+    <mat-icon>add</mat-icon> New List
+  </button>
+</div>
+
+@if (showNewForm) {
+  <mat-card class="new-list-card">
+    <mat-card-content>
+      <div class="new-list-form">
+        <mat-form-field appearance="outline" class="form-full">
+          <mat-label>List Name</mat-label>
+          <input matInput [(ngModel)]="newName" placeholder="e.g. AI Targets Q2">
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="form-full">
+          <mat-label>Description (optional)</mat-label>
+          <input matInput [(ngModel)]="newDescription" placeholder="AI & ML companies that raised in Q2">
+        </mat-form-field>
+        <div class="form-actions">
+          <button mat-stroked-button (click)="showNewForm = false">Cancel</button>
+          <button mat-raised-button color="primary" (click)="createList()" [disabled]="!newName.trim()">
+            <mat-icon>add</mat-icon> Create List
+          </button>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+}
+
+<div class="lists-grid">
+  @for (list of lists; track list.id) {
+    <mat-card class="list-card">
+      <mat-card-header>
+        <mat-icon mat-card-avatar class="list-icon">list_alt</mat-icon>
+        <mat-card-title>{{ list.name }}</mat-card-title>
+        <mat-card-subtitle>{{ list.description }}</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-content>
+        <div class="list-stats">
+          <div class="list-stat">
+            <span class="stat-num">{{ list.companyCount }}</span>
+            <span class="stat-lbl">Companies</span>
+          </div>
+          <div class="list-stat">
+            <span class="stat-num">{{ list.enrichedCount }}</span>
+            <span class="stat-lbl">Enriched</span>
+          </div>
+          <div class="list-stat">
+            <span class="stat-num">{{ list.jobsCrawledCount }}</span>
+            <span class="stat-lbl">Crawled</span>
+          </div>
+          <div class="list-stat">
+            <span class="stat-num">{{ list.totalJobs }}</span>
+            <span class="stat-lbl">Jobs</span>
+          </div>
+        </div>
+
+        <div class="progress-section">
+          <div class="progress-item">
+            <span class="progress-label">Enrichment</span>
+            <mat-progress-bar mode="determinate" [value]="getEnrichmentPercent(list)" color="primary"></mat-progress-bar>
+            <span class="progress-text">{{ list.enrichedCount }}/{{ list.companyCount }}</span>
+          </div>
+          <div class="progress-item">
+            <span class="progress-label">Job Crawl</span>
+            <mat-progress-bar mode="determinate" [value]="getCrawlPercent(list)" color="accent"></mat-progress-bar>
+            <span class="progress-text">{{ list.jobsCrawledCount }}/{{ list.companyCount }}</span>
+          </div>
+        </div>
+
+        <div class="list-meta">
+          <mat-icon>schedule</mat-icon>
+          <span>Updated {{ list.updatedAt | date:'mediumDate' }}</span>
+        </div>
+      </mat-card-content>
+
+      <mat-card-actions>
+        <a mat-raised-button color="primary" [routerLink]="['/prospects', list.id]">
+          <mat-icon>open_in_new</mat-icon> Open
+        </a>
+        <button mat-icon-button color="warn" (click)="deleteList(list.id)">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  }
+</div>
+
+@if (lists.length === 0) {
+  <mat-card class="empty-state">
+    <mat-icon>list_alt</mat-icon>
+    <h3>No prospect lists yet</h3>
+    <p>Select companies from the Signal Log and add them to a list to get started.</p>
+    <a mat-raised-button color="primary" routerLink="/signals">
+      <mat-icon>rss_feed</mat-icon> Go to Signal Log
+    </a>
+  </mat-card>
+}

@@ -1,0 +1,62 @@
+.page-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+  h1 { margin: 0; font-size: 28px; font-weight: 500; color: #333; }
+}
+
+.filter-card { margin-bottom: 16px; }
+.filter-row {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+}
+.filter-field { width: 150px; }
+.filter-field-sm { width: 100px; }
+
+.stats-row {
+  display: flex; gap: 16px; margin-bottom: 16px;
+}
+.stat-card {
+  flex: 1; display: flex; align-items: center; gap: 12px; padding: 16px !important;
+  mat-icon { font-size: 32px; width: 32px; height: 32px; }
+}
+.stat-info { display: flex; flex-direction: column; }
+.stat-value { font-size: 24px; font-weight: 600; color: #333; }
+.stat-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.table-card { margin-bottom: 16px; overflow: auto; }
+.signal-table { width: 100%; }
+
+.industry-chip {
+  display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  background: #e8eaf6; color: #3f51b5;
+  &[data-industry="Fintech"] { background: #e8f5e9; color: #2e7d32; }
+  &[data-industry="SaaS"] { background: #fff3e0; color: #e65100; }
+  &[data-industry="Cybersecurity"] { background: #fce4ec; color: #c62828; }
+  &[data-industry="HealthTech"] { background: #e0f7fa; color: #00695c; }
+}
+
+.round-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px;
+  background: #f5f5f5; color: #555; border: 1px solid #ddd;
+}
+
+.amount { color: #2e7d32; }
+
+.source-link {
+  color: #3f51b5; text-decoration: none;
+  mat-icon { font-size: 18px; width: 18px; height: 18px; }
+}
+
+.selected-row { background: #e8eaf6 !important; }
+
+.action-bar {
+  position: sticky; bottom: 0; z-index: 100;
+  background: white; border-top: 2px solid #3f51b5;
+}
+.action-row {
+  display: flex; align-items: center; gap: 16px;
+}
+.selected-count {
+  font-weight: 500; color: #3f51b5; font-size: 14px; min-width: 80px;
+}
+.list-select { width: 220px; }
+
+::ng-deep .mat-mdc-row:hover { background: #f5f5f5; cursor: pointer; }

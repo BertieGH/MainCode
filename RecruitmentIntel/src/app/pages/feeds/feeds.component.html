@@ -1,0 +1,99 @@
+<div class="page-header">
+  <h1>Feed Manager</h1>
+  <div class="header-actions">
+    <button mat-stroked-button (click)="addSuggested()" matTooltip="Bulk-add Crunchbase News, TechCrunch, VentureBeat, and Google News funding queries">
+      <mat-icon>auto_awesome</mat-icon> Add Suggested Feeds
+    </button>
+    <button mat-raised-button color="primary" (click)="newFeed()">
+      <mat-icon>add</mat-icon> Add Feed
+    </button>
+  </div>
+</div>
+
+<!-- Feed List -->
+<div class="feeds-list">
+  @for (feed of feeds; track feed.id) {
+    <mat-card class="feed-card" [class.inactive]="!feed.isActive">
+      <div class="feed-row">
+        <div class="feed-status">
+          <mat-icon [style.color]="feed.isActive ? '#4caf50' : '#ccc'">
+            {{ feed.isActive ? 'circle' : 'radio_button_unchecked' }}
+          </mat-icon>
+        </div>
+
+        <div class="feed-info">
+          <div class="feed-name">{{ feed.name }}</div>
+          <div class="feed-url">{{ feed.url | slice:0:60 }}...</div>
+          <div class="feed-meta">
+            <span class="feed-type">{{ feed.feedType }}</span>
+            @for (kw of feed.keywords; track kw) {
+              <span class="keyword-tag">{{ kw }}</span>
+            }
+          </div>
+        </div>
+
+        <div class="feed-last">
+          @if (feed.lastFetched) {
+            <span class="last-fetched">Last: {{ feed.lastFetched | date:'short' }}</span>
+          } @else {
+            <span class="never-fetched">Never fetched</span>
+          }
+        </div>
+
+        <div class="feed-actions">
+          <button mat-icon-button (click)="toggleActive(feed)" [matTooltip]="feed.isActive ? 'Pause' : 'Resume'">
+            <mat-icon>{{ feed.isActive ? 'pause' : 'play_arrow' }}</mat-icon>
+          </button>
+          <button mat-icon-button (click)="editFeed(feed)" matTooltip="Edit">
+            <mat-icon>edit</mat-icon>
+          </button>
+          <button mat-icon-button color="warn" (click)="deleteFeed(feed.id)" matTooltip="Delete">
+            <mat-icon>delete</mat-icon>
+          </button>
+        </div>
+      </div>
+    </mat-card>
+  }
+</div>
+
+<!-- Add/Edit Form -->
+@if (showForm) {
+  <mat-card class="form-card">
+    <mat-card-header>
+      <mat-card-title>{{ editingId ? 'Edit Feed' : 'Add New Feed' }}</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="form-grid">
+        <mat-form-field appearance="outline" class="form-full">
+          <mat-label>Feed Name</mat-label>
+          <input matInput [(ngModel)]="formName" placeholder="e.g. USA Fintech Funding">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="form-full">
+          <mat-label>Feed URL</mat-label>
+          <input matInput [(ngModel)]="formUrl" placeholder="https://news.google.com/rss/search?q=...">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Type</mat-label>
+          <mat-select [(value)]="formType">
+            @for (t of feedTypes; track t) {
+              <mat-option [value]="t">{{ t }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Keywords (comma-separated)</mat-label>
+          <input matInput [(ngModel)]="formKeywords" placeholder="Series A, Fintech, USA">
+        </mat-form-field>
+      </div>
+    </mat-card-content>
+    <mat-card-actions align="end">
+      <button mat-stroked-button (click)="cancelForm()">Cancel</button>
+      <button mat-raised-button color="primary" (click)="saveFeed()" [disabled]="!formName.trim() || !formUrl.trim()">
+        <mat-icon>save</mat-icon> {{ editingId ? 'Update' : 'Save' }}
+      </button>
+    </mat-card-actions>
+  </mat-card>
+}

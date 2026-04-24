@@ -1,0 +1,236 @@
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, map } from 'rxjs';
+import { Signal, ProspectList, Prospect, Job, FeedSource, AppSettings, IngestionRun, Article, VerdictCount, ExtractionProfile, AddSignalsResult } from '../models/interfaces';
+
+const BASE = 'http://localhost:8002/api';
+
+/** Convert snake_case keys to camelCase */
+function toCamel(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(toCamel);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.keys(obj).reduce((acc: any, key) => {
+      const camel = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      acc[camel] = toCamel(obj[key]);
+      return acc;
+    }, {});
+  }
+  return obj;
+}
+
+/** Convert camelCase keys to snake_case */
+function toSnake(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(toSnake);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.keys(obj).reduce((acc: any, key) => {
+      const snake = key.replace(/[A-Z]/g, c => '_' + c.toLowerCase());
+      acc[snake] = toSnake(obj[key]);
+      return acc;
+    }, {});
+  }
+  return obj;
+}
+
+@Injectable({ providedIn: 'root' })
+export class ApiService {
+  constructor(private http: HttpClient) {}
+
+  // --- Signals ---
+  getSignals(filters?: any): Observable<Signal[]> {
+    let params = new HttpParams();
+    if (filters) {
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'All') {
+          params = params.set(k, String(v));
+        }
+      });
+    }
+    return this.http.get<any[]>(`${BASE}/signals`, { params }).pipe(map(toCamel));
+  }
+
+  getSignalStats(): Observable<any> {
+    return this.http.get<any>(`${BASE}/signals/stats/summary`).pipe(map(toCamel));
+  }
+
+  triggerIngest(): Observable<any> {
+    return this.http.post<any>(`${BASE}/signals/ingest`, {}).pipe(map(toCamel));
+  }
+
+  getIngestionRuns(limit = 10): Observable<IngestionRun[]> {
+    return this.http.get<any[]>(`${BASE}/ingestion-runs`, { params: { limit } }).pipe(map(toCamel));
+  }
+
+  getArticles(filters?: {
+    runId?: string; feedId?: string; verdict?: string;
+    keyword?: string[]; keywordMode?: 'any' | 'all';
+    limit?: number; offset?: number;
+  }): Observable<Article[]> {
+    let params = new HttpParams();
+    if (filters?.runId) params = params.set('run_id', filters.runId);
+    if (filters?.feedId) params = params.set('feed_id', filters.feedId);
+    if (filters?.verdict && filters.verdict !== 'All') params = params.set('verdict', filters.verdict);
+    if (filters?.keyword && filters.keyword.length) {
+      for (const k of filters.keyword) params = params.append('keyword', k);
+    }
+    if (filters?.keywordMode) params = params.set('keyword_mode', filters.keywordMode);
+    if (filters?.limit !== undefined) params = params.set('limit', String(filters.limit));
+    if (filters?.offset !== undefined) params = params.set('offset', String(filters.offset));
+    return this.http.get<any[]>(`${BASE}/articles`, { params }).pipe(map(toCamel));
+  }
+
+  rescoreArticleKeywords(): Observable<{ status: string; updated: number; total: number }> {
+    return this.http.post<any>(`${BASE}/articles/rescore-keywords`, {}).pipe(map(toCamel));
+  }
+
+  getVerdictSummary(runId?: string): Observable<VerdictCount[]> {
+    let params = new HttpParams();
+    if (runId) params = params.set('run_id', runId);
+    return this.http.get<any[]>(`${BASE}/articles/verdict-summary`, { params });
+  }
+
+  deleteArticle(id: string): Observable<any> {
+    return this.http.delete(`${BASE}/articles/${id}`);
+  }
+
+  deleteArticlesBatch(ids: string[]): Observable<any> {
+    return this.http.post<any>(`${BASE}/articles/delete-batch`, { article_ids: ids });
+  }
+
+  extractArticles(opts: { ids?: string[]; allPending?: boolean; force?: boolean }): Observable<any> {
+    const body: any = {};
+    if (opts.ids) body.article_ids = opts.ids;
+    if (opts.allPending) body.all_pending = true;
+    if (opts.force) body.force = true;
+    return this.http.post<any>(`${BASE}/articles/extract`, body).pipe(map(toCamel));
+  }
+
+  // --- Prospect Lists ---
+  getProspectLists(): Observable<ProspectList[]> {
+    return this.http.get<any[]>(`${BASE}/prospect-lists`).pipe(map(toCamel));
+  }
+
+  createProspectList(name: string, description: string): Observable<ProspectList> {
+    return this.http.post<any>(`${BASE}/prospect-lists`, { name, description }).pipe(map(toCamel));
+  }
+
+  deleteProspectList(id: string): Observable<any> {
+    return this.http.delete(`${BASE}/prospect-lists/${id}`);
+  }
+
+  getProspectList(id: string): Observable<ProspectList> {
+    return this.http.get<any>(`${BASE}/prospect-lists/${id}`).pipe(map(toCamel));
+  }
+
+  // --- Prospects ---
+  getProspects(listId: string): Observable<Prospect[]> {
+    return this.http.get<any[]>(`${BASE}/prospect-lists/${listId}/prospects`).pipe(map(toCamel));
+  }
+
+  addSignalsToList(listId: string, signalIds: string[]): Observable<AddSignalsResult> {
+    return this.http.post<any>(`${BASE}/prospect-lists/${listId}/add`, { signal_ids: signalIds }).pipe(map(toCamel));
+  }
+
+  removeProspect(listId: string, prospectId: string): Observable<any> {
+    return this.http.delete(`${BASE}/prospect-lists/${listId}/prospects/${prospectId}`);
+  }
+
+  // --- Enrichment ---
+  enrichList(listId: string, force = false): Observable<any> {
+    const params = force ? new HttpParams().set('force', 'true') : undefined;
+    return this.http.post<any>(`${BASE}/prospect-lists/${listId}/enrich`, {}, { params });
+  }
+
+  enrichProspect(prospectId: string): Observable<any> {
+    return this.http.post<any>(`${BASE}/prospects/${prospectId}/enrich`, {}).pipe(map(toCamel));
+  }
+
+  // --- Job Crawl ---
+  crawlJobsForList(listId: string, force = false): Observable<any> {
+    const params = force ? new HttpParams().set('force', 'true') : undefined;
+    return this.http.post<any>(`${BASE}/prospect-lists/${listId}/crawl-jobs`, {}, { params });
+  }
+
+  crawlJobsForProspect(prospectId: string, force = false): Observable<any> {
+    const params = force ? new HttpParams().set('force', 'true') : undefined;
+    return this.http.post<any>(`${BASE}/prospects/${prospectId}/crawl-jobs`, {}, { params }).pipe(map(toCamel));
+  }
+
+  // --- Outreach ---
+  getOutreach(listId: string, filters?: any): Observable<Job[]> {
+    let params = new HttpParams();
+    if (filters) {
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'All') {
+          params = params.set(k, String(v));
+        }
+      });
+    }
+    return this.http.get<any[]>(`${BASE}/outreach/${listId}`, { params }).pipe(map(toCamel));
+  }
+
+  getOutreachSummary(listId: string): Observable<{ department: string; count: number }[]> {
+    return this.http.get<any[]>(`${BASE}/outreach/${listId}/summary`);
+  }
+
+  exportOutreachCsv(listId: string, filters?: any): string {
+    let params = '';
+    if (filters) {
+      const parts = Object.entries(filters)
+        .filter(([_, v]) => v !== undefined && v !== null && v !== '' && v !== 'All')
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`);
+      if (parts.length) params = '?' + parts.join('&');
+    }
+    return `${BASE}/outreach/${listId}/export${params}`;
+  }
+
+  // --- Feeds ---
+  getFeeds(): Observable<FeedSource[]> {
+    return this.http.get<any[]>(`${BASE}/feeds`).pipe(map(toCamel));
+  }
+
+  createFeed(data: any): Observable<FeedSource> {
+    return this.http.post<any>(`${BASE}/feeds`, toSnake(data)).pipe(map(toCamel));
+  }
+
+  updateFeed(id: string, data: any): Observable<FeedSource> {
+    return this.http.put<any>(`${BASE}/feeds/${id}`, toSnake(data)).pipe(map(toCamel));
+  }
+
+  deleteFeed(id: string): Observable<any> {
+    return this.http.delete(`${BASE}/feeds/${id}`);
+  }
+
+  addSuggestedFeeds(): Observable<FeedSource[]> {
+    return this.http.post<any[]>(`${BASE}/feeds/suggested/add-all`, {}).pipe(map(toCamel));
+  }
+
+  // --- Settings ---
+  getSettings(): Observable<AppSettings> {
+    return this.http.get<any>(`${BASE}/settings`).pipe(map(toCamel));
+  }
+
+  updateSettings(data: Partial<AppSettings>): Observable<AppSettings> {
+    return this.http.put<any>(`${BASE}/settings`, toSnake(data)).pipe(map(toCamel));
+  }
+
+  testConnection(): Observable<any> {
+    return this.http.post<any>(`${BASE}/settings/test-connection`, {});
+  }
+
+  // --- Extraction Profiles ---
+  getExtractionProfiles(): Observable<ExtractionProfile[]> {
+    return this.http.get<any[]>(`${BASE}/extraction-profiles`).pipe(map(toCamel));
+  }
+
+  createExtractionProfile(data: { name: string; extractionPrompt: string; scrapeKeywords: string[] }): Observable<ExtractionProfile> {
+    return this.http.post<any>(`${BASE}/extraction-profiles`, toSnake(data)).pipe(map(toCamel));
+  }
+
+  updateExtractionProfile(id: string, data: Partial<{ name: string; extractionPrompt: string; scrapeKeywords: string[] }>): Observable<ExtractionProfile> {
+    return this.http.put<any>(`${BASE}/extraction-profiles/${id}`, toSnake(data)).pipe(map(toCamel));
+  }
+
+  deleteExtractionProfile(id: string): Observable<any> {
+    return this.http.delete(`${BASE}/extraction-profiles/${id}`);
+  }
+}

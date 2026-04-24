@@ -1,0 +1,43 @@
+.page-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
+  h1 { margin: 0; font-size: 28px; font-weight: 500; color: #333; }
+}
+
+.feeds-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+
+.feed-card {
+  transition: box-shadow 0.2s;
+  &:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+  &.inactive { opacity: 0.6; }
+}
+
+.feed-row {
+  display: flex; align-items: center; gap: 16px; padding: 8px 0;
+}
+
+.feed-status { flex-shrink: 0; }
+.feed-info { flex: 1; }
+.feed-name { font-weight: 500; font-size: 15px; color: #333; }
+.feed-url { font-size: 12px; color: #999; margin: 2px 0; font-family: monospace; }
+.feed-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+.feed-type {
+  display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 11px;
+  background: #e8eaf6; color: #3f51b5; font-weight: 500;
+}
+.keyword-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+  background: #f0f0f0; color: #555;
+}
+
+.feed-last { min-width: 120px; text-align: right; }
+.last-fetched { font-size: 12px; color: #888; }
+.never-fetched { font-size: 12px; color: #ccc; }
+
+.feed-actions { display: flex; gap: 0; }
+
+.form-card { margin-top: 20px; }
+.form-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;
+}
+.form-full { grid-column: 1 / -1; }

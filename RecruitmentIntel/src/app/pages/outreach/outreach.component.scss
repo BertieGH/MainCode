@@ -1,0 +1,53 @@
+.page-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;
+  h1 { margin: 0; font-size: 28px; font-weight: 500; color: #333; }
+}
+.header-actions { display: flex; gap: 12px; align-items: center; }
+.list-picker { width: 220px; }
+
+.filter-card { margin-bottom: 16px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.filter-field { width: 160px; }
+
+.summary-row {
+  display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.summary-card {
+  display: flex; flex-direction: column; align-items: center; padding: 12px 20px !important;
+  cursor: pointer; transition: all 0.2s; min-width: 90px;
+  &:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); transform: translateY(-1px); }
+  &.total { background: #e8eaf6; }
+}
+.summary-dept { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+.summary-count { font-size: 22px; font-weight: 600; color: #333; }
+
+.table-card { overflow: auto; }
+.jobs-table { width: 100%; }
+
+.dept-chip {
+  display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  background: #e8eaf6; color: #3f51b5;
+  &[data-dept="Sales"] { background: #e8f5e9; color: #2e7d32; }
+  &[data-dept="Marketing"] { background: #fff3e0; color: #e65100; }
+  &[data-dept="Product"] { background: #f3e5f5; color: #7b1fa2; }
+  &[data-dept="People"] { background: #e0f7fa; color: #00695c; }
+}
+
+.match-chip {
+  display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  background: #fff8e1; color: #ef6c00;
+}
+.match-none { color: rgba(0, 0, 0, 0.35); font-size: 12px; }
+
+.type-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px;
+  background: #f5f5f5; color: #555; border: 1px solid #ddd;
+}
+
+.skills-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+.skill-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+  background: #f0f0f0; color: #555;
+}
+
+::ng-deep .mat-mdc-row:hover { background: #f5f5f5; }

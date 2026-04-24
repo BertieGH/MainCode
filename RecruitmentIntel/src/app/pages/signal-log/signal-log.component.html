@@ -1,0 +1,264 @@
+<div class="page-header">
+  <h1>Signal Log</h1>
+  <div class="header-actions">
+    <a mat-stroked-button routerLink="/settings" fragment="extraction-intent"
+       matTooltip="Edit the AI extraction prompt and scrape keywords">
+      <mat-icon>psychology</mat-icon> Configure Intent
+    </a>
+    <button mat-raised-button color="primary" (click)="ingestNow()" [disabled]="ingesting">
+      @if (ingesting) {
+        <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
+        Ingesting...
+      } @else {
+        <mat-icon>download</mat-icon> Ingest Now
+      }
+    </button>
+  </div>
+</div>
+
+<!-- Recent ingestion runs -->
+@if (recentRuns.length > 0) {
+  <mat-card class="runs-card">
+    <mat-card-header>
+      <mat-card-title>Recent Ingestion Runs</mat-card-title>
+      <mat-card-subtitle>
+        Click a row to see per-feed detail.
+        <button mat-icon-button (click)="loadRuns()" matTooltip="Refresh"><mat-icon>refresh</mat-icon></button>
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <mat-accordion>
+        @for (run of recentRuns; track run.id) {
+          <mat-expansion-panel [expanded]="expandedRunId === run.id" (opened)="expandedRunId = run.id">
+            <mat-expansion-panel-header>
+              <mat-panel-title>
+                <mat-icon [style.color]="runStatusColor(run.status)" style="margin-right: 8px;">
+                  {{ runStatusIcon(run.status) }}
+                </mat-icon>
+                <span>{{ run.startedAt | date:'short' }}</span>
+                <span class="run-trigger">&nbsp;({{ run.trigger }})</span>
+              </mat-panel-title>
+              <mat-panel-description>
+                <span><strong>{{ run.totalNewSignals }}</strong> new&nbsp;/&nbsp;{{ run.totalSkipped }} skipped</span>
+                @if (runDurationSeconds(run) !== null) {
+                  <span class="run-duration">&nbsp;· {{ runDurationSeconds(run) }}s</span>
+                }
+              </mat-panel-description>
+            </mat-expansion-panel-header>
+
+            @if (run.message) {
+              <p class="run-message" [style.color]="runStatusColor(run.status)">{{ run.message }}</p>
+            }
+
+            @if (run.feedResults && run.feedResults.length > 0) {
+              <table class="feed-breakdown">
+                <thead>
+                  <tr><th>Feed</th><th>Articles</th><th>New</th><th>Signals</th></tr>
+                </thead>
+                <tbody>
+                  @for (f of run.feedResults; track f.feed) {
+                    <tr>
+                      <td>{{ f.feed }}</td>
+                      <td>{{ f.articles }}</td>
+                      <td>{{ f.newArticles ?? '-' }}</td>
+                      <td><strong>{{ f.newSignals }}</strong></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            } @else if (!run.message) {
+              <p class="run-message">No feed activity recorded.</p>
+            }
+          </mat-expansion-panel>
+        }
+      </mat-accordion>
+    </mat-card-content>
+  </mat-card>
+}
+
+<!-- Filters -->
+<mat-card class="filter-card">
+  <mat-card-content>
+    <div class="filter-row">
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Industry</mat-label>
+        <mat-select [(value)]="filterIndustry" (selectionChange)="applyFilters()">
+          @for (ind of industries; track ind) {
+            <mat-option [value]="ind">{{ ind }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Fund Type</mat-label>
+        <mat-select [(value)]="filterRound" (selectionChange)="applyFilters()">
+          @for (round of fundingRounds; track round) {
+            <mat-option [value]="round">{{ round }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field-sm">
+        <mat-label>Min ($M)</mat-label>
+        <input matInput type="number" [(ngModel)]="filterAmountMin" (input)="applyFilters()">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field-sm">
+        <mat-label>Max ($M)</mat-label>
+        <input matInput type="number" [(ngModel)]="filterAmountMax" (input)="applyFilters()">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Location</mat-label>
+        <input matInput [(ngModel)]="filterLocation" (input)="applyFilters()" placeholder="e.g. USA, NYC">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Date From</mat-label>
+        <input matInput type="date" [(ngModel)]="filterDateFrom" (change)="applyFilters()">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Date To</mat-label>
+        <input matInput type="date" [(ngModel)]="filterDateTo" (change)="applyFilters()">
+      </mat-form-field>
+
+      <button mat-icon-button color="warn" (click)="clearFilters()" matTooltip="Clear filters">
+        <mat-icon>clear</mat-icon>
+      </button>
+    </div>
+  </mat-card-content>
+</mat-card>
+
+<!-- Stats -->
+<div class="stats-row">
+  <mat-card class="stat-card">
+    <mat-icon color="primary">bar_chart</mat-icon>
+    <div class="stat-info">
+      <span class="stat-value">{{ filteredSignals.length }}</span>
+      <span class="stat-label">Signals</span>
+    </div>
+  </mat-card>
+  <mat-card class="stat-card">
+    <mat-icon color="accent">account_balance</mat-icon>
+    <div class="stat-info">
+      <span class="stat-value">{{ formatAmount(getTotalFunding()) }}</span>
+      <span class="stat-label">Total Funding</span>
+    </div>
+  </mat-card>
+  <mat-card class="stat-card">
+    <mat-icon color="primary">business</mat-icon>
+    <div class="stat-info">
+      <span class="stat-value">{{ getUniqueIndustries() }}</span>
+      <span class="stat-label">Industries</span>
+    </div>
+  </mat-card>
+  <mat-card class="stat-card">
+    <mat-icon style="color: #4caf50">check_circle</mat-icon>
+    <div class="stat-info">
+      <span class="stat-value">{{ selection.selected.length }}</span>
+      <span class="stat-label">Selected</span>
+    </div>
+  </mat-card>
+</div>
+
+<!-- Signal Table -->
+<mat-card class="table-card">
+  <table mat-table [dataSource]="filteredSignals" matSort (matSortChange)="sortData($event)" class="signal-table">
+
+    <ng-container matColumnDef="select">
+      <th mat-header-cell *matHeaderCellDef>
+        <mat-checkbox (change)="toggleAllRows()" [checked]="isAllSelected()" [indeterminate]="selection.hasValue() && !isAllSelected()">
+        </mat-checkbox>
+      </th>
+      <td mat-cell *matCellDef="let row">
+        <mat-checkbox (click)="$event.stopPropagation()" (change)="selection.toggle(row)" [checked]="selection.isSelected(row)">
+        </mat-checkbox>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="companyName">
+      <th mat-header-cell *matHeaderCellDef mat-sort-header>Company</th>
+      <td mat-cell *matCellDef="let row"><strong>{{ row.companyName }}</strong></td>
+    </ng-container>
+
+    <ng-container matColumnDef="industry">
+      <th mat-header-cell *matHeaderCellDef mat-sort-header>Industry</th>
+      <td mat-cell *matCellDef="let row">
+        <span class="industry-chip" [attr.data-industry]="row.industry">{{ row.industry }}</span>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="fundingRound">
+      <th mat-header-cell *matHeaderCellDef mat-sort-header>Round</th>
+      <td mat-cell *matCellDef="let row">
+        <span class="round-badge">{{ row.fundingRound }}</span>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="amount">
+      <th mat-header-cell *matHeaderCellDef mat-sort-header>Amount</th>
+      <td mat-cell *matCellDef="let row"><strong class="amount">{{ formatAmount(row.amount) }}</strong></td>
+    </ng-container>
+
+    <ng-container matColumnDef="location">
+      <th mat-header-cell *matHeaderCellDef>Location</th>
+      <td mat-cell *matCellDef="let row">{{ row.location }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="date">
+      <th mat-header-cell *matHeaderCellDef mat-sort-header>Date</th>
+      <td mat-cell *matCellDef="let row">{{ row.date }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="source">
+      <th mat-header-cell *matHeaderCellDef>Source</th>
+      <td mat-cell *matCellDef="let row">
+        <a [href]="row.sourceUrl" target="_blank" class="source-link" matTooltip="{{ row.sourceTitle }}">
+          <mat-icon>open_in_new</mat-icon>
+        </a>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns;" [class.selected-row]="selection.isSelected(row)"></tr>
+  </table>
+</mat-card>
+
+<!-- Add to Prospect List Action Bar -->
+@if (selection.selected.length > 0) {
+  <mat-card class="action-bar">
+    <mat-card-content>
+      <div class="action-row">
+        <span class="selected-count">{{ selection.selected.length }} selected</span>
+
+        @if (!showNewListInput) {
+          <mat-form-field appearance="outline" class="list-select">
+            <mat-label>Add to list</mat-label>
+            <mat-select [(value)]="selectedListId">
+              @for (list of prospectLists; track list.id) {
+                <mat-option [value]="list.id">{{ list.name }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        }
+
+        @if (showNewListInput) {
+          <mat-form-field appearance="outline" class="list-select">
+            <mat-label>New list name</mat-label>
+            <input matInput [(ngModel)]="newListName" placeholder="e.g. AI Targets Q2">
+          </mat-form-field>
+        }
+
+        <button mat-stroked-button (click)="showNewListInput = !showNewListInput">
+          <mat-icon>{{ showNewListInput ? 'list' : 'add' }}</mat-icon>
+          {{ showNewListInput ? 'Existing List' : 'New List' }}
+        </button>
+
+        <button mat-raised-button color="primary" (click)="addToList()" [disabled]="!selectedListId && !newListName">
+          <mat-icon>arrow_forward</mat-icon> Add to List
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+}

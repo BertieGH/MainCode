@@ -1,0 +1,308 @@
+<div class="page-header">
+  <h1>News Log</h1>
+  <button mat-stroked-button (click)="load()" matTooltip="Reload">
+    <mat-icon>refresh</mat-icon> Refresh
+  </button>
+</div>
+
+<p class="hint">
+  Every article seen during ingestion, plus the LLM verdict on it. Use this to diagnose
+  why a feed isn't producing signals — articles tagged <strong>keyword_filtered</strong>
+  never reached the LLM, <strong>not_funding</strong> were rejected by the LLM, and
+  <strong>parse_failed</strong> means the LLM response wasn't valid JSON.
+</p>
+
+<!-- Verdict summary -->
+@if (summary.length > 0) {
+  <div class="summary-row">
+    @for (s of summary; track s.verdict) {
+      <mat-card class="summary-card" (click)="filterVerdict = s.verdict; load()">
+        <mat-icon [style.color]="verdictColor(s.verdict)">{{ verdictIcon(s.verdict) }}</mat-icon>
+        <span class="summary-verdict">{{ s.verdict }}</span>
+        <span class="summary-count">{{ s.count }}</span>
+      </mat-card>
+    }
+  </div>
+}
+
+<!-- Filters -->
+<mat-card class="filter-card">
+  <mat-card-content>
+    <div class="filter-row">
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Verdict</mat-label>
+        <mat-select [(value)]="filterVerdict" (selectionChange)="load()">
+          @for (v of verdictOptions; track v) {
+            <mat-option [value]="v">{{ v }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Feed</mat-label>
+        <mat-select [(value)]="filterFeedId" (selectionChange)="load()">
+          <mat-option [value]="''">All feeds</mat-option>
+          @for (f of feeds; track f.id) {
+            <mat-option [value]="f.id">{{ f.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Ingestion Run</mat-label>
+        <mat-select [(value)]="filterRunId" (selectionChange)="load()">
+          <mat-option [value]="''">All runs</mat-option>
+          @for (r of runs; track r.id) {
+            <mat-option [value]="r.id">
+              {{ r.startedAt | date:'short' }} ({{ r.trigger }} · {{ r.status }})
+            </mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Sort by</mat-label>
+        <mat-select [(value)]="sortBy">
+          @for (opt of sortOptions; track opt.value) {
+            <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field filter-min-hits">
+        <mat-label>Min keyword hits</mat-label>
+        <input matInput type="number" min="0" [(ngModel)]="filterMinHits" placeholder="e.g. 2">
+      </mat-form-field>
+
+      <button mat-icon-button color="warn" (click)="clearFilters()" matTooltip="Clear filters">
+        <mat-icon>clear</mat-icon>
+      </button>
+    </div>
+
+    @if (filterFeedId && feedKeywords(filterFeedId).length > 0) {
+      <div class="keywords-row">
+        <span class="keywords-label">Feed keywords:</span>
+        @for (kw of feedKeywords(filterFeedId); track kw) {
+          <span class="keyword-chip">{{ kw }}</span>
+        }
+      </div>
+    }
+
+    @if (globalKeywords.length > 0) {
+      <div class="keywords-row">
+        <span class="keywords-label">Global keywords:</span>
+        @for (kw of globalKeywords; track kw) {
+          <button type="button" class="keyword-filter-chip"
+                  [class.active]="isKeywordActive(kw)"
+                  (click)="toggleKeywordFilter(kw)"
+                  [matTooltip]="isKeywordActive(kw) ? 'Click to remove from filter' : 'Click to filter by this keyword'">
+            {{ kw }}
+          </button>
+        }
+        <span class="kw-mode-group" [matTooltip]="'ANY = article matches at least one selected keyword; ALL = article matches every selected keyword'">
+          <button type="button" class="kw-mode-btn"
+                  [class.active]="filterKeywordMode === 'any'"
+                  (click)="setKeywordMode('any')">ANY</button>
+          <button type="button" class="kw-mode-btn"
+                  [class.active]="filterKeywordMode === 'all'"
+                  (click)="setKeywordMode('all')">ALL</button>
+        </span>
+        <button mat-stroked-button class="rescore-btn"
+                (click)="rescoreKeywords()" [disabled]="busy"
+                matTooltip="Re-scan every article's title + summary against current global keywords. No LLM calls.">
+          <mat-icon>refresh</mat-icon> Refresh keyword matches
+        </button>
+      </div>
+    }
+  </mat-card-content>
+</mat-card>
+
+<!-- Action bar -->
+<mat-card class="action-bar">
+  <mat-card-content>
+    <div class="action-row">
+      <mat-checkbox
+        [checked]="allVisibleSelected"
+        [indeterminate]="someVisibleSelected"
+        (change)="toggleSelectAll()"
+        matTooltip="Select all visible">
+        Select all ({{ selectedCount }} selected)
+      </mat-checkbox>
+
+      <span class="spacer"></span>
+
+      <button mat-stroked-button color="primary"
+              (click)="extractSelected(false)"
+              [disabled]="busy || selectedCount === 0">
+        <mat-icon>auto_awesome</mat-icon> Extract Selected ({{ selectedCount }})
+      </button>
+
+      <button mat-stroked-button color="primary"
+              (click)="extractSelected(true)"
+              [disabled]="busy || selectedCount === 0"
+              matTooltip="Re-runs the LLM on these articles even if a Signal already exists. Old Signal rows are deleted first. Use after improving the prompt or switching LLM provider.">
+        <mat-icon>refresh</mat-icon> Re-extract Selected
+      </button>
+
+      <button mat-stroked-button color="primary"
+              (click)="extractAllPending()"
+              [disabled]="busy || pendingCount === 0"
+              [matTooltip]="pendingCount + ' pending article(s) in this filter scope'">
+        <mat-icon>play_arrow</mat-icon> Extract All Pending ({{ pendingCount }})
+      </button>
+
+      <button mat-stroked-button color="warn"
+              (click)="deleteSelected()"
+              [disabled]="busy || selectedCount === 0">
+        <mat-icon>delete</mat-icon> Delete Selected ({{ selectedCount }})
+      </button>
+    </div>
+  </mat-card-content>
+</mat-card>
+
+<!-- Article list -->
+<mat-card class="articles-card">
+  <mat-card-content>
+    @if (displayArticles.length === 0) {
+      <p class="empty">
+        @if (articles.length === 0) {
+          No articles match these filters. Run ingestion from the Signal Log page to populate.
+        } @else {
+          No articles match the current sort/filter (showing 0 of {{ articles.length }}).
+        }
+      </p>
+    } @else {
+      <p class="result-count">Showing {{ displayArticles.length }} of {{ articles.length }}</p>
+
+      <div class="article-columns-header" role="row">
+        <button type="button" class="col-header col-description"
+                (click)="sortByColumn('title')"
+                [matTooltip]="'Sort by article title'">
+          Description <span class="sort-arrow">{{ sortIndicator('title') }}</span>
+        </button>
+        <button type="button" class="col-header col-keywords"
+                (click)="sortByColumn('hits')"
+                [matTooltip]="'Sort by total keyword hits'">
+          Keywords <span class="sort-arrow">{{ sortIndicator('hits') }}</span>
+        </button>
+        <button type="button" class="col-header col-feed"
+                (click)="sortByColumn('feed')"
+                [matTooltip]="'Sort by feed name'">
+          Feed <span class="sort-arrow">{{ sortIndicator('feed') }}</span>
+        </button>
+      </div>
+
+      <mat-accordion>
+        @for (a of displayArticles; track a.id) {
+          <mat-expansion-panel class="article-panel">
+            <mat-expansion-panel-header class="article-panel-header">
+              <mat-panel-title class="article-row">
+                <span class="col-description">
+                  <mat-checkbox
+                    [checked]="isSelected(a.id)"
+                    (change)="toggleSelected(a.id, $event.checked)"
+                    (click)="$event.stopPropagation()"
+                    class="row-checkbox">
+                  </mat-checkbox>
+                  <mat-icon class="verdict-icon" [style.color]="verdictColor(a.verdict)"
+                           [matTooltip]="verdictDescription(a.verdict)">
+                    {{ verdictIcon(a.verdict) }}
+                  </mat-icon>
+                  <span class="article-title">{{ a.title || '(no title)' }}</span>
+                </span>
+
+                <span class="col-keywords">
+                  <span class="kw-strip" [matTooltip]="'Keywords searched and match counts'">
+                    @if (keywordHitList(a).length > 0) {
+                      <span class="kw-total" [class.kw-total-zero]="totalKeywordHits(a) === 0">
+                        <mat-icon>tag</mat-icon>{{ totalKeywordHits(a) }}
+                      </span>
+                      @for (h of keywordHitList(a); track h.keyword) {
+                        <span class="kw-chip-sm" [class.kw-zero]="h.count === 0">
+                          {{ h.keyword }}<span class="kw-count">×{{ h.count }}</span>
+                        </span>
+                      }
+                    }
+                    @if (keywordSetStale(a)) {
+                      <mat-icon class="stale-icon"
+                                [matTooltip]="'Global keywords have changed since this article was ingested. Click \'Refresh keyword matches\' above to rescan.'">
+                        update
+                      </mat-icon>
+                    }
+                  </span>
+                </span>
+
+                <span class="col-feed">
+                  <span class="article-feed">{{ a.feedName }}</span>
+                  <span class="article-date">{{ a.createdAt | date:'short' }}</span>
+                </span>
+              </mat-panel-title>
+            </mat-expansion-panel-header>
+
+            <div class="article-body">
+              <div class="article-meta">
+                <span class="verdict-pill" [style.background-color]="verdictColor(a.verdict)">{{ a.verdict }}</span>
+                <a [href]="a.url" target="_blank" class="article-link">
+                  <mat-icon>open_in_new</mat-icon> {{ a.url }}
+                </a>
+
+                <span class="spacer"></span>
+
+                @if (a.verdict === 'pending' || a.verdict === 'error' || a.verdict === 'parse_failed' || a.verdict === 'validation_failed' || a.verdict === 'quota_exceeded' || a.verdict === 'service_unavailable') {
+                  <button mat-stroked-button color="primary" (click)="extractOne(a, false)" [disabled]="busy">
+                    <mat-icon>auto_awesome</mat-icon> Extract
+                  </button>
+                } @else if (a.verdict === 'funding' || a.verdict === 'not_funding') {
+                  <button mat-stroked-button color="primary" (click)="extractOne(a, true)" [disabled]="busy"
+                          matTooltip="Re-run LLM with current prompt — useful after improving the extraction prompt. Wipes any existing Signal first.">
+                    <mat-icon>refresh</mat-icon> Re-extract
+                  </button>
+                }
+                <button mat-icon-button color="warn" (click)="deleteOne(a)" [disabled]="busy" matTooltip="Delete">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+
+              @if (keywordHitList(a).length > 0) {
+                <div class="article-section">
+                  <h4>Keyword matches ({{ totalKeywordHits(a) }} total)</h4>
+                  <div class="kw-hits">
+                    @for (h of keywordHitList(a); track h.keyword) {
+                      <span class="kw-chip" [class.kw-zero]="h.count === 0">
+                        <strong>{{ h.keyword }}</strong>
+                        <span class="kw-count">×{{ h.count }}</span>
+                      </span>
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (a.summary) {
+                <div class="article-section">
+                  <h4>Summary (sent to LLM)</h4>
+                  <pre class="article-text">{{ a.summary }}</pre>
+                </div>
+              }
+
+              @if (a.llmResponse) {
+                <div class="article-section">
+                  <h4>LLM response</h4>
+                  <pre class="article-text llm-response">{{ a.llmResponse }}</pre>
+                </div>
+              } @else if (a.verdict === 'keyword_filtered') {
+                <p class="article-note">
+                  No LLM response — article was filtered out before extraction because its
+                  title/summary did not contain any of the feed's keywords.
+                </p>
+              } @else if (a.verdict === 'pending') {
+                <p class="article-note">
+                  Pending — click <strong>Extract</strong> above to send this article to the LLM.
+                </p>
+              }
+            </div>
+          </mat-expansion-panel>
+        }
+      </mat-accordion>
+    }
+  </mat-card-content>
+</mat-card>

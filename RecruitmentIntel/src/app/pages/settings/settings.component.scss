@@ -1,0 +1,54 @@
+.page-header {
+  margin-bottom: 20px;
+  h1 { margin: 0; font-size: 28px; font-weight: 500; color: #333; }
+}
+
+.settings-card { margin-bottom: 20px; }
+
+mat-card-header mat-icon[mat-card-avatar] {
+  background: #e8eaf6; color: #3f51b5; border-radius: 50%;
+  display: flex !important; align-items: center; justify-content: center;
+  width: 40px; height: 40px; font-size: 24px;
+}
+
+.provider-toggle {
+  margin: 16px 0;
+}
+.provider-option {
+  margin-right: 32px; margin-bottom: 8px;
+}
+.provider-label {
+  display: flex; flex-direction: column;
+}
+.provider-desc { font-size: 12px; color: #888; }
+
+.provider-settings { margin: 16px 0; transition: opacity 0.3s; }
+.provider-settings.dimmed { opacity: 0.4; pointer-events: none; }
+.provider-settings h3 { font-size: 14px; color: #666; margin-bottom: 12px; }
+
+.settings-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.field-wide { width: 350px; }
+.field-full { width: 100%; }
+
+.tier-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+
+  mat-radio-group { display: flex; gap: 16px; }
+  .tier-hint {
+    color: rgba(0, 0, 0, 0.55);
+    font-size: 12px;
+    max-width: 520px;
+  }
+}
+
+h3 { font-size: 14px; color: #666; margin: 16px 0 8px; }
+
+.checkbox-row {
+  display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px;
+}
+
+mat-divider { margin: 16px 0 !important; }

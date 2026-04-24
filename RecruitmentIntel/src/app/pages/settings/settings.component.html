@@ -1,0 +1,301 @@
+<div class="page-header">
+  <h1>Settings</h1>
+</div>
+
+<!-- AI Provider -->
+<mat-card class="settings-card">
+  <mat-card-header>
+    <mat-icon mat-card-avatar>smart_toy</mat-icon>
+    <mat-card-title>AI Provider</mat-card-title>
+    <mat-card-subtitle>Configure the LLM used for signal extraction and job classification</mat-card-subtitle>
+  </mat-card-header>
+  <mat-card-content>
+    <div class="provider-toggle">
+      <mat-radio-group [(ngModel)]="settings.llmProvider">
+        <mat-radio-button value="gemini" class="provider-option">
+          <div class="provider-label">
+            <strong>Gemini Free</strong>
+            <span class="provider-desc">Google's free-tier API</span>
+          </div>
+        </mat-radio-button>
+        <mat-radio-button value="ollama" class="provider-option">
+          <div class="provider-label">
+            <strong>Ollama Local</strong>
+            <span class="provider-desc">Run models locally</span>
+          </div>
+        </mat-radio-button>
+      </mat-radio-group>
+    </div>
+
+    <mat-divider></mat-divider>
+
+    <!-- Gemini Settings -->
+    <div class="provider-settings" [class.dimmed]="settings.llmProvider !== 'gemini'">
+      <h3>Gemini Settings</h3>
+
+      <div class="tier-row">
+        <mat-radio-group [(ngModel)]="settings.geminiTier">
+          <mat-radio-button value="free">Free tier</mat-radio-button>
+          <mat-radio-button value="paid">Paid tier</mat-radio-button>
+        </mat-radio-group>
+        <span class="tier-hint">
+          Free: bail batch on first 429 to avoid burning the daily quota.
+          Paid: retry 429 with backoff (paid 429s are usually short bursts).
+        </span>
+      </div>
+
+      <div class="settings-row">
+        <mat-form-field appearance="outline" class="field-wide">
+          <mat-label>Free-tier API Key</mat-label>
+          <input matInput [(ngModel)]="settings.geminiApiKey"
+                 [type]="showApiKey ? 'text' : 'password'"
+                 placeholder="AI Studio key (free quota)">
+          <button mat-icon-button matSuffix (click)="showApiKey = !showApiKey">
+            <mat-icon>{{ showApiKey ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Model</mat-label>
+          <mat-select [(value)]="settings.geminiModel">
+            @for (m of geminiModels; track m) {
+              <mat-option [value]="m">{{ m }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <div class="settings-row">
+        <mat-form-field appearance="outline" class="field-wide">
+          <mat-label>Paid-tier API Key</mat-label>
+          <input matInput [(ngModel)]="settings.geminiPaidApiKey"
+                 [type]="showPaidApiKey ? 'text' : 'password'"
+                 placeholder="Paid/billing-enabled key (used when tier = Paid)">
+          <button mat-icon-button matSuffix (click)="showPaidApiKey = !showPaidApiKey">
+            <mat-icon>{{ showPaidApiKey ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+          <mat-hint>Optional. If blank when tier = Paid, falls back to the free key above.</mat-hint>
+        </mat-form-field>
+      </div>
+    </div>
+
+    <mat-divider></mat-divider>
+
+    <!-- Ollama Settings -->
+    <div class="provider-settings" [class.dimmed]="settings.llmProvider !== 'ollama'">
+      <h3>Ollama Settings</h3>
+      <div class="settings-row">
+        <mat-form-field appearance="outline" class="field-wide">
+          <mat-label>Host</mat-label>
+          <input matInput [(ngModel)]="settings.ollamaHost" placeholder="http://localhost:11434">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Model</mat-label>
+          <mat-select [(value)]="settings.ollamaModel">
+            @for (m of ollamaModels; track m) {
+              <mat-option [value]="m">{{ m }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+    </div>
+    <mat-divider></mat-divider>
+
+    <div class="provider-settings">
+      <h3>Signal Extraction</h3>
+      <div class="extract-toggle-row">
+        <mat-slide-toggle [(ngModel)]="settings.autoExtractOnIngest">
+          Auto-extract signals during ingestion
+        </mat-slide-toggle>
+        <p class="toggle-hint">
+          When OFF (recommended), ingestion only scrapes articles into the News Log with
+          status <strong>pending</strong>. You then review and click <strong>Extract</strong>
+          on individual articles, or <strong>Extract All Pending</strong> in bulk. This is
+          the human-in-the-loop mode and saves LLM quota.<br>
+          When ON, every article is sent to the LLM during ingestion (legacy behaviour).
+        </p>
+      </div>
+    </div>
+  </mat-card-content>
+  <mat-card-actions align="end">
+    <button mat-stroked-button (click)="testConnection()">
+      <mat-icon>wifi_tethering</mat-icon> Test Connection
+    </button>
+    <button mat-raised-button color="primary" (click)="saveProvider()">
+      <mat-icon>save</mat-icon> Save
+    </button>
+  </mat-card-actions>
+</mat-card>
+
+<!-- Extraction Intent -->
+<mat-card class="settings-card" id="extraction-intent">
+  <mat-card-header>
+    <mat-icon mat-card-avatar>psychology</mat-icon>
+    <mat-card-title>Extraction Intent</mat-card-title>
+    <mat-card-subtitle>
+      Tell the AI what to look for. By default this app extracts funding signals, but
+      you can rewrite the prompt to match any domain — product launches, research papers,
+      hiring events, acquisitions, whatever — and adapt the keyword filter accordingly.
+    </mat-card-subtitle>
+  </mat-card-header>
+  <mat-card-content>
+    <div class="preset-row">
+      <mat-form-field appearance="outline" class="preset-select">
+        <mat-label>Preset</mat-label>
+        <mat-select [(value)]="selectedProfileId" (selectionChange)="applyProfile(selectedProfileId)">
+          <mat-option [value]="''">— None (custom) —</mat-option>
+          @for (p of profiles; track p.id) {
+            <mat-option [value]="p.id">{{ p.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <button mat-stroked-button (click)="saveAsNewPreset()" matTooltip="Save current prompt + keywords as a new named preset">
+        <mat-icon>add</mat-icon> Save as New Preset
+      </button>
+      <button mat-stroked-button (click)="updateSelectedPreset()" [disabled]="!selectedProfileId"
+              matTooltip="Overwrite the selected preset with the current editor values">
+        <mat-icon>save</mat-icon> Update Selected
+      </button>
+      <button mat-icon-button color="warn" (click)="deleteSelectedPreset()" [disabled]="!selectedProfileId"
+              matTooltip="Delete selected preset">
+        <mat-icon>delete</mat-icon>
+      </button>
+    </div>
+
+    <mat-divider></mat-divider>
+
+    <h3>Global scrape keywords</h3>
+    <p class="intent-hint">
+      Applied at scrape time for any feed that doesn't have its own keywords. Articles
+      whose title + summary don't contain at least one of these are filtered out before
+      the LLM is called (status <code>keyword_filtered</code> in News Log). Leave blank
+      to accept everything a feed returns.
+    </p>
+    <mat-form-field appearance="outline" class="field-full">
+      <mat-label>Keywords (comma-separated)</mat-label>
+      <input matInput [(ngModel)]="globalKeywordsStr"
+             placeholder="e.g. launched, unveiled, raised, acquires">
+    </mat-form-field>
+
+    <mat-divider></mat-divider>
+
+    <h3>AI extraction prompt</h3>
+    <p class="intent-hint">
+      The template sent to the LLM for each article. Must contain
+      <code>{{ '{title}' }}</code> and <code>{{ '{text}' }}</code> — these are replaced
+      with the article's title and body. Use double braces
+      <code>{{ '{{' }}...{{ '}}' }}</code> for literal braces in sample JSON.
+      Leave blank to use the built-in funding prompt.
+    </p>
+    <mat-form-field appearance="outline" class="field-full">
+      <mat-label>Prompt template</mat-label>
+      <textarea matInput rows="12" [(ngModel)]="settings.extractionPrompt"
+                [placeholder]="defaultPromptPreview"></textarea>
+    </mat-form-field>
+  </mat-card-content>
+  <mat-card-actions align="end">
+    <button mat-stroked-button (click)="resetExtractionPrompt()" matTooltip="Load the built-in funding prompt into the editor">
+      <mat-icon>restart_alt</mat-icon> Reset to Default
+    </button>
+    <button mat-raised-button color="primary" (click)="saveIntent()">
+      <mat-icon>save</mat-icon> Save
+    </button>
+  </mat-card-actions>
+</mat-card>
+
+<!-- Ingestion Schedule -->
+<mat-card class="settings-card">
+  <mat-card-header>
+    <mat-icon mat-card-avatar>schedule</mat-icon>
+    <mat-card-title>Ingestion Schedule</mat-card-title>
+    <mat-card-subtitle>How often to fetch new funding signals from RSS feeds</mat-card-subtitle>
+  </mat-card-header>
+  <mat-card-content>
+    <mat-form-field appearance="outline">
+      <mat-label>Fetch Interval</mat-label>
+      <mat-select [(value)]="settings.fetchIntervalHours">
+        @for (h of intervals; track h) {
+          <mat-option [value]="h">{{ intervalLabel(h) }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Max Articles Per Feed (per run)</mat-label>
+      <input matInput type="number" min="1" max="500"
+             [(ngModel)]="settings.articlesPerFeedLimit"
+             placeholder="20">
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>LLM article char budget</mat-label>
+      <input matInput type="number" min="500" max="30000" step="500"
+             [(ngModel)]="settings.llmArticleCharBudget"
+             placeholder="3500">
+      <mat-hint>Chars of each article body sent to the LLM (500–30000). Higher = better extraction on long pieces, more tokens per call.</mat-hint>
+    </mat-form-field>
+  </mat-card-content>
+  <mat-card-actions align="end">
+    <button mat-raised-button color="primary" (click)="saveIngestion()">
+      <mat-icon>save</mat-icon> Save
+    </button>
+  </mat-card-actions>
+</mat-card>
+
+<!-- Job Crawl Strategy -->
+<mat-card class="settings-card">
+  <mat-card-header>
+    <mat-icon mat-card-avatar>bug_report</mat-icon>
+    <mat-card-title>Job Crawl Strategy</mat-card-title>
+    <mat-card-subtitle>Configure how career pages are discovered and scraped</mat-card-subtitle>
+  </mat-card-header>
+  <mat-card-content>
+    <mat-form-field appearance="outline" class="field-full">
+      <mat-label>Career Page Patterns (comma-separated)</mat-label>
+      <input matInput [(ngModel)]="careerPatternsStr" placeholder="/careers, /jobs, /join-us">
+    </mat-form-field>
+
+    <h3>Fallback Methods</h3>
+    <div class="checkbox-row">
+      <mat-checkbox [(ngModel)]="settings.fallbackGoogle">Google Search fallback</mat-checkbox>
+      <mat-checkbox [(ngModel)]="settings.fallbackLinkedin">LinkedIn Jobs page fallback</mat-checkbox>
+    </div>
+
+    <h3>ATS Detection</h3>
+    <div class="checkbox-row">
+      @for (ats of allAts; track ats) {
+        <mat-checkbox [checked]="isAtsChecked(ats)" (change)="toggleAts(ats)">{{ ats }}</mat-checkbox>
+      }
+    </div>
+
+    <h3>Target Job Titles</h3>
+    <mat-form-field appearance="outline" class="field-full">
+      <mat-label>Roles you're recruiting for (comma-separated)</mat-label>
+      <input matInput [(ngModel)]="jobTargetTitlesCsv"
+             placeholder="Software Engineer, Sales Engineer, Product Manager">
+      <mat-hint>Only save jobs whose title semantically matches one of these (LLM-judged). Empty = save every job we find.</mat-hint>
+    </mat-form-field>
+
+    <h3>Advanced</h3>
+    <div class="filter-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Max listings pages per prospect</mat-label>
+        <input matInput type="number" min="1" max="10"
+               [(ngModel)]="settings.jobMaxListingPages" placeholder="4">
+        <mat-hint>How many validated listings pages to scrape (after sub-category expansion).</mat-hint>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Max sub-category pages per hub</mat-label>
+        <input matInput type="number" min="1" max="20"
+               [(ngModel)]="settings.jobMaxSubcategoryPages" placeholder="6">
+        <mat-hint>When a careers landing is a hub of team links, how many to follow.</mat-hint>
+      </mat-form-field>
+    </div>
+  </mat-card-content>
+  <mat-card-actions align="end">
+    <button mat-raised-button color="primary" (click)="saveCrawl()">
+      <mat-icon>save</mat-icon> Save
+    </button>
+  </mat-card-actions>
+</mat-card>
