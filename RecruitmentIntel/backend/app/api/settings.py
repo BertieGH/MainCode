@@ -41,6 +41,9 @@ async def get_settings():
         job_target_titles=settings.job_target_titles,
         job_max_listing_pages=settings.job_max_listing_pages,
         job_max_subcategory_pages=settings.job_max_subcategory_pages,
+        job_extract_prompt=settings.job_extract_prompt,
+        job_match_prompt=settings.job_match_prompt,
+        job_classify_prompt=settings.job_classify_prompt,
     )
 
 

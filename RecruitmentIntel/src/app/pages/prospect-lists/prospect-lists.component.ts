@@ -5,7 +5,10 @@ import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatDialogModule } from '@angular/material/dialog';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { InfoDialogComponent } from '../../components/info-dialog/info-dialog.component';
+import { PROSPECT_THEAMS_WORKFLOW } from '../../components/info-dialog/workflows';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -19,7 +22,8 @@ import { ApiService } from '../../services/api.service';
   imports: [
     CommonModule, RouterLink, FormsModule,
     MatCardModule, MatButtonModule, MatIconModule, MatDialogModule,
-    MatFormFieldModule, MatInputModule, MatProgressBarModule, MatSnackBarModule
+    MatFormFieldModule, MatInputModule, MatProgressBarModule,
+    MatTooltipModule, MatSnackBarModule
   ],
   templateUrl: './prospect-lists.component.html',
   styleUrl: './prospect-lists.component.scss'
@@ -30,7 +34,11 @@ export class ProspectListsComponent implements OnInit {
   newName = '';
   newDescription = '';
 
-  constructor(private api: ApiService, private snackBar: MatSnackBar) {}
+  constructor(private api: ApiService, private snackBar: MatSnackBar, private dialog: MatDialog) {}
+
+  openInfo() {
+    this.dialog.open(InfoDialogComponent, { data: PROSPECT_THEAMS_WORKFLOW, width: '880px', maxWidth: '95vw' });
+  }
 
   ngOnInit() {
     this.loadLists();

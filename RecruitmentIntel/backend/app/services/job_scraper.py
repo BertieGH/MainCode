@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -72,7 +73,67 @@ DEPARTMENT_KEYWORDS = {
     "security",
 }
 
-JOB_CLASSIFICATION_PROMPT = """Classify these job postings. For each job, determine:
+_BADGE_SUFFIX_RE = re.compile(
+    r"\s*\b(New|Featured|Hot|Just\s+Posted|Updated|Urgent)\b\s*$",
+    re.IGNORECASE,
+)
+
+
+# -------------------------------------------------------------------------
+# Default LLM prompts. User-editable via Settings → "Job Crawl Prompts".
+# When the corresponding settings.<field> is empty, these defaults are used.
+# -------------------------------------------------------------------------
+
+DEFAULT_JOB_EXTRACT_PROMPT = """You are looking at the page at: {base_url}
+Decide whether this page is actually a list of open job positions.
+If it's a marketing page, blog post, About page, or just a single job posting, treat it as NOT a job listings page.
+
+Page text:
+{page_text}
+
+Return ONLY a JSON object with shape:
+{"is_job_listings_page": true|false, "jobs": [{"title": "...", "url": "...", "location": "..."}]}
+
+Rules:
+- If is_job_listings_page is false, jobs MUST be [].
+- Skip generic CTAs like "Join our team" — only include rows with a specific role title.
+- url is the link to the specific job posting if present in the page text; otherwise empty string.
+"""
+
+
+DEFAULT_JOB_MATCH_PROMPT = """You are filtering job postings to those a recruiter would care about.
+Targets (the role families the recruiter is hiring for): {targets_json}
+Candidates: {candidates_json}
+
+For each candidate, decide if its title belongs to the SAME ROLE FAMILY as ANY target.
+
+MATCHING examples (same role family):
+- "Backend Engineer" → "Software Engineer"  (subtype of software engineering)
+- "Staff iOS Developer" → "Software Engineer"  (subtype)
+- "Senior Site Reliability Engineer" → "DevOps Engineer"  (same family)
+- "Platform Engineer" → "DevOps Engineer"  (same family)
+- "ML Engineer" → "AI Engineer"  (same family)
+
+NOT MATCHING examples (different role family — return null):
+- "Engineering Manager" → "Software Engineer"  (people-manager, not IC)
+- "Solutions Engineer" → "Software Engineer"  (pre-sales, not building product)
+- "Sales Engineer" → "Software Engineer"  (sales-side)
+- "Account Executive" → any target  (sales, not engineering)
+- "Customer Success Manager" → any target  (post-sales)
+- "Data Solutions Architect" → "Software Engineer"  (consulting/sales-side)
+- "Marketing Manager" → any target  (non-engineering)
+- "Recruiter" → any target  (HR)
+- "Product Manager" → "Software Engineer"  (PM, not engineer)
+
+Be STRICT: when in doubt, return null. The recruiter only wants individual contributor engineers building product.
+
+Return ONLY a JSON array of objects: [{"i": 0, "match": "Software Engineer"}, {"i": 1, "match": null}, ...]
+- "match" MUST be one of the EXACT target strings from the targets list, character-for-character. Or null.
+- One entry per candidate.
+"""
+
+
+DEFAULT_JOB_CLASSIFY_PROMPT = """Classify these job postings. For each job, determine:
 - department (one of: Engineering, Product, Design, Sales, Marketing, Operations, HR, Finance, Legal, Data, Other)
 - seniority (one of: Intern, Junior, Mid, Senior, Lead, Manager, Director, VP, C-Level, Unknown)
 - job_type (one of: Full-time, Part-time, Contract, Internship)
@@ -83,6 +144,25 @@ Input jobs:
 
 Return ONLY a JSON array with objects containing: title, department, seniority, job_type, skills
 No markdown, no explanation."""
+
+
+def _resolve_prompt(field_name: str, default: str) -> str:
+    """Return the user-overridden prompt from settings if set, else the default."""
+    val = getattr(settings, field_name, "") or ""
+    return val if val.strip() else default
+
+
+def _render_prompt(template: str, **kwargs: str) -> str:
+    """Substitute `{placeholder}` tokens via plain string replace.
+
+    Avoids `str.format()` because user-edited prompts contain JSON examples
+    with literal `{"key": value}` braces that `.format()` would (mis)interpret
+    as placeholders. We only replace the exact `{name}` tokens we care about.
+    """
+    out = template
+    for key, value in kwargs.items():
+        out = out.replace("{" + key + "}", value)
+    return out
 
 
 # -------------------------------------------------------------------------
@@ -97,23 +177,57 @@ def _detect_ats(url: str) -> str | None:
     return None
 
 
+def _ats_title_and_location(a, ats: str) -> tuple[str, str]:
+    """ATS-specific title/location extraction.
+
+    Greenhouse's job-board iframe wraps each row as
+    `<a><p class="body--medium">Title<span>New</span></p><p class="body__secondary">Loc</p></a>`,
+    so naive `get_text` concatenates Title + badge + Location into one blob
+    (e.g. "Senior Software Engineer, InfrastructureBoston or Remote").
+    Read each child explicitly instead.
+    """
+    title = ""
+    location = ""
+    if "greenhouse" in ats:
+        title_el = a.select_one("p[class*='body--medium'], .job-title, h3, h4")
+        loc_el = a.select_one(
+            "p[class*='body__secondary'], p[class*='body--metadata'], .location"
+        )
+        if title_el:
+            title = title_el.get_text(separator=" ", strip=True)
+        if loc_el:
+            location = loc_el.get_text(separator=" ", strip=True)
+    elif "lever" in ats:
+        title_el = a.select_one("h5[data-qa='posting-name'], h5")
+        loc_el = a.select_one(".sort-by-location, .location")
+        if title_el:
+            title = title_el.get_text(separator=" ", strip=True)
+        if loc_el:
+            location = loc_el.get_text(separator=" ", strip=True)
+    if not title:
+        title = _anchor_title(a)
+    title = _BADGE_SUFFIX_RE.sub("", title).strip()
+    return title, location
+
+
 def _extract_jobs_from_ats(html: str, base_url: str, ats: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     selectors = ATS_SELECTORS[ats]
     jobs = []
     for a in soup.select(selectors["job_links"]):
-        title = a.get_text(strip=True)
+        title, location = _ats_title_and_location(a, ats)
         href = a.get("href", "")
         if not title or len(title) < 3:
             continue
         full_url = urljoin(base_url, href)
         dept = ""
-        parent = a.find_parent("div") or a.find_parent("tr") or a.find_parent("li")
-        if parent:
-            dept_el = parent.select_one(selectors.get("department", ""))
-            if dept_el:
-                dept = dept_el.get_text(strip=True)
-        jobs.append({"title": title, "url": full_url, "department_hint": dept, "location": ""})
+        if not location:
+            parent = a.find_parent("div") or a.find_parent("tr") or a.find_parent("li")
+            if parent:
+                dept_el = parent.select_one(selectors.get("department", ""))
+                if dept_el:
+                    dept = dept_el.get_text(strip=True)
+        jobs.append({"title": title, "url": full_url, "department_hint": dept, "location": location})
     return jobs
 
 
@@ -231,6 +345,57 @@ def extract_subcategory_links(html: str, base_url: str) -> list[str]:
     return out
 
 
+# Hostnames whose first path segment uniquely identifies a tenant board.
+# When a static company careers page links out to >= 3 jobs at the same tenant,
+# we can derive the tenant root URL and crawl that instead. Catches the common
+# pattern of "company.com/careers links to jobs.ashbyhq.com/<slug>/<uuid>".
+_EXTERNAL_ATS_HOSTS = (
+    "jobs.ashbyhq.com",
+    "ashbyhq.com",
+    "boards.greenhouse.io",
+    "job-boards.greenhouse.io",
+    "jobs.lever.co",
+    "apply.workable.com",
+    "smartrecruiters.com",
+    "myworkdayjobs.com",
+    "jobvite.com",
+    "icims.com",
+)
+
+
+def _detect_external_ats_board(html: str, base_url: str) -> str | None:
+    """Return derived tenant board URL if the page delegates to an external ATS.
+
+    Triggered when a static page (e.g. luminai.com/careers) contains multiple
+    anchors to the same tenant on a known ATS host (e.g. 11 anchors to
+    `jobs.ashbyhq.com/luminai/<uuid>`). Returns `https://jobs.ashbyhq.com/luminai`
+    so the pipeline can crawl the actual board.
+    """
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "html.parser")
+    base_host = urlparse(base_url).netloc
+    counts: dict[str, int] = {}
+    for a in soup.find_all("a", href=True):
+        try:
+            parsed = urlparse(urljoin(base_url, a["href"]))
+        except Exception:
+            continue
+        if not parsed.netloc or parsed.netloc == base_host:
+            continue
+        if not any(parsed.netloc.endswith(h) or parsed.netloc == h for h in _EXTERNAL_ATS_HOSTS):
+            continue
+        path_parts = [p for p in parsed.path.split("/") if p]
+        if not path_parts:
+            continue
+        tenant_root = f"https://{parsed.netloc}/{path_parts[0]}"
+        counts[tenant_root] = counts.get(tenant_root, 0) + 1
+    if not counts:
+        return None
+    best_url, best_count = max(counts.items(), key=lambda kv: kv[1])
+    return best_url if best_count >= 3 else None
+
+
 def classify_careers_page(html: str, url: str) -> tuple[str, dict]:
     """Determine whether this page is `listings`, `hub`, or `junk`.
 
@@ -335,21 +500,36 @@ async def _fetch_page(url: str) -> str | None:
     return None
 
 
-async def _fetch_page_playwright(url: str) -> str | None:
+def _fetch_page_playwright_sync(url: str) -> str | None:
+    """Sync Playwright wrapper. Runs in a thread so the asyncio event-loop
+    type doesn't matter — uvicorn's `--reload` worker on Windows is hard-coded
+    to SelectorEventLoop (uvicorn/loops/asyncio.py), which doesn't support
+    `loop.subprocess_exec` and breaks Playwright's async API. The sync API
+    uses the regular `subprocess` module under the hood, so threading around
+    it sidesteps the issue entirely.
+    """
     try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
             try:
-                page = await browser.new_page()
-                await page.goto(url, wait_until="networkidle", timeout=20000)
-                html = await page.content()
+                page = browser.new_page()
+                page.goto(url, wait_until="networkidle", timeout=20000)
+                return page.content()
             finally:
-                await browser.close()
-            return html
+                browser.close()
     except Exception as e:
-        logger.debug(f"Playwright fetch failed for {url}: {e}")
+        logger.debug(f"Playwright sync fetch failed for {url}: {e}")
     return None
+
+
+async def _fetch_page_playwright(url: str) -> str | None:
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, _fetch_page_playwright_sync, url)
+    except Exception as e:
+        logger.debug(f"Playwright executor failed for {url}: {e}")
+        return None
 
 
 async def _fetch_html(url: str) -> str | None:
@@ -372,21 +552,10 @@ async def _llm_extract_jobs(html: str, base_url: str) -> list[dict]:
         tag.decompose()
     text = soup.get_text(separator="\n", strip=True)[:3500]
 
-    prompt = f"""You are looking at the page at: {base_url}
-Decide whether this page is actually a list of open job positions.
-If it's a marketing page, blog post, About page, or just a single job posting, treat it as NOT a job listings page.
-
-Page text:
-{text}
-
-Return ONLY a JSON object with shape:
-{{"is_job_listings_page": true|false, "jobs": [{{"title": "...", "url": "...", "location": "..."}}]}}
-
-Rules:
-- If is_job_listings_page is false, jobs MUST be [].
-- Skip generic CTAs like "Join our team" — only include rows with a specific role title.
-- url is the link to the specific job posting if present in the page text; otherwise empty string.
-"""
+    prompt = _render_prompt(
+        _resolve_prompt("job_extract_prompt", DEFAULT_JOB_EXTRACT_PROMPT),
+        base_url=base_url, page_text=text,
+    )
 
     try:
         response = await provider.extract(prompt)
@@ -426,19 +595,33 @@ async def _extract_one_page(html: str, url: str) -> list[dict]:
 
 
 def _dedupe_jobs(jobs: list[dict]) -> list[dict]:
-    seen: set[tuple[str, str]] = set()
-    out: list[dict] = []
+    """Dedup with field merging.
+
+    Prefer URL as the identity (job postings have stable URLs across passes).
+    When two extraction passes hit the same job and one returned an empty
+    `location` but the other got it (e.g. Greenhouse listings card vs.
+    JSON-LD), merge by keeping the non-empty value. Falls back to
+    (title, location) when no URL is available.
+    """
+    by_key: dict[tuple, dict] = {}
+    order: list[tuple] = []
     for j in jobs:
-        title = (j.get("title") or "").lower().strip()
-        location = (j.get("location") or "").lower().strip()
+        title = (j.get("title") or "").strip()
         if not title:
             continue
-        key = (title, location)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(j)
-    return out
+        url = (j.get("url") or "").strip()
+        # Strip fragment / trailing slash so "...jobs/123" and ".../" merge.
+        url_norm = url.split("#", 1)[0].rstrip("/").lower()
+        key = ("url", url_norm) if url_norm else ("title-loc", title.lower(), (j.get("location") or "").lower().strip())
+        if key in by_key:
+            cur = by_key[key]
+            for field in ("title", "location", "department_hint", "url"):
+                if not (cur.get(field) or "").strip() and (j.get(field) or "").strip():
+                    cur[field] = j[field]
+        else:
+            by_key[key] = dict(j)
+            order.append(key)
+    return [by_key[k] for k in order]
 
 
 # -------------------------------------------------------------------------
@@ -485,36 +668,69 @@ async def match_jobs_to_targets(jobs: list[dict], targets: list[str]) -> list[di
 
     candidates_json = json.dumps([{"i": idx, "title": j.get("title", "")} for idx, j in enumerate(remaining)])
     targets_json = json.dumps(target_list)
-    prompt = f"""You are filtering job postings to those a recruiter would care about.
-Targets (the role families the recruiter is hiring for): {targets_json}
-Candidates: {candidates_json}
+    prompt = _render_prompt(
+        _resolve_prompt("job_match_prompt", DEFAULT_JOB_MATCH_PROMPT),
+        targets_json=targets_json, candidates_json=candidates_json,
+    )
 
-For each candidate, decide if its title belongs to the SAME ROLE FAMILY as ANY target.
-Examples of MATCHING: "Backend Engineer" → "Software Engineer"; "Senior Account Executive" → "Sales Engineer"; "Staff iOS Developer" → "Software Engineer"; "Product Designer" → "UX Designer".
-Examples of NOT matching: "Marketing Manager" → "Software Engineer"; "Office Manager" → "Sales Engineer".
+    # Exact-string coercion: LLMs paraphrase ("Software engineer(any)" instead of
+    # "Software engineer(any IT)"). Build a lowercase lookup so we can map back.
+    target_lookup = {t.lower().strip(): t for t in target_list}
 
-Return ONLY a JSON array of objects: [{{"i": 0, "match": "Software Engineer"}}, {{"i": 1, "match": null}}, ...]
-- "match" is the EXACT target string from the targets list, or null if no match.
-- One entry per candidate.
-"""
+    def _coerce_to_exact_target(match: str) -> str | None:
+        if not isinstance(match, str):
+            return None
+        m = match.strip()
+        if not m:
+            return None
+        exact = target_lookup.get(m.lower())
+        if exact:
+            return exact
+        # Fall back to substring match either way (LLM dropped trailing qualifier
+        # or added one). Prefer the longest target that overlaps.
+        m_low = m.lower()
+        candidates = [te for tl, te in target_lookup.items() if tl in m_low or m_low in tl]
+        if candidates:
+            return max(candidates, key=len)
+        return None
 
     try:
         response = await provider.extract(prompt)
-        data = parse_llm_response(response)
+        data = parse_llm_response(response) or _parse_llm_json_array(response)
         if isinstance(data, list):
             for entry in data:
                 if not isinstance(entry, dict):
                     continue
                 idx = entry.get("i")
-                match = entry.get("match")
-                if not isinstance(idx, int) or not isinstance(match, str) or not match.strip():
+                exact_match = _coerce_to_exact_target(entry.get("match"))
+                if not exact_match or not isinstance(idx, int):
                     continue
                 if 0 <= idx < len(remaining):
-                    out.append({**remaining[idx], "match_target": match.strip()})
+                    out.append({**remaining[idx], "match_target": exact_match})
     except Exception as e:
         logger.debug(f"LLM target matching failed: {e}")
 
     return out
+
+
+def _parse_llm_json_array(text: str) -> list | None:
+    """Parse a JSON array from LLM output. `parse_llm_response` only finds objects."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        d = json.loads(text)
+        return d if isinstance(d, list) else None
+    except json.JSONDecodeError:
+        m = re.search(r"\[.*\]", text, re.DOTALL)
+        if m:
+            try:
+                d = json.loads(m.group())
+                return d if isinstance(d, list) else None
+            except json.JSONDecodeError:
+                return None
+    return None
 
 
 # -------------------------------------------------------------------------
@@ -540,18 +756,28 @@ async def classify_jobs(raw_jobs: list[dict]) -> list[dict]:
     for i in range(0, len(raw_jobs), batch_size):
         batch = raw_jobs[i:i + batch_size]
         jobs_input = [{"title": j["title"], "department_hint": j.get("department_hint", "")} for j in batch]
-        prompt = JOB_CLASSIFICATION_PROMPT.format(jobs_json=json.dumps(jobs_input))
+        prompt = _render_prompt(
+            _resolve_prompt("job_classify_prompt", DEFAULT_JOB_CLASSIFY_PROMPT),
+            jobs_json=json.dumps(jobs_input),
+        )
 
         try:
             response = await provider.extract(prompt)
-            text = response.strip()
-            if text.startswith("```"):
-                text = re.sub(r"^```(?:json)?\s*", "", text)
-                text = re.sub(r"\s*```$", "", text)
-            data = json.loads(text)
+            data = _parse_llm_json_array(response)
 
-            if isinstance(data, list) and len(data) == len(batch):
-                for j, c in zip(batch, data):
+            # Title-keyed lookup is more robust than positional zip — the LLM
+            # sometimes returns fewer/more entries than the batch.
+            by_title = {}
+            if isinstance(data, list):
+                for c in data:
+                    if isinstance(c, dict):
+                        key = (c.get("title") or "").lower().strip()
+                        if key:
+                            by_title[key] = c
+
+            for j in batch:
+                c = by_title.get(j["title"].lower().strip())
+                if c:
                     classified.append({
                         **j,
                         "department": c.get("department", "Other"),
@@ -559,8 +785,7 @@ async def classify_jobs(raw_jobs: list[dict]) -> list[dict]:
                         "job_type": c.get("job_type", "Full-time"),
                         "skills": c.get("skills", []),
                     })
-            else:
-                for j in batch:
+                else:
                     classified.append({**j, "department": "Other", "seniority": "Unknown", "job_type": "Full-time", "skills": []})
         except Exception as e:
             logger.warning(f"Job classification failed: {e}")
@@ -642,6 +867,42 @@ async def crawl_prospect_jobs(db: AsyncSession, prospect: Prospect, force: bool 
                     logger.info(
                         "Playwright retry for %s → classified as %s", cand_url, cat,
                     )
+
+            # Static landing page that delegates to an external ATS tenant
+            # (e.g. luminai.com/careers links to jobs.ashbyhq.com/luminai/<uuid>).
+            # Pivot to the derived tenant board, validate it, and use that instead.
+            if cat == "junk":
+                external = _detect_external_ats_board(html or "", cand_url)
+                if external:
+                    ext_html = await _fetch_page(external)
+                    ext_cat, ext_signals = classify_careers_page(ext_html or "", external)
+                    if ext_cat == "junk":
+                        pw_ext = await _fetch_page_playwright(external)
+                        if pw_ext and pw_ext != ext_html:
+                            ext_html = pw_ext
+                            ext_cat, ext_signals = classify_careers_page(ext_html, external)
+                    logger.info(
+                        "External ATS detected at %s → %s classified as %s",
+                        cand_url, external, ext_cat,
+                    )
+                    if ext_html and ext_cat == "listings":
+                        validated.append((external, ext_html, f"{strategy}+external_ats"))
+                        continue
+                    if ext_html and ext_cat == "hub":
+                        sub_links = ext_signals.get("subcategory_links", [])[:max_subs]
+                        for sub_url in sub_links:
+                            if len(validated) >= max_listings:
+                                break
+                            sub_html = await _fetch_page(sub_url)
+                            sub_cat, _ = classify_careers_page(sub_html or "", sub_url)
+                            if sub_cat == "junk":
+                                pw_sub = await _fetch_page_playwright(sub_url)
+                                if pw_sub and pw_sub != sub_html:
+                                    sub_html = pw_sub
+                                    sub_cat, _ = classify_careers_page(sub_html, sub_url)
+                            if sub_html and sub_cat == "listings":
+                                validated.append((sub_url, sub_html, f"{strategy}+external_ats+sub"))
+                        continue
 
             if not html:
                 continue

@@ -54,6 +54,27 @@ class SettingsOut(BaseModel):
     job_target_titles: list[str]
     job_max_listing_pages: int
     job_max_subcategory_pages: int
+    job_extract_prompt: str
+    job_match_prompt: str
+    job_classify_prompt: str
+
+
+class BackfillRunOut(BaseModel):
+    id: UUID
+    kind: str
+    started_at: datetime
+    finished_at: datetime | None
+    status: str
+    total: int
+    processed: int
+    updated: int
+    still_unknown: int
+    via_location: int
+    via_llm: int
+    message: str | None
+    trigger: str
+
+    model_config = {"from_attributes": True}
 
 
 class SettingsUpdate(BaseModel):
@@ -77,3 +98,6 @@ class SettingsUpdate(BaseModel):
     job_target_titles: list[str] | None = None
     job_max_listing_pages: int | None = None
     job_max_subcategory_pages: int | None = None
+    job_extract_prompt: str | None = None
+    job_match_prompt: str | None = None
+    job_classify_prompt: str | None = None

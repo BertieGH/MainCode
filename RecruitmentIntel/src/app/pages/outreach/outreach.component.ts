@@ -12,8 +12,11 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { Job, ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
+import { InfoDialogComponent } from '../../components/info-dialog/info-dialog.component';
+import { OUTREACH_WORKFLOW } from '../../components/info-dialog/workflows';
 
 @Component({
   selector: 'app-outreach',
@@ -22,7 +25,7 @@ import { ApiService } from '../../services/api.service';
     CommonModule, FormsModule,
     MatCardModule, MatTableModule, MatSelectModule, MatFormFieldModule,
     MatInputModule, MatButtonModule, MatIconModule, MatChipsModule, MatSortModule,
-    MatTooltipModule, MatSnackBarModule
+    MatTooltipModule, MatDialogModule, MatSnackBarModule
   ],
   templateUrl: './outreach.component.html',
   styleUrl: './outreach.component.scss'
@@ -46,7 +49,11 @@ export class OutreachComponent implements OnInit {
   // Client-side alias retained so the template doesn't need to change
   get filteredJobs(): Job[] { return this.jobs; }
 
-  constructor(private api: ApiService, private snackBar: MatSnackBar) {}
+  constructor(private api: ApiService, private snackBar: MatSnackBar, private dialog: MatDialog) {}
+
+  openInfo() {
+    this.dialog.open(InfoDialogComponent, { data: OUTREACH_WORKFLOW, width: '880px', maxWidth: '95vw' });
+  }
 
   ngOnInit() {
     this.api.getProspectLists().subscribe({

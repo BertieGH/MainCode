@@ -15,11 +15,11 @@ import { MatIconModule } from '@angular/material/icon';
         <span class="brand-text">Recruitment Intelligence</span>
       </div>
       <div class="nav-links">
-        <a mat-button routerLink="/signals" routerLinkActive="active-link">
-          <mat-icon>rss_feed</mat-icon> Signal Log
-        </a>
         <a mat-button routerLink="/news-log" routerLinkActive="active-link">
           <mat-icon>article</mat-icon> News Log
+        </a>
+        <a mat-button routerLink="/signals" routerLinkActive="active-link">
+          <mat-icon>rss_feed</mat-icon> Signal Log
         </a>
         <a mat-button routerLink="/prospects" routerLinkActive="active-link">
           <mat-icon>list_alt</mat-icon> Prospects

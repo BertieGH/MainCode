@@ -17,6 +17,7 @@ class ArticleOut(BaseModel):
     llm_response: str | None
     signal_id: UUID | None
     keyword_hits: dict[str, int] = {}
+    country: str = ""
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -36,6 +36,10 @@ class Article(Base):
     # Dict[keyword, count] — case-insensitive substring hits in title+summary at scrape time.
     # Empty dict when the feed had no keywords configured, or when no keywords matched.
     keyword_hits: Mapped[dict] = mapped_column(JSON, default=dict)
+    # ISO-2 country code derived at ingest from title+summary (cheap regex
+    # match, see services/country_detection.py). Empty when no preset matched
+    # — fillable later via POST /articles/backfill-countries (LLM).
+    country: Mapped[str] = mapped_column(String(8), default="", index=True)
     signal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("signal_log.id", ondelete="SET NULL"), nullable=True
     )

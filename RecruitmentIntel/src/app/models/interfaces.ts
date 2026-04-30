@@ -96,6 +96,7 @@ export interface Article {
   llmResponse: string | null;
   signalId: string | null;
   keywordHits: { [keyword: string]: number };
+  country: string;
   createdAt: string;
 }
 
@@ -153,4 +154,17 @@ export interface AppSettings {
   jobTargetTitles: string[];
   jobMaxListingPages: number;
   jobMaxSubcategoryPages: number;
+  jobExtractPrompt: string;
+  jobMatchPrompt: string;
+  jobClassifyPrompt: string;
+}
+
+export interface JobPromptProfile {
+  id: string;
+  name: string;
+  extractPrompt: string;
+  matchPrompt: string;
+  classifyPrompt: string;
+  createdAt: string;
+  updatedAt: string;
 }

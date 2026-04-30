@@ -31,3 +31,6 @@ class AppSetting(Base):
     job_target_titles: Mapped[list] = mapped_column(JSON, default=list)
     job_max_listing_pages: Mapped[int] = mapped_column(Integer, default=4)
     job_max_subcategory_pages: Mapped[int] = mapped_column(Integer, default=6)
+    job_extract_prompt: Mapped[str] = mapped_column(Text, default="")
+    job_match_prompt: Mapped[str] = mapped_column(Text, default="")
+    job_classify_prompt: Mapped[str] = mapped_column(Text, default="")

@@ -2,8 +2,9 @@ import logging
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import delete as sql_delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -64,6 +65,30 @@ async def get_signal(signal_id: UUID, db: AsyncSession = Depends(get_db)):
 async def ingest_signals(db: AsyncSession = Depends(get_db)):
     """Trigger ingestion: fetch all active feeds, extract signals via LLM."""
     return await ingest_all(db)
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[UUID]
+
+
+@router.delete("/signals/{signal_id}")
+async def delete_signal(signal_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Signal).where(Signal.id == signal_id))
+    signal = result.scalar_one_or_none()
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal not found")
+    await db.delete(signal)
+    await db.commit()
+    return {"status": "deleted", "id": str(signal_id)}
+
+
+@router.post("/signals/bulk-delete")
+async def bulk_delete_signals(payload: BulkDeleteRequest, db: AsyncSession = Depends(get_db)):
+    if not payload.ids:
+        return {"deleted": 0}
+    result = await db.execute(sql_delete(Signal).where(Signal.id.in_(payload.ids)))
+    await db.commit()
+    return {"deleted": result.rowcount or 0}
 
 
 @router.get("/signals/stats/summary")

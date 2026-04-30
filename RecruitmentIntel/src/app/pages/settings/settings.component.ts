@@ -12,7 +12,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { AppSettings, ExtractionProfile } from '../../models/interfaces';
+import { AppSettings, ExtractionProfile, JobPromptProfile } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
 
 const DEFAULT_FUNDING_KEYWORDS = ['funding', 'raised', 'series', 'seed', 'round', 'investment'];
@@ -53,7 +53,18 @@ Return ONLY a valid JSON object with these fields:
   or the article publisher's location. If the article doesn't mention a location,
   return an empty string "" — do NOT reject the article for this.
 
-- date: YYYY-MM-DD. Use the announcement date if stated, otherwise today.
+- date: YYYY-MM-DD. The date THIS specific funding round was announced — i.e.
+  the news event the article is reporting. Many articles also mention the
+  company's PREVIOUS funding rounds for context (e.g. "had previously raised
+  $30M Series A in May 2024"); IGNORE those — they are NOT what's being
+  announced now.
+  Resolution order:
+    1. An explicit dateline / "announced today, {{date}}" / press-release date
+       at the TOP of the article that refers to THIS round.
+    2. The article's published date (provided below as \`published_date\`).
+    3. Today's date as a last resort.
+  Never return a date older than the article's published date — that's a
+  historical mention, not the current announcement.
 
 ONLY return {{"is_funding": false}} when the article is genuinely not about a
 company raising investment capital — e.g. product launches, acquisitions, hires,
@@ -62,9 +73,70 @@ firm raises a fund, not a startup raising from VCs). If there is ANY funding
 announcement in the article, extract it.
 
 Article title: {title}
+Article published_date (from the RSS feed — usually within ±2 days of the actual
+announcement): {published}
 Article text: {text}
 
 Return ONLY the JSON object — no markdown fences, no explanation, no preamble.`;
+
+const DEFAULT_JOB_EXTRACT_PROMPT = `You are looking at the page at: {base_url}
+Decide whether this page is actually a list of open job positions.
+If it's a marketing page, blog post, About page, or just a single job posting, treat it as NOT a job listings page.
+
+Page text:
+{page_text}
+
+Return ONLY a JSON object with shape:
+{"is_job_listings_page": true|false, "jobs": [{"title": "...", "url": "...", "location": "..."}]}
+
+Rules:
+- If is_job_listings_page is false, jobs MUST be [].
+- Skip generic CTAs like "Join our team" — only include rows with a specific role title.
+- url is the link to the specific job posting if present in the page text; otherwise empty string.
+`;
+
+const DEFAULT_JOB_MATCH_PROMPT = `You are filtering job postings to those a recruiter would care about.
+Targets (the role families the recruiter is hiring for): {targets_json}
+Candidates: {candidates_json}
+
+For each candidate, decide if its title belongs to the SAME ROLE FAMILY as ANY target.
+
+MATCHING examples (same role family):
+- "Backend Engineer" → "Software Engineer"  (subtype of software engineering)
+- "Staff iOS Developer" → "Software Engineer"  (subtype)
+- "Senior Site Reliability Engineer" → "DevOps Engineer"  (same family)
+- "Platform Engineer" → "DevOps Engineer"  (same family)
+- "ML Engineer" → "AI Engineer"  (same family)
+
+NOT MATCHING examples (different role family — return null):
+- "Engineering Manager" → "Software Engineer"  (people-manager, not IC)
+- "Solutions Engineer" → "Software Engineer"  (pre-sales, not building product)
+- "Sales Engineer" → "Software Engineer"  (sales-side)
+- "Account Executive" → any target  (sales, not engineering)
+- "Customer Success Manager" → any target  (post-sales)
+- "Data Solutions Architect" → "Software Engineer"  (consulting/sales-side)
+- "Marketing Manager" → any target  (non-engineering)
+- "Recruiter" → any target  (HR)
+- "Product Manager" → "Software Engineer"  (PM, not engineer)
+
+Be STRICT: when in doubt, return null. The recruiter only wants individual contributor engineers building product.
+
+Return ONLY a JSON array of objects: [{"i": 0, "match": "Software Engineer"}, {"i": 1, "match": null}, ...]
+- "match" MUST be one of the EXACT target strings from the targets list, character-for-character. Or null.
+- One entry per candidate.
+`;
+
+const DEFAULT_JOB_CLASSIFY_PROMPT = `Classify these job postings. For each job, determine:
+- department (one of: Engineering, Product, Design, Sales, Marketing, Operations, HR, Finance, Legal, Data, Other)
+- seniority (one of: Intern, Junior, Mid, Senior, Lead, Manager, Director, VP, C-Level, Unknown)
+- job_type (one of: Full-time, Part-time, Contract, Internship)
+- skills (list of 3-5 key technical skills, empty list if non-technical)
+
+Input jobs:
+{jobs_json}
+
+Return ONLY a JSON array with objects containing: title, department, seniority, job_type, skills
+No markdown, no explanation.`;
 
 const DEFAULT_SETTINGS: AppSettings = {
   llmProvider: 'gemini',
@@ -87,6 +159,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   jobTargetTitles: [],
   jobMaxListingPages: 4,
   jobMaxSubcategoryPages: 6,
+  jobExtractPrompt: '',
+  jobMatchPrompt: '',
+  jobClassifyPrompt: '',
 };
 
 @Component({
@@ -109,6 +184,9 @@ export class SettingsComponent implements OnInit {
   profiles: ExtractionProfile[] = [];
   selectedProfileId = '';
 
+  jobPromptProfiles: JobPromptProfile[] = [];
+  selectedJobPromptId = '';
+
   geminiModels = [
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -130,6 +208,7 @@ export class SettingsComponent implements OnInit {
   ngOnInit() {
     this.load();
     this.loadProfiles();
+    this.loadJobPromptProfiles();
   }
 
   loadProfiles() {
@@ -206,6 +285,18 @@ export class SettingsComponent implements OnInit {
         }
         if (!this.settings.globalScrapeKeywords || this.settings.globalScrapeKeywords.length === 0) {
           this.settings.globalScrapeKeywords = [...DEFAULT_FUNDING_KEYWORDS];
+        }
+        // Same pattern for the three job prompts: if backend has no override
+        // saved, surface the built-in defaults in the editor so the user can
+        // see/tweak them instead of staring at empty textareas.
+        if (!this.settings.jobExtractPrompt) {
+          this.settings.jobExtractPrompt = DEFAULT_JOB_EXTRACT_PROMPT;
+        }
+        if (!this.settings.jobMatchPrompt) {
+          this.settings.jobMatchPrompt = DEFAULT_JOB_MATCH_PROMPT;
+        }
+        if (!this.settings.jobClassifyPrompt) {
+          this.settings.jobClassifyPrompt = DEFAULT_JOB_CLASSIFY_PROMPT;
         }
       },
       error: () => this.snackBar.open('Failed to load settings', 'OK', { duration: 3000 })
@@ -325,5 +416,86 @@ export class SettingsComponent implements OnInit {
       extractionPrompt: this.settings.extractionPrompt,
       globalScrapeKeywords: this.settings.globalScrapeKeywords,
     }, 'Extraction intent saved');
+  }
+
+  // --- Job Crawl Prompts ---
+
+  saveJobPrompts() {
+    this.save({
+      jobExtractPrompt: this.settings.jobExtractPrompt,
+      jobMatchPrompt: this.settings.jobMatchPrompt,
+      jobClassifyPrompt: this.settings.jobClassifyPrompt,
+    }, 'Job crawl prompts saved');
+  }
+
+  resetJobExtractPrompt() { this.settings.jobExtractPrompt = DEFAULT_JOB_EXTRACT_PROMPT; }
+  resetJobMatchPrompt() { this.settings.jobMatchPrompt = DEFAULT_JOB_MATCH_PROMPT; }
+  resetJobClassifyPrompt() { this.settings.jobClassifyPrompt = DEFAULT_JOB_CLASSIFY_PROMPT; }
+
+  loadJobPromptProfiles() {
+    this.api.getJobPromptProfiles().subscribe({
+      next: (data) => this.jobPromptProfiles = data,
+    });
+  }
+
+  applyJobPromptProfile(profileId: string) {
+    if (!profileId) return;
+    const p = this.jobPromptProfiles.find(x => x.id === profileId);
+    if (!p) return;
+    this.settings.jobExtractPrompt = p.extractPrompt || DEFAULT_JOB_EXTRACT_PROMPT;
+    this.settings.jobMatchPrompt = p.matchPrompt || DEFAULT_JOB_MATCH_PROMPT;
+    this.settings.jobClassifyPrompt = p.classifyPrompt || DEFAULT_JOB_CLASSIFY_PROMPT;
+    this.snackBar.open(`Loaded preset "${p.name}" — click Save to apply`, 'OK', { duration: 3000 });
+  }
+
+  saveAsNewJobPromptPreset() {
+    const name = (prompt('Name for this job-prompt preset?') || '').trim();
+    if (!name) return;
+    this.api.createJobPromptProfile({
+      name,
+      extractPrompt: this.settings.jobExtractPrompt || '',
+      matchPrompt: this.settings.jobMatchPrompt || '',
+      classifyPrompt: this.settings.jobClassifyPrompt || '',
+    }).subscribe({
+      next: (created) => {
+        this.jobPromptProfiles = [...this.jobPromptProfiles, created]
+          .sort((a, b) => a.name.localeCompare(b.name));
+        this.selectedJobPromptId = created.id;
+        this.snackBar.open(`Preset "${created.name}" saved`, 'OK', { duration: 2500 });
+      },
+      error: (err) => {
+        const msg = err?.error?.detail || 'Failed to save preset';
+        this.snackBar.open(msg, 'OK', { duration: 4000 });
+      }
+    });
+  }
+
+  updateSelectedJobPromptPreset() {
+    if (!this.selectedJobPromptId) return;
+    this.api.updateJobPromptProfile(this.selectedJobPromptId, {
+      extractPrompt: this.settings.jobExtractPrompt || '',
+      matchPrompt: this.settings.jobMatchPrompt || '',
+      classifyPrompt: this.settings.jobClassifyPrompt || '',
+    }).subscribe({
+      next: (updated) => {
+        this.jobPromptProfiles = this.jobPromptProfiles.map(p => p.id === updated.id ? updated : p);
+        this.snackBar.open(`Preset "${updated.name}" updated`, 'OK', { duration: 2500 });
+      },
+      error: () => this.snackBar.open('Failed to update preset', 'OK', { duration: 3000 })
+    });
+  }
+
+  deleteSelectedJobPromptPreset() {
+    if (!this.selectedJobPromptId) return;
+    const p = this.jobPromptProfiles.find(x => x.id === this.selectedJobPromptId);
+    if (!p || !confirm(`Delete preset "${p.name}"?`)) return;
+    this.api.deleteJobPromptProfile(this.selectedJobPromptId).subscribe({
+      next: () => {
+        this.jobPromptProfiles = this.jobPromptProfiles.filter(x => x.id !== this.selectedJobPromptId);
+        this.selectedJobPromptId = '';
+        this.snackBar.open(`Preset "${p.name}" deleted`, 'OK', { duration: 2500 });
+      },
+      error: () => this.snackBar.open('Failed to delete preset', 'OK', { duration: 3000 })
+    });
   }
 }

@@ -1,7 +1,12 @@
 <div class="page-header">
-  <h1>Prospect Lists</h1>
+  <h1>
+    Prospect Theams
+    <button mat-icon-button class="info-icon" (click)="openInfo()" matTooltip="How Prospect Theams work">
+      <mat-icon>info</mat-icon>
+    </button>
+  </h1>
   <button mat-raised-button color="primary" (click)="showNewForm = !showNewForm">
-    <mat-icon>add</mat-icon> New List
+    <mat-icon>add</mat-icon> New Prospect Theam
   </button>
 </div>
 
@@ -10,7 +15,7 @@
     <mat-card-content>
       <div class="new-list-form">
         <mat-form-field appearance="outline" class="form-full">
-          <mat-label>List Name</mat-label>
+          <mat-label>Theam Name</mat-label>
           <input matInput [(ngModel)]="newName" placeholder="e.g. AI Targets Q2">
         </mat-form-field>
         <mat-form-field appearance="outline" class="form-full">
@@ -20,7 +25,7 @@
         <div class="form-actions">
           <button mat-stroked-button (click)="showNewForm = false">Cancel</button>
           <button mat-raised-button color="primary" (click)="createList()" [disabled]="!newName.trim()">
-            <mat-icon>add</mat-icon> Create List
+            <mat-icon>add</mat-icon> Create Theam
           </button>
         </div>
       </div>
@@ -91,8 +96,8 @@
 @if (lists.length === 0) {
   <mat-card class="empty-state">
     <mat-icon>list_alt</mat-icon>
-    <h3>No prospect lists yet</h3>
-    <p>Select companies from the Signal Log and add them to a list to get started.</p>
+    <h3>No prospect theams yet</h3>
+    <p>Select companies from the Signal Log and add them to a theam to get started.</p>
     <a mat-raised-button color="primary" routerLink="/signals">
       <mat-icon>rss_feed</mat-icon> Go to Signal Log
     </a>

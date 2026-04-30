@@ -1,80 +1,11 @@
 <div class="page-header">
-  <h1>Signal Log</h1>
-  <div class="header-actions">
-    <a mat-stroked-button routerLink="/settings" fragment="extraction-intent"
-       matTooltip="Edit the AI extraction prompt and scrape keywords">
-      <mat-icon>psychology</mat-icon> Configure Intent
-    </a>
-    <button mat-raised-button color="primary" (click)="ingestNow()" [disabled]="ingesting">
-      @if (ingesting) {
-        <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
-        Ingesting...
-      } @else {
-        <mat-icon>download</mat-icon> Ingest Now
-      }
+  <h1>
+    Signal Log
+    <button mat-icon-button class="info-icon" (click)="openInfo()" matTooltip="How Signal Log works">
+      <mat-icon>info</mat-icon>
     </button>
-  </div>
+  </h1>
 </div>
-
-<!-- Recent ingestion runs -->
-@if (recentRuns.length > 0) {
-  <mat-card class="runs-card">
-    <mat-card-header>
-      <mat-card-title>Recent Ingestion Runs</mat-card-title>
-      <mat-card-subtitle>
-        Click a row to see per-feed detail.
-        <button mat-icon-button (click)="loadRuns()" matTooltip="Refresh"><mat-icon>refresh</mat-icon></button>
-      </mat-card-subtitle>
-    </mat-card-header>
-    <mat-card-content>
-      <mat-accordion>
-        @for (run of recentRuns; track run.id) {
-          <mat-expansion-panel [expanded]="expandedRunId === run.id" (opened)="expandedRunId = run.id">
-            <mat-expansion-panel-header>
-              <mat-panel-title>
-                <mat-icon [style.color]="runStatusColor(run.status)" style="margin-right: 8px;">
-                  {{ runStatusIcon(run.status) }}
-                </mat-icon>
-                <span>{{ run.startedAt | date:'short' }}</span>
-                <span class="run-trigger">&nbsp;({{ run.trigger }})</span>
-              </mat-panel-title>
-              <mat-panel-description>
-                <span><strong>{{ run.totalNewSignals }}</strong> new&nbsp;/&nbsp;{{ run.totalSkipped }} skipped</span>
-                @if (runDurationSeconds(run) !== null) {
-                  <span class="run-duration">&nbsp;· {{ runDurationSeconds(run) }}s</span>
-                }
-              </mat-panel-description>
-            </mat-expansion-panel-header>
-
-            @if (run.message) {
-              <p class="run-message" [style.color]="runStatusColor(run.status)">{{ run.message }}</p>
-            }
-
-            @if (run.feedResults && run.feedResults.length > 0) {
-              <table class="feed-breakdown">
-                <thead>
-                  <tr><th>Feed</th><th>Articles</th><th>New</th><th>Signals</th></tr>
-                </thead>
-                <tbody>
-                  @for (f of run.feedResults; track f.feed) {
-                    <tr>
-                      <td>{{ f.feed }}</td>
-                      <td>{{ f.articles }}</td>
-                      <td>{{ f.newArticles ?? '-' }}</td>
-                      <td><strong>{{ f.newSignals }}</strong></td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            } @else if (!run.message) {
-              <p class="run-message">No feed activity recorded.</p>
-            }
-          </mat-expansion-panel>
-        }
-      </mat-accordion>
-    </mat-card-content>
-  </mat-card>
-}
 
 <!-- Filters -->
 <mat-card class="filter-card">
@@ -202,7 +133,7 @@
     </ng-container>
 
     <ng-container matColumnDef="location">
-      <th mat-header-cell *matHeaderCellDef>Location</th>
+      <th mat-header-cell *matHeaderCellDef mat-sort-header>Location</th>
       <td mat-cell *matCellDef="let row">{{ row.location }}</td>
     </ng-container>
 
@@ -212,11 +143,22 @@
     </ng-container>
 
     <ng-container matColumnDef="source">
-      <th mat-header-cell *matHeaderCellDef>Source</th>
+      <th mat-header-cell *matHeaderCellDef mat-sort-header="sourceTitle">Source</th>
       <td mat-cell *matCellDef="let row">
         <a [href]="row.sourceUrl" target="_blank" class="source-link" matTooltip="{{ row.sourceTitle }}">
           <mat-icon>open_in_new</mat-icon>
         </a>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let row">
+        <button mat-icon-button color="warn"
+                matTooltip="Delete signal"
+                (click)="deleteSignal(row, $event)">
+          <mat-icon>delete</mat-icon>
+        </button>
       </td>
     </ng-container>
 
@@ -257,6 +199,10 @@
 
         <button mat-raised-button color="primary" (click)="addToList()" [disabled]="!selectedListId && !newListName">
           <mat-icon>arrow_forward</mat-icon> Add to List
+        </button>
+
+        <button mat-stroked-button color="warn" (click)="deleteSelected()">
+          <mat-icon>delete</mat-icon> Delete Selected
         </button>
       </div>
     </mat-card-content>

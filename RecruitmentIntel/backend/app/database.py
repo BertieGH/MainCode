@@ -28,6 +28,8 @@ async def init_db():
     import app.models.ingestion_run  # noqa: F401
     import app.models.article  # noqa: F401
     import app.models.extraction_profile  # noqa: F401
+    import app.models.job_prompt_profile  # noqa: F401
+    import app.models.backfill_run  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -92,6 +94,18 @@ def _sqlite_add_missing_columns(sync_conn) -> None:
             sync_conn.execute(text(
                 "ALTER TABLE app_settings ADD COLUMN gemini_tier VARCHAR(10) DEFAULT 'free'"
             ))
+        if "job_extract_prompt" not in settings_cols:
+            sync_conn.execute(text(
+                "ALTER TABLE app_settings ADD COLUMN job_extract_prompt TEXT DEFAULT ''"
+            ))
+        if "job_match_prompt" not in settings_cols:
+            sync_conn.execute(text(
+                "ALTER TABLE app_settings ADD COLUMN job_match_prompt TEXT DEFAULT ''"
+            ))
+        if "job_classify_prompt" not in settings_cols:
+            sync_conn.execute(text(
+                "ALTER TABLE app_settings ADD COLUMN job_classify_prompt TEXT DEFAULT ''"
+            ))
 
     try:
         jobs_cols = {col["name"] for col in inspector.get_columns("jobs")}
@@ -111,6 +125,10 @@ def _sqlite_add_missing_columns(sync_conn) -> None:
     if articles_cols is not None and "keyword_hits" not in articles_cols:
         sync_conn.execute(text(
             "ALTER TABLE articles ADD COLUMN keyword_hits JSON"
+        ))
+    if articles_cols is not None and "country" not in articles_cols:
+        sync_conn.execute(text(
+            "ALTER TABLE articles ADD COLUMN country VARCHAR(8) DEFAULT ''"
         ))
 
     try:

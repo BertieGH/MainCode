@@ -39,3 +39,20 @@ $RecruitmentIntel-theme: mat.define-light-theme((
 
 html, body { height: 100%; }
 body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+
+/* Inline (i) info icon next to a page <h1>. */
+.page-header h1 .info-icon {
+  vertical-align: middle;
+  margin-left: 4px;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  color: rgba(25, 118, 210, 0.75);
+}
+.page-header h1 .info-icon mat-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+}
+.page-header h1 .info-icon:hover { color: #1976d2; background: rgba(25,118,210,0.08); }

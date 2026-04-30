@@ -35,6 +35,9 @@ PERSISTED_FIELDS = (
     "job_target_titles",
     "job_max_listing_pages",
     "job_max_subcategory_pages",
+    "job_extract_prompt",
+    "job_match_prompt",
+    "job_classify_prompt",
 )
 
 

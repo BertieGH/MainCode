@@ -1,19 +1,28 @@
+import asyncio
+import logging
+from datetime import date, datetime, time, timezone
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.background import fire_and_forget
 from app.config import settings as app_settings
-from app.database import get_db
+from app.database import async_session, get_db
 from app.models.article import Article
+from app.models.backfill_run import BackfillRun
 from app.models.feed_source import FeedSource
 from app.schemas.article import ArticleOut, VerdictCount
+from app.schemas.feed import BackfillRunOut
 from app.services.llm_provider import LLMQuotaExceeded, LLMServiceUnavailable
 from app.services.rss_ingestion import _count_keyword_hits
 from app.services.signal_extraction import extract_for_article_row
+from app.services.url_normalize import normalize_url
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -40,7 +49,11 @@ async def list_articles(
     verdict: str | None = Query(None),
     keyword: list[str] = Query(default_factory=list),
     keyword_mode: Literal["any", "all"] = Query("any"),
-    limit: int = Query(100, le=500),
+    q: str | None = Query(None, description="Case-insensitive search over title + summary"),
+    date_from: date | None = Query(None, description="Inclusive lower bound on created_at (YYYY-MM-DD)"),
+    date_to: date | None = Query(None, description="Inclusive upper bound on created_at (YYYY-MM-DD)"),
+    country: str | None = Query(None, description="ISO-2 code (US/GB/IN/...) or '(empty)' for unset"),
+    limit: int = Query(500, le=2000),
     offset: int = Query(0),
     db: AsyncSession = Depends(get_db),
 ):
@@ -51,6 +64,17 @@ async def list_articles(
         query = query.where(Article.feed_source_id == feed_id)
     if verdict:
         query = query.where(Article.verdict == verdict)
+    if country:
+        query = query.where(Article.country == ("" if country == "(empty)" else country))
+    if q and q.strip():
+        needle = f"%{q.strip().lower()}%"
+        query = query.where(
+            or_(func.lower(Article.title).like(needle), func.lower(Article.summary).like(needle))
+        )
+    if date_from:
+        query = query.where(Article.created_at >= datetime.combine(date_from, time.min))
+    if date_to:
+        query = query.where(Article.created_at <= datetime.combine(date_to, time.max))
     query = query.order_by(Article.created_at.desc())
     result = await db.execute(query)
     rows = list(result.scalars().all())
@@ -107,6 +131,211 @@ async def delete_articles_batch(req: DeleteRequest, db: AsyncSession = Depends(g
     return {"status": "ok", "deleted": len(rows)}
 
 
+class BackfillCountryRequest(BaseModel):
+    limit: int = 100
+    # When provided, run only on these specific articles (ignores limit + the
+    # "country == ''" gate so the user can re-tag rows the LLM got wrong).
+    article_ids: list[UUID] | None = None
+
+
+_BACKFILL_CHUNK = 5
+_BACKFILL_LLM_CONCURRENCY = 4
+
+
+async def _run_country_backfill_inproc(run_id: UUID, article_ids: list[UUID]) -> None:
+    """Background worker for /articles/backfill-countries.
+
+    Iterates the target articles in chunks. For each article, tries the free
+    `detect_country_from_location` regex against the linked Signal first; only
+    falls back to the LLM when that misses. Within each chunk the LLM calls
+    are run concurrently (bounded by a small semaphore) and results are
+    committed per chunk so partial progress survives a crash.
+    """
+    from app.models.signal import Signal
+    from app.services.country_detection import detect_country_from_location
+    from app.services.signal_extraction import _backfill_country_via_llm, get_primary_provider
+
+    provider = get_primary_provider()
+    if not provider:
+        async with async_session() as db:
+            run = (await db.execute(select(BackfillRun).where(BackfillRun.id == run_id))).scalar_one_or_none()
+            if run:
+                run.status = "error"
+                run.message = "No LLM provider configured"
+                run.finished_at = datetime.now(timezone.utc)
+                await db.commit()
+        return
+
+    sem = asyncio.Semaphore(_BACKFILL_LLM_CONCURRENCY)
+
+    async def _llm_one(company: str, location: str, article_text: str) -> str:
+        async with sem:
+            return await _backfill_country_via_llm(company, location, article_text, provider)
+
+    async with async_session() as db:
+        run = (await db.execute(select(BackfillRun).where(BackfillRun.id == run_id))).scalar_one_or_none()
+        if not run:
+            return
+
+        quota_message: str | None = None
+        fatal_error: str | None = None
+
+        for start in range(0, len(article_ids), _BACKFILL_CHUNK):
+            batch_ids = article_ids[start : start + _BACKFILL_CHUNK]
+            arts = (
+                await db.execute(select(Article).where(Article.id.in_(batch_ids)))
+            ).scalars().all()
+            if not arts:
+                run.processed += len(batch_ids)
+                await db.commit()
+                continue
+
+            sig_ids = [a.signal_id for a in arts if a.signal_id]
+            sig_by_id: dict[UUID, Signal] = {}
+            if sig_ids:
+                sig_rows = (
+                    await db.execute(select(Signal).where(Signal.id.in_(sig_ids)))
+                ).scalars().all()
+                sig_by_id = {s.id: s for s in sig_rows}
+
+            llm_targets: list[tuple[Article, str, str, str]] = []
+            for art in arts:
+                sig = sig_by_id.get(art.signal_id) if art.signal_id else None
+                location = (sig.location if sig else "") or ""
+                if location:
+                    code = detect_country_from_location(location)
+                    if code:
+                        art.country = code[:8]
+                        run.updated += 1
+                        run.via_location += 1
+                        run.processed += 1
+                        continue
+                company = (sig.company_name if sig else "") or ""
+                article_text = f"{art.title or ''}\n\n{art.summary or ''}"
+                llm_targets.append((art, company, location, article_text))
+
+            if llm_targets:
+                try:
+                    codes = await asyncio.gather(
+                        *[_llm_one(c, l, t) for (_a, c, l, t) in llm_targets]
+                    )
+                except LLMQuotaExceeded as e:
+                    quota_message = str(e)
+                    # Whatever this chunk did before quota hit is already in
+                    # `art.country` for shortcut hits, but the LLM batch is lost.
+                    # Mark the chunk as processed and bail.
+                    run.processed += len(llm_targets)
+                    run.still_unknown += len(llm_targets)
+                    await db.commit()
+                    break
+                except (LLMServiceUnavailable, Exception) as e:
+                    fatal_error = f"{type(e).__name__}: {e}"
+                    run.processed += len(llm_targets)
+                    run.still_unknown += len(llm_targets)
+                    await db.commit()
+                    break
+
+                for (art, _c, _l, _t), code in zip(llm_targets, codes):
+                    if code:
+                        art.country = code[:8]
+                        run.updated += 1
+                        run.via_llm += 1
+                    else:
+                        run.still_unknown += 1
+                    run.processed += 1
+
+            await db.commit()
+
+        if quota_message:
+            run.status = "warning"
+            run.message = (
+                f"LLM quota hit after {run.processed}/{run.total}. "
+                f"{run.via_location} via location, {run.via_llm} via LLM. {quota_message}"
+            )
+        elif fatal_error:
+            run.status = "error"
+            run.message = (
+                f"Stopped after {run.processed}/{run.total}. "
+                f"{run.via_location} via location, {run.via_llm} via LLM. {fatal_error}"
+            )
+        else:
+            run.status = "done"
+            run.message = (
+                f"{run.via_location} via location, {run.via_llm} via LLM"
+            )
+        run.finished_at = datetime.now(timezone.utc)
+        await db.commit()
+
+
+@router.post("/articles/backfill-countries")
+async def backfill_article_countries(
+    payload: BackfillCountryRequest, db: AsyncSession = Depends(get_db)
+):
+    """Kick off a background country-backfill job and return the run id.
+
+    Two modes (unchanged):
+      - Default (no `article_ids`): pick the most recent untagged articles, up
+        to `limit`. Cost-bounded.
+      - Selected (`article_ids` provided): run on exactly those rows regardless
+        of current `country` value.
+
+    Returns immediately with `{run_id, status, total}`. The frontend polls
+    `GET /articles/backfill-runs/{run_id}` for progress.
+    """
+    from app.services.signal_extraction import get_primary_provider
+
+    provider = get_primary_provider()
+    if not provider:
+        raise HTTPException(status_code=400, detail="No LLM provider configured")
+
+    if payload.article_ids:
+        rows = (
+            await db.execute(
+                select(Article.id).where(Article.id.in_(payload.article_ids))
+            )
+        ).all()
+    else:
+        n_take = max(1, min(payload.limit, 500))
+        rows = (
+            await db.execute(
+                select(Article.id)
+                .where(Article.country == "")
+                .order_by(Article.created_at.desc())
+                .limit(n_take)
+            )
+        ).all()
+
+    target_ids: list[UUID] = [r[0] for r in rows]
+    if not target_ids:
+        return {"run_id": None, "status": "noop", "total": 0}
+
+    run = BackfillRun(
+        kind="country",
+        status="running",
+        total=len(target_ids),
+        trigger="manual",
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+
+    fire_and_forget(
+        _run_country_backfill_inproc(run.id, target_ids),
+        name=f"country_backfill:{run.id}",
+    )
+    return {"run_id": str(run.id), "status": "queued", "total": len(target_ids)}
+
+
+@router.get("/articles/backfill-runs/{run_id}", response_model=BackfillRunOut)
+async def get_backfill_run(run_id: UUID, db: AsyncSession = Depends(get_db)):
+    run = (
+        await db.execute(select(BackfillRun).where(BackfillRun.id == run_id))
+    ).scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Backfill run not found")
+    return run
+
+
 @router.post("/articles/rescore-keywords")
 async def rescore_article_keywords(db: AsyncSession = Depends(get_db)):
     """Recompute `keyword_hits` on every Article against the current global keyword set.
@@ -135,6 +364,55 @@ async def rescore_article_keywords(db: AsyncSession = Depends(get_db)):
 
     await db.commit()
     return {"status": "ok", "updated": updated, "total": len(articles)}
+
+
+class DedupeRequest(BaseModel):
+    dry_run: bool = False
+
+
+@router.post("/articles/dedupe")
+async def dedupe_articles(payload: DedupeRequest, db: AsyncSession = Depends(get_db)):
+    """Collapse duplicate Article rows that share a normalized URL.
+
+    For each group with >1 row, keeps one "winner": prefer a row already linked to a
+    Signal (so we don't orphan extracted data), otherwise the oldest row. Other rows
+    are deleted. `dry_run=true` reports counts without mutating.
+    """
+    rows = (
+        await db.execute(
+            select(Article.id, Article.url, Article.signal_id, Article.created_at)
+            .order_by(Article.created_at.asc())
+        )
+    ).all()
+
+    groups: dict[str, list[tuple]] = {}
+    for r in rows:
+        key = normalize_url(r.url or "")
+        if not key:
+            continue
+        groups.setdefault(key, []).append(r)
+
+    delete_ids: list[UUID] = []
+    groups_with_dupes = 0
+    for key, members in groups.items():
+        if len(members) < 2:
+            continue
+        groups_with_dupes += 1
+        keeper = next((m for m in members if m.signal_id is not None), members[0])
+        for m in members:
+            if m.id != keeper.id:
+                delete_ids.append(m.id)
+
+    if not payload.dry_run and delete_ids:
+        await db.execute(Article.__table__.delete().where(Article.id.in_(delete_ids)))
+        await db.commit()
+
+    return {
+        "groups_with_dupes": groups_with_dupes,
+        "kept": groups_with_dupes,
+        "deleted": len(delete_ids),
+        "dry_run": payload.dry_run,
+    }
 
 
 @router.post("/articles/extract")

@@ -1,6 +1,5 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatTableModule } from '@angular/material/table';
@@ -15,21 +14,21 @@ import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatExpansionModule } from '@angular/material/expansion';
 import { SelectionModel } from '@angular/cdk/collections';
-import { Signal, ProspectList, IngestionRun } from '../../models/interfaces';
+import { Signal, ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
+import { InfoDialogComponent } from '../../components/info-dialog/info-dialog.component';
+import { SIGNAL_LOG_WORKFLOW } from '../../components/info-dialog/workflows';
 
 @Component({
   selector: 'app-signal-log',
   standalone: true,
   imports: [
-    CommonModule, RouterLink, FormsModule,
+    CommonModule, FormsModule,
     MatCardModule, MatTableModule, MatCheckboxModule, MatSelectModule,
     MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
     MatChipsModule, MatSortModule, MatDialogModule, MatSnackBarModule,
-    MatTooltipModule, MatProgressSpinnerModule, MatExpansionModule
+    MatTooltipModule
   ],
   templateUrl: './signal-log.component.html',
   styleUrl: './signal-log.component.scss'
@@ -40,11 +39,8 @@ export class SignalLogComponent implements OnInit {
   selection = new SelectionModel<Signal>(true, []);
   prospectLists: ProspectList[] = [];
   loading = false;
-  ingesting = false;
-  recentRuns: IngestionRun[] = [];
-  expandedRunId: string | null = null;
 
-  displayedColumns = ['select', 'companyName', 'industry', 'fundingRound', 'amount', 'location', 'date', 'source'];
+  displayedColumns = ['select', 'companyName', 'industry', 'fundingRound', 'amount', 'location', 'date', 'source', 'actions'];
 
   industries = ['All', 'AI', 'Fintech', 'SaaS', 'Cybersecurity', 'HealthTech', 'EdTech', 'CleanTech', 'Other'];
   fundingRounds = ['All', 'Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Series D', 'Growth', 'Other'];
@@ -60,43 +56,15 @@ export class SignalLogComponent implements OnInit {
   newListName = '';
   showNewListInput = false;
 
-  constructor(private snackBar: MatSnackBar, private api: ApiService) {}
+  constructor(private snackBar: MatSnackBar, private api: ApiService, private dialog: MatDialog) {}
+
+  openInfo() {
+    this.dialog.open(InfoDialogComponent, { data: SIGNAL_LOG_WORKFLOW, width: '880px', maxWidth: '95vw' });
+  }
 
   ngOnInit() {
     this.loadSignals();
     this.loadLists();
-    this.loadRuns();
-  }
-
-  loadRuns() {
-    this.api.getIngestionRuns(5).subscribe({
-      next: (runs) => this.recentRuns = runs,
-    });
-  }
-
-  runDurationSeconds(run: IngestionRun): number | null {
-    if (!run.finishedAt) return null;
-    return Math.max(0, Math.round((+new Date(run.finishedAt) - +new Date(run.startedAt)) / 1000));
-  }
-
-  runStatusIcon(status: string): string {
-    switch (status) {
-      case 'ok': return 'check_circle';
-      case 'warning': return 'warning';
-      case 'error': return 'error';
-      case 'running': return 'hourglass_empty';
-      default: return 'help_outline';
-    }
-  }
-
-  runStatusColor(status: string): string {
-    switch (status) {
-      case 'ok': return '#4caf50';
-      case 'warning': return '#ff9800';
-      case 'error': return '#f44336';
-      case 'running': return '#1976d2';
-      default: return '#999';
-    }
   }
 
   loadSignals() {
@@ -131,38 +99,6 @@ export class SignalLogComponent implements OnInit {
 
   applyFilters() {
     this.loadSignals();
-  }
-
-  ingestNow() {
-    this.ingesting = true;
-    this.api.triggerIngest().subscribe({
-      next: (res) => {
-        this.ingesting = false;
-        // Refresh runs + auto-expand the one we just created
-        this.loadRuns();
-        if (res?.runId) this.expandedRunId = res.runId;
-
-        if (res?.status === 'error') {
-          this.snackBar.open(res.message || 'Ingestion failed — see details below', 'OK', { duration: 5000 });
-          return;
-        }
-        if (res?.status === 'warning') {
-          this.snackBar.open(res.message || 'Nothing ingested', 'OK', { duration: 4000 });
-          return;
-        }
-        const added = res?.totalNewSignals ?? 0;
-        const skipped = res?.totalSkipped ?? 0;
-        this.snackBar.open(
-          `Ingestion complete — ${added} new signal${added === 1 ? '' : 's'}, ${skipped} skipped`,
-          'OK', { duration: 4000 }
-        );
-        this.loadSignals();
-      },
-      error: () => {
-        this.ingesting = false;
-        this.snackBar.open('Ingestion request failed', 'OK', { duration: 3000 });
-      }
-    });
   }
 
   clearFilters() {
@@ -205,6 +141,8 @@ export class SignalLogComponent implements OnInit {
         case 'fundingRound': return compare(a.fundingRound, b.fundingRound, isAsc);
         case 'amount': return compare(a.amount, b.amount, isAsc);
         case 'date': return compare(a.date, b.date, isAsc);
+        case 'location': return compareWithEmptyLast(a.location, b.location, isAsc);
+        case 'sourceTitle': return compareWithEmptyLast(a.sourceTitle, b.sourceTitle, isAsc);
         default: return 0;
       }
     });
@@ -266,8 +204,50 @@ export class SignalLogComponent implements OnInit {
     if (dupBatch) parts.push(`${dupBatch} duplicate in selection`);
     return `Added ${added} to "${listName}" — skipped ${skipped.length} (${parts.join(', ')})`;
   }
+
+  deleteSignal(signal: Signal, event?: MouseEvent) {
+    event?.stopPropagation();
+    if (!confirm(`Delete signal "${signal.companyName}"?`)) return;
+    this.api.deleteSignal(signal.id).subscribe({
+      next: () => {
+        this.signals = this.signals.filter(s => s.id !== signal.id);
+        this.applyFilters();
+        this.selection.deselect(signal);
+        this.snackBar.open(`Deleted "${signal.companyName}"`, 'OK', { duration: 2500 });
+      },
+      error: () => this.snackBar.open('Failed to delete signal', 'OK', { duration: 3000 })
+    });
+  }
+
+  deleteSelected() {
+    const ids = this.selection.selected.map(s => s.id);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} selected signal${ids.length === 1 ? '' : 's'}?`)) return;
+    this.api.bulkDeleteSignals(ids).subscribe({
+      next: (res) => {
+        const deletedSet = new Set(ids);
+        this.signals = this.signals.filter(s => !deletedSet.has(s.id));
+        this.selection.clear();
+        this.applyFilters();
+        this.snackBar.open(`Deleted ${res.deleted} signal${res.deleted === 1 ? '' : 's'}`, 'OK', { duration: 2500 });
+      },
+      error: () => this.snackBar.open('Bulk delete failed', 'OK', { duration: 3000 })
+    });
+  }
 }
 
 function compare(a: string | number, b: string | number, isAsc: boolean): number {
   return (a < b ? -1 : 1) * (isAsc ? 1 : -1);
+}
+
+/** Sort empty / null strings to the bottom regardless of asc/desc — useful
+ * for Location and Source where a lot of rows can be blank and shouldn't
+ * dominate either end of the order. */
+function compareWithEmptyLast(a: string | null | undefined, b: string | null | undefined, isAsc: boolean): number {
+  const x = (a || '').trim();
+  const y = (b || '').trim();
+  if (!x && !y) return 0;
+  if (!x) return 1;
+  if (!y) return -1;
+  return x.localeCompare(y) * (isAsc ? 1 : -1);
 }

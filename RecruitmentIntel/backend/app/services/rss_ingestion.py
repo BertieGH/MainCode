@@ -10,6 +10,7 @@ from app.models.article import Article
 from app.models.feed_source import FeedSource
 from app.models.ingestion_run import IngestionRun
 from app.models.signal import Signal
+from app.services.url_normalize import normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -73,14 +74,21 @@ async def _http_fallback(url: str) -> list[dict]:
 
 
 async def get_existing_urls(db: AsyncSession) -> set[str]:
-    """Get all existing source URLs to deduplicate."""
-    result = await db.execute(select(Signal.source_url))
-    return {row[0] for row in result.fetchall()}
+    """Normalized URLs already seen — both extracted Signals and raw Articles.
+
+    Including Article.url is what stops duplicate rows from accumulating in the
+    News Log when the same RSS item gets re-fetched after verdicting as
+    not_funding / keyword_filtered (no Signal was created, so the Signal-only
+    set used to miss it).
+    """
+    sig_urls = (await db.execute(select(Signal.source_url))).scalars().all()
+    art_urls = (await db.execute(select(Article.url))).scalars().all()
+    return {normalize_url(u) for u in [*sig_urls, *art_urls] if u}
 
 
 async def filter_new_articles(articles: list[dict], existing_urls: set[str]) -> list[dict]:
-    """Remove already-ingested articles."""
-    return [a for a in articles if a.get("url") and a["url"] not in existing_urls]
+    """Remove already-ingested articles (compared on normalized URL)."""
+    return [a for a in articles if a.get("url") and normalize_url(a["url"]) not in existing_urls]
 
 
 async def update_feed_status(db: AsyncSession, feed: FeedSource, success: bool):
@@ -121,6 +129,7 @@ async def _record_article(
     llm_response: str | None,
     signal_id,
     keyword_hits: dict | None = None,
+    country: str = "",
 ) -> None:
     """Persist an Article row capturing what we did with this article during a run."""
     db.add(Article(
@@ -135,6 +144,7 @@ async def _record_article(
         llm_response=(llm_response[:8000] if llm_response else None),
         signal_id=signal_id,
         keyword_hits=keyword_hits or {},
+        country=(country or "")[:8],
     ))
     await db.commit()
 
@@ -222,6 +232,8 @@ async def ingest_all(db: AsyncSession, trigger: str = "manual") -> dict:
             # the full extraction-intent picture regardless of narrower per-feed gating.
             stats_keywords = app_settings.global_scrape_keywords or feed.keywords or []
 
+            from app.services.country_detection import detect_country_from_text, detect_country_from_location
+
             for article in new_articles:
                 article_url = article.get("url", "")
                 title = article.get("title", "")
@@ -229,6 +241,9 @@ async def ingest_all(db: AsyncSession, trigger: str = "manual") -> dict:
 
                 gate_hits = _count_keyword_hits(title, summary, gate_keywords)
                 stats_hits = _count_keyword_hits(title, summary, stats_keywords)
+                # Cheap country tag from title + summary (no LLM call). Empty when
+                # no preset matched — backfillable later via the LLM endpoint.
+                country = detect_country_from_text(title, summary)
 
                 # Per-feed/global gate: only applies when there are keywords configured.
                 # If the gate set has entries but none matched, filter the article out.
@@ -236,6 +251,7 @@ async def ingest_all(db: AsyncSession, trigger: str = "manual") -> dict:
                     await _record_article(
                         db, run.id, feed, article, verdict="keyword_filtered",
                         llm_response=None, signal_id=None, keyword_hits=stats_hits,
+                        country=country,
                     )
                     total_skipped += 1
                     continue
@@ -245,16 +261,17 @@ async def ingest_all(db: AsyncSession, trigger: str = "manual") -> dict:
                     await _record_article(
                         db, run.id, feed, article, verdict="pending",
                         llm_response=None, signal_id=None, keyword_hits=stats_hits,
+                        country=country,
                     )
                     continue
 
                 try:
                     data, verdict, raw = await extract_signal_from_article(article, provider, fallback)
                 except LLMQuotaExceeded as e:
-                    # Record this attempt as a quota_exceeded article so the user can see where we stopped.
                     await _record_article(
                         db, run.id, feed, article, verdict="quota_exceeded",
                         llm_response=str(e), signal_id=None, keyword_hits=stats_hits,
+                        country=country,
                     )
                     quota_error = e
                     break
@@ -262,6 +279,7 @@ async def ingest_all(db: AsyncSession, trigger: str = "manual") -> dict:
                     await _record_article(
                         db, run.id, feed, article, verdict="service_unavailable",
                         llm_response=str(e), signal_id=None, keyword_hits=stats_hits,
+                        country=country,
                     )
                     service_error = e
                     break
@@ -272,12 +290,18 @@ async def ingest_all(db: AsyncSession, trigger: str = "manual") -> dict:
                     existing_urls.add(data["source_url"])
                     signals_created += 1
                     signal_id = saved.id
+                    # Upgrade: if the LLM extracted a precise HQ location, prefer
+                    # the country derived from THAT (more accurate than article body).
+                    loc_country = detect_country_from_location(data.get("location") or "")
+                    if loc_country:
+                        country = loc_country
                 else:
                     total_skipped += 1
 
                 await _record_article(
                     db, run.id, feed, article, verdict=verdict,
                     llm_response=raw, signal_id=signal_id, keyword_hits=stats_hits,
+                    country=country,
                 )
 
             total_new += signals_created

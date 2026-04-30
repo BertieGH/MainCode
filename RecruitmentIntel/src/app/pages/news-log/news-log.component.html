@@ -1,9 +1,105 @@
 <div class="page-header">
-  <h1>News Log</h1>
-  <button mat-stroked-button (click)="load()" matTooltip="Reload">
-    <mat-icon>refresh</mat-icon> Refresh
-  </button>
+  <h1>
+    News Log
+    <button mat-icon-button class="info-icon" (click)="openInfo()" matTooltip="How News Log works">
+      <mat-icon>info</mat-icon>
+    </button>
+  </h1>
+  <div class="header-actions">
+    <a mat-stroked-button routerLink="/settings" fragment="extraction-intent"
+       matTooltip="Edit the AI extraction prompt and scrape keywords">
+      <mat-icon>psychology</mat-icon> Configure Intent
+    </a>
+    <button mat-stroked-button (click)="load()" matTooltip="Reload">
+      <mat-icon>refresh</mat-icon> Refresh
+    </button>
+    <button mat-raised-button color="primary" (click)="ingestNow()" [disabled]="ingesting">
+      @if (ingesting) {
+        <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
+        Ingesting...
+      } @else {
+        <mat-icon>download</mat-icon> Ingest Now
+      }
+    </button>
+  </div>
 </div>
+
+<!-- Recent ingestion runs — collapsed by default, header summarizes the latest run -->
+@if (recentRuns.length > 0) {
+  <mat-accordion class="runs-accordion">
+    <mat-expansion-panel [(expanded)]="runsPanelOpen">
+      <mat-expansion-panel-header>
+        <mat-panel-title>
+          <mat-icon [style.color]="runStatusColor(recentRuns[0].status)" style="margin-right: 8px;">
+            {{ runStatusIcon(recentRuns[0].status) }}
+          </mat-icon>
+          <span>Latest run · {{ recentRuns[0].startedAt | date:'short' }}</span>
+          <span class="run-trigger">&nbsp;({{ recentRuns[0].trigger }})</span>
+        </mat-panel-title>
+        <mat-panel-description>
+          <span><strong>{{ recentRuns[0].totalNewSignals }}</strong> new&nbsp;/&nbsp;{{ recentRuns[0].totalSkipped }} skipped</span>
+          @if (runDurationSeconds(recentRuns[0]) !== null) {
+            <span class="run-duration">&nbsp;· {{ runDurationSeconds(recentRuns[0]) }}s</span>
+          }
+          <span class="run-trigger">&nbsp;· {{ recentRuns.length }} recent run{{ recentRuns.length === 1 ? '' : 's' }}</span>
+        </mat-panel-description>
+      </mat-expansion-panel-header>
+
+      <div class="runs-toolbar">
+        <span class="runs-hint">Click a row to see per-feed detail.</span>
+        <button mat-icon-button (click)="loadRuns(); $event.stopPropagation()" matTooltip="Refresh runs">
+          <mat-icon>refresh</mat-icon>
+        </button>
+      </div>
+
+      <mat-accordion>
+        @for (run of recentRuns; track run.id) {
+          <mat-expansion-panel [expanded]="expandedRunId === run.id" (opened)="expandedRunId = run.id">
+            <mat-expansion-panel-header>
+              <mat-panel-title>
+                <mat-icon [style.color]="runStatusColor(run.status)" style="margin-right: 8px;">
+                  {{ runStatusIcon(run.status) }}
+                </mat-icon>
+                <span>{{ run.startedAt | date:'short' }}</span>
+                <span class="run-trigger">&nbsp;({{ run.trigger }})</span>
+              </mat-panel-title>
+              <mat-panel-description>
+                <span><strong>{{ run.totalNewSignals }}</strong> new&nbsp;/&nbsp;{{ run.totalSkipped }} skipped</span>
+                @if (runDurationSeconds(run) !== null) {
+                  <span class="run-duration">&nbsp;· {{ runDurationSeconds(run) }}s</span>
+                }
+              </mat-panel-description>
+            </mat-expansion-panel-header>
+
+            @if (run.message) {
+              <p class="run-message" [style.color]="runStatusColor(run.status)">{{ run.message }}</p>
+            }
+
+            @if (run.feedResults && run.feedResults.length > 0) {
+              <table class="feed-breakdown">
+                <thead>
+                  <tr><th>Feed</th><th>Articles</th><th>New</th><th>Signals</th></tr>
+                </thead>
+                <tbody>
+                  @for (f of run.feedResults; track f.feed) {
+                    <tr>
+                      <td>{{ f.feed }}</td>
+                      <td>{{ f.articles }}</td>
+                      <td>{{ f.newArticles ?? '-' }}</td>
+                      <td><strong>{{ f.newSignals }}</strong></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            } @else if (!run.message) {
+              <p class="run-message">No feed activity recorded.</p>
+            }
+          </mat-expansion-panel>
+        }
+      </mat-accordion>
+    </mat-expansion-panel>
+  </mat-accordion>
+}
 
 <p class="hint">
   Every article seen during ingestion, plus the LLM verdict on it. Use this to diagnose
@@ -25,9 +121,23 @@
   </div>
 }
 
-<!-- Filters -->
-<mat-card class="filter-card">
-  <mat-card-content>
+<!-- Filters (collapsed by default; expand to refine) -->
+<mat-accordion class="filter-accordion">
+  <mat-expansion-panel [(expanded)]="filtersPanelOpen">
+    <mat-expansion-panel-header>
+      <mat-panel-title>
+        <mat-icon style="margin-right: 8px;">filter_list</mat-icon>
+        Filters &amp; search
+      </mat-panel-title>
+      <mat-panel-description>
+        @if (activeFilterCount > 0) {
+          <span class="active-filter-badge">{{ activeFilterCount }} active</span>
+        } @else {
+          <span class="run-trigger">No filters applied</span>
+        }
+      </mat-panel-description>
+    </mat-expansion-panel-header>
+
     <div class="filter-row">
       <mat-form-field appearance="outline" class="filter-field">
         <mat-label>Verdict</mat-label>
@@ -79,6 +189,41 @@
       </button>
     </div>
 
+    <div class="filter-row">
+      <mat-form-field appearance="outline" class="filter-field filter-search">
+        <mat-label>Search title or summary</mat-label>
+        <input matInput [(ngModel)]="filterQuery" (keyup.enter)="applySearch()"
+               placeholder="e.g. series b, AcuityMD, healthtech">
+        @if (filterQuery) {
+          <button matSuffix mat-icon-button (click)="filterQuery = ''; applySearch()" matTooltip="Clear search">
+            <mat-icon>close</mat-icon>
+          </button>
+        }
+      </mat-form-field>
+      <button mat-stroked-button (click)="applySearch()">
+        <mat-icon>search</mat-icon> Search
+      </button>
+
+      <mat-form-field appearance="outline" class="filter-field filter-date">
+        <mat-label>From date</mat-label>
+        <input matInput type="date" [(ngModel)]="filterDateFrom" (change)="applySearch()">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field filter-date">
+        <mat-label>To date</mat-label>
+        <input matInput type="date" [(ngModel)]="filterDateTo" (change)="applySearch()">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="filter-field">
+        <mat-label>Country</mat-label>
+        <mat-select [(value)]="filterCountry" (selectionChange)="applySearch()">
+          @for (c of countryOptions; track c.code) {
+            <mat-option [value]="c.code">{{ c.flag || '' }} {{ c.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+
     @if (filterFeedId && feedKeywords(filterFeedId).length > 0) {
       <div class="keywords-row">
         <span class="keywords-label">Feed keywords:</span>
@@ -107,15 +252,60 @@
                   [class.active]="filterKeywordMode === 'all'"
                   (click)="setKeywordMode('all')">ALL</button>
         </span>
+      </div>
+    }
+
+    <div class="keywords-row actions-row">
+      @if (globalKeywords.length > 0) {
         <button mat-stroked-button class="rescore-btn"
                 (click)="rescoreKeywords()" [disabled]="busy"
                 matTooltip="Re-scan every article's title + summary against current global keywords. No LLM calls.">
           <mat-icon>refresh</mat-icon> Refresh keyword matches
         </button>
+      }
+      <button mat-stroked-button class="rescore-btn"
+              (click)="backfillCountries()" [disabled]="backfilling"
+              [matTooltip]="selectedCount > 0
+                  ? 'Re-tag the ' + selectedCount + ' selected article(s) with the LLM (overrides existing country)'
+                  : 'LLM-fill the country column on up to 100 untagged articles'">
+        <mat-icon>{{ backfilling ? 'hourglass_top' : 'public' }}</mat-icon>
+        @if (selectedCount > 0) {
+          {{ backfilling ? 'Backfilling…' : 'Backfill country — ' + selectedCount + ' selected' }}
+        } @else {
+          {{ backfilling ? 'Backfilling…' : 'Backfill country (LLM)' }}
+        }
+      </button>
+      <button mat-stroked-button class="rescore-btn"
+              (click)="dedupeArticles()" [disabled]="deduping"
+              matTooltip="Find articles with the same URL and keep one per group (prefers the row already linked to a Signal). Previews before deleting.">
+        <mat-icon>{{ deduping ? 'hourglass_top' : 'content_copy' }}</mat-icon>
+        {{ deduping ? 'Deduping…' : 'Dedupe duplicates' }}
+      </button>
+    </div>
+  </mat-expansion-panel>
+</mat-accordion>
+
+@if (backfillRun) {
+  <mat-card class="backfill-progress">
+    <mat-card-content>
+      <div class="backfill-progress-row">
+        <mat-icon>public</mat-icon>
+        <div class="backfill-progress-text">
+          <div class="backfill-progress-headline">
+            Country backfill ({{ backfillRun.scopeMsg }}): {{ backfillRun.processed }} / {{ backfillRun.total }}
+          </div>
+          <div class="backfill-progress-detail">
+            {{ backfillRun.updated }} tagged · {{ backfillRun.stillUnknown }} still unknown ·
+            {{ backfillRun.viaLocation }} via location · {{ backfillRun.viaLlm }} via LLM
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <span class="backfill-progress-pct">{{ backfillProgressPct }}%</span>
       </div>
-    }
-  </mat-card-content>
-</mat-card>
+      <mat-progress-bar mode="determinate" [value]="backfillProgressPct"></mat-progress-bar>
+    </mat-card-content>
+  </mat-card>
+}
 
 <!-- Action bar -->
 <mat-card class="action-bar">
@@ -172,7 +362,7 @@
         }
       </p>
     } @else {
-      <p class="result-count">Showing {{ displayArticles.length }} of {{ articles.length }}</p>
+      <p class="result-count">Showing {{ displayArticles.length }} of {{ filteredArticles.length }} (loaded {{ articles.length }})</p>
 
       <div class="article-columns-header" role="row">
         <button type="button" class="col-header col-description"
@@ -189,6 +379,16 @@
                 (click)="sortByColumn('feed')"
                 [matTooltip]="'Sort by feed name'">
           Feed <span class="sort-arrow">{{ sortIndicator('feed') }}</span>
+        </button>
+        <button type="button" class="col-header col-date"
+                (click)="sortByColumn('date')"
+                [matTooltip]="'Sort by ingestion date'">
+          Date <span class="sort-arrow">{{ sortIndicator('date') }}</span>
+        </button>
+        <button type="button" class="col-header col-country"
+                (click)="sortByColumn('country')"
+                matTooltip="Sort by HQ country (untagged rows always sink to the bottom)">
+          Country <span class="sort-arrow">{{ sortIndicator('country') }}</span>
         </button>
       </div>
 
@@ -234,7 +434,23 @@
 
                 <span class="col-feed">
                   <span class="article-feed">{{ a.feedName }}</span>
-                  <span class="article-date">{{ a.createdAt | date:'short' }}</span>
+                </span>
+                <span class="col-date">
+                  <span class="article-date"
+                        [matTooltip]="a.published
+                            ? ('Published: ' + (articleDate(a) | date:'medium') + ' — Ingested: ' + (a.createdAt | date:'medium'))
+                            : ('Ingested: ' + (a.createdAt | date:'medium') + ' (feed had no published date)')">
+                    {{ articleDate(a) | date:'short' }}
+                  </span>
+                </span>
+                <span class="col-country">
+                  @if (a.country) {
+                    <span class="country-chip" [matTooltip]="a.country">
+                      {{ countryFlag(a.country) }} {{ a.country }}
+                    </span>
+                  } @else {
+                    <span class="country-chip country-empty" matTooltip="No country tagged — run 'Backfill country (LLM)' to fill">?</span>
+                  }
                 </span>
               </mat-panel-title>
             </mat-expansion-panel-header>
@@ -303,6 +519,15 @@
           </mat-expansion-panel>
         }
       </mat-accordion>
+
+      <mat-paginator [length]="filteredArticles.length"
+                     [pageSize]="pageSize"
+                     [pageIndex]="pageIndex"
+                     [pageSizeOptions]="pageSizeOptions"
+                     (page)="onPage($event)"
+                     showFirstLastButtons
+                     aria-label="News log pagination">
+      </mat-paginator>
     }
   </mat-card-content>
 </mat-card>

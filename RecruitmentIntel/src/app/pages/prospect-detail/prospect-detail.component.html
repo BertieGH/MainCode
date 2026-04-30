@@ -4,14 +4,21 @@
       <mat-icon>arrow_back</mat-icon>
     </a>
     <div>
-      <h1>{{ list?.name || 'Unknown List' }}</h1>
+      <h1>Prospect List - {{ list?.name || 'Unknown' }}</h1>
       <span class="subtitle">
         {{ prospects.length }} companies
         @if (anyPending()) {
-          <span class="live-indicator" matTooltip="Polling /prospects every 3s until all rows settle">
+          <span class="live-indicator"
+                matTooltip="Polling every 2s — backend may take 30–90s for enrichment, longer for job crawl">
             <mat-progress-spinner diameter="14" mode="indeterminate"></mat-progress-spinner>
             live
+            @if (secondsSinceRefresh() !== null) {
+              <span class="refresh-age">· refreshed {{ secondsSinceRefresh() }}s ago</span>
+            }
           </span>
+          <button mat-icon-button (click)="loadProspects()" matTooltip="Force-refresh now">
+            <mat-icon>refresh</mat-icon>
+          </button>
         }
       </span>
     </div>
@@ -140,112 +147,100 @@
     <ng-container matColumnDef="linkedin">
       <th mat-header-cell *matHeaderCellDef>LinkedIn</th>
       <td mat-cell *matCellDef="let row">
-        @if (row.linkedinUrl) {
-          <a [href]="row.linkedinUrl" target="_blank" class="link">
-            <mat-icon style="font-size:18px;width:18px;height:18px;color:#0077b5">open_in_new</mat-icon>
-          </a>
-        } @else if (row.enrichmentStatus === 'pending') {
-          <mat-progress-spinner diameter="12" mode="indeterminate"></mat-progress-spinner>
-        } @else {
-          <span class="status-text">--</span>
-        }
-      </td>
-    </ng-container>
-
-    <ng-container matColumnDef="enrichmentStatus">
-      <th mat-header-cell *matHeaderCellDef>Enrichment</th>
-      <td mat-cell *matCellDef="let row">
-        <div class="status-cell" [matTooltip]="enrichmentTooltip(row)" matTooltipClass="multiline-tooltip">
-          @if (row.enrichmentStatus === 'pending') {
-            <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
+        <span class="cell-actions">
+          @if (row.linkedinUrl) {
+            <a [href]="row.linkedinUrl" target="_blank" class="link">
+              <mat-icon style="font-size:18px;width:18px;height:18px;color:#0077b5">open_in_new</mat-icon>
+            </a>
+          } @else if (row.enrichmentStatus === 'pending') {
+            <mat-progress-spinner diameter="12" mode="indeterminate"></mat-progress-spinner>
           } @else {
-            <mat-icon [style.color]="getStatusColor(row.enrichmentStatus)">
-              {{ getStatusIcon(row.enrichmentStatus) }}
-            </mat-icon>
+            <span class="status-text">--</span>
           }
-          @if (row.enrichmentStrategy && row.enrichmentStrategy !== 'none') {
-            <span class="strategy-label">{{ row.enrichmentStrategy }}</span>
-          } @else if (row.enrichmentStatus === 'failed') {
-            <span class="strategy-label failed-text">no strategy worked</span>
+          @if (row.enrichmentStatus === 'done') {
+            <mat-icon class="tick-icon"
+                      [matTooltip]="enrichmentTooltip(row)"
+                      matTooltipClass="multiline-tooltip">check_circle</mat-icon>
+            <button mat-icon-button class="mini-action"
+                    (click)="enrichOne(row)"
+                    [disabled]="row.enrichmentStatus === 'pending'"
+                    matTooltip="Re-run enrichment">
+              <mat-icon>refresh</mat-icon>
+            </button>
           }
-        </div>
-      </td>
-    </ng-container>
-
-    <ng-container matColumnDef="jobCrawlStatus">
-      <th mat-header-cell *matHeaderCellDef>Job Crawl</th>
-      <td mat-cell *matCellDef="let row">
-        <div class="status-cell" [matTooltip]="crawlTooltip(row)" matTooltipClass="multiline-tooltip">
-          @if (row.jobCrawlStatus === 'pending') {
-            <mat-progress-spinner diameter="18" mode="indeterminate"></mat-progress-spinner>
-          } @else {
-            <mat-icon [style.color]="getStatusColor(row.jobCrawlStatus)">
-              {{ getStatusIcon(row.jobCrawlStatus) }}
-            </mat-icon>
-          }
-          @if (row.jobCrawlStrategy && row.jobCrawlStrategy !== 'none') {
-            <span class="strategy-label">{{ row.jobCrawlStrategy }}</span>
-          }
-          @if (row.jobCrawlStatus === 'empty') {
-            <span class="strategy-label failed-text">0 listings</span>
-          } @else if (row.jobCrawlStatus === 'failed' && !row.jobCrawlStrategy) {
-            <span class="strategy-label failed-text">no page found</span>
-          }
-        </div>
+        </span>
       </td>
     </ng-container>
 
     <ng-container matColumnDef="jobCount">
       <th mat-header-cell *matHeaderCellDef>Jobs</th>
       <td mat-cell *matCellDef="let row">
-        @if (row.jobCount > 0) {
-          <span class="job-count">{{ row.jobCount }}</span>
-        } @else if (row.jobCrawlRawCount > 0) {
-          <span class="status-text" [matTooltip]="'Scraped ' + row.jobCrawlRawCount + ' raw listings, 0 classified — LLM classification may have failed'">
-            ({{ row.jobCrawlRawCount }} raw)
-          </span>
-        } @else {
-          <span class="status-text">--</span>
-        }
+        <span class="cell-actions">
+          @if (row.jobCount > 0) {
+            <span class="job-count">{{ row.jobCount }}</span>
+          } @else if (row.jobCrawlRawCount > 0) {
+            <span class="status-text" [matTooltip]="'Scraped ' + row.jobCrawlRawCount + ' raw listings, 0 classified — LLM classification may have failed'">
+              ({{ row.jobCrawlRawCount }} raw)
+            </span>
+          } @else if (row.jobCrawlStatus === 'empty') {
+            <span class="status-text empty-text">0 jobs</span>
+          } @else if (row.jobCrawlStatus === 'failed') {
+            <span class="status-text failed-text">no page</span>
+          } @else if (row.jobCrawlStatus === 'pending') {
+            <mat-progress-spinner diameter="14" mode="indeterminate"></mat-progress-spinner>
+          } @else {
+            <span class="status-text">--</span>
+          }
+
+          @if (row.jobCrawlStatus === 'done') {
+            <mat-icon class="tick-icon"
+                      [matTooltip]="crawlTooltip(row)"
+                      matTooltipClass="multiline-tooltip">check_circle</mat-icon>
+          } @else if (row.jobCrawlStatus === 'empty') {
+            <mat-icon class="warn-icon"
+                      [matTooltip]="crawlTooltip(row)"
+                      matTooltipClass="multiline-tooltip">info</mat-icon>
+          } @else if (row.jobCrawlStatus === 'failed') {
+            <mat-icon class="fail-icon"
+                      [matTooltip]="crawlTooltip(row)"
+                      matTooltipClass="multiline-tooltip">error</mat-icon>
+          }
+
+          @if (row.jobCrawlStatus === 'done' || row.jobCrawlStatus === 'empty' || row.jobCrawlStatus === 'failed') {
+            <button mat-icon-button class="mini-action"
+                    (click)="crawlOne(row, false)"
+                    [disabled]="row.enrichmentStatus !== 'done'"
+                    matTooltip="Re-run job crawl">
+              <mat-icon>refresh</mat-icon>
+            </button>
+          }
+        </span>
       </td>
     </ng-container>
 
     <ng-container matColumnDef="actions">
-      <th mat-header-cell *matHeaderCellDef></th>
+      <th mat-header-cell *matHeaderCellDef>Actions</th>
       <td mat-cell *matCellDef="let row">
         <div class="row-actions">
-          <!-- Enrich: shown always; tooltip changes based on state -->
           <button mat-icon-button (click)="enrichOne(row)"
                   [disabled]="row.enrichmentStatus === 'pending'"
                   [matTooltip]="row.enrichmentStatus === 'done' ? 'Re-enrich' : 'Enrich'">
-            <mat-icon>{{ row.enrichmentStatus === 'done' ? 'refresh' : 'search' }}</mat-icon>
+            <mat-icon>search</mat-icon>
           </button>
-
-          <!-- Crawl: only meaningful once enriched -->
-          @if (row.enrichmentStatus === 'done') {
-            <button mat-icon-button (click)="crawlOne(row, false)"
-                    [disabled]="row.jobCrawlStatus === 'pending'"
-                    [matTooltip]="row.jobCrawlStatus === 'done' || row.jobCrawlStatus === 'empty' ? 'Crawl again' : 'Crawl jobs'">
-              <mat-icon>{{ row.jobCrawlStatus === 'done' || row.jobCrawlStatus === 'empty' ? 'refresh' : 'bug_report' }}</mat-icon>
-            </button>
-            <!-- Force re-crawl (wipes jobs + careers_url) only when something is already there -->
-            @if (row.jobCrawlStatus === 'done' || row.jobCrawlStatus === 'empty' || row.jobCrawlStatus === 'failed') {
-              <button mat-icon-button (click)="crawlOne(row, true)"
-                      [disabled]="row.jobCrawlStatus === 'pending'"
-                      matTooltip="Force re-crawl: clear careers URL + prior jobs, run full discovery again">
-                <mat-icon>restart_alt</mat-icon>
-              </button>
-            }
-          }
-
-          <button mat-icon-button color="warn" (click)="removeProspect(row)" matTooltip="Remove">
-            <mat-icon>close</mat-icon>
+          <button mat-icon-button (click)="crawlOne(row, false)"
+                  [disabled]="row.jobCrawlStatus === 'pending' || row.enrichmentStatus !== 'done'"
+                  [matTooltip]="row.enrichmentStatus !== 'done' ? 'Enrich first to enable job crawl'
+                                : (row.jobCrawlStatus === 'done' || row.jobCrawlStatus === 'empty' ? 'Re-crawl jobs' : 'Crawl jobs')">
+            <mat-icon>bug_report</mat-icon>
+          </button>
+          <button mat-icon-button color="warn" (click)="removeProspect(row)" matTooltip="Delete">
+            <mat-icon>delete</mat-icon>
           </button>
         </div>
       </td>
     </ng-container>
 
     <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-    <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns; trackBy: trackByProspect;"></tr>
   </table>
 </mat-card>

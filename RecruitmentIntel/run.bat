@@ -26,7 +26,7 @@ if not exist "%ROOT%node_modules" (
 )
 
 echo Starting backend on port 8002...
-start "RecruitmentIntel - Backend" cmd /k "cd /d ""%ROOT%backend"" && python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload"
+start "RecruitmentIntel - Backend" cmd /k "cd /d ""%ROOT%backend"" && python dev_server.py"
 
 echo Starting frontend on port 4200...
 start "RecruitmentIntel - Frontend" cmd /k "cd /d ""%ROOT%"" && npm start"

@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     job_max_listing_pages: int = 4
     # Per hub-page cap on sub-category links we follow when expanding.
     job_max_subcategory_pages: int = 6
+    # Editable LLM prompts for the three job-crawl LLM call sites.
+    # Empty string → falls back to DEFAULT_JOB_*_PROMPT in services/job_scraper.py.
+    job_extract_prompt: str = ""
+    job_match_prompt: str = ""
+    job_classify_prompt: str = ""
 
     # CORS
     cors_origins: list[str] = ["http://localhost:4200", "http://localhost:4201"]

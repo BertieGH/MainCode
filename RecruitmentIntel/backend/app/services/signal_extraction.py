@@ -52,7 +52,18 @@ Return ONLY a valid JSON object with these fields:
   or the article publisher's location. If the article doesn't mention a location,
   return an empty string "" — do NOT reject the article for this.
 
-- date: YYYY-MM-DD. Use the announcement date if stated, otherwise today.
+- date: YYYY-MM-DD. The date THIS specific funding round was announced — i.e.
+  the news event the article is reporting. Many articles also mention the
+  company's PREVIOUS funding rounds for context (e.g. "had previously raised
+  $30M Series A in May 2024"); IGNORE those — they are NOT what's being
+  announced now.
+  Resolution order:
+    1. An explicit dateline / "announced today, {{date}}" / press-release date
+       at the TOP of the article that refers to THIS round.
+    2. The article's published date (provided below as `published_date`).
+    3. Today's date as a last resort.
+  Never return a date older than the article's published date — that's a
+  historical mention, not the current announcement.
 
 ONLY return {{"is_funding": false}} when the article is genuinely not about a
 company raising investment capital — e.g. product launches, acquisitions, hires,
@@ -61,6 +72,8 @@ firm raises a fund, not a startup raising from VCs). If there is ANY funding
 announcement in the article, extract it.
 
 Article title: {title}
+Article published_date (from the RSS feed — usually within ±2 days of the actual
+announcement): {published}
 Article text: {text}
 
 Return ONLY the JSON object — no markdown fences, no explanation, no preamble."""
@@ -72,21 +85,28 @@ def _llm_article_budget() -> int:
     return max(500, min(30000, int(raw)))
 
 
-def _resolve_prompt(title: str, text: str) -> str:
+def _resolve_prompt(title: str, text: str, published: str = "") -> str:
     """Build the extraction prompt using the user-configured template if set.
 
     Falls back to DEFAULT_EXTRACTION_PROMPT if the template is empty or
-    missing the required {title}/{text} placeholders.
+    missing required placeholders. Custom templates that don't reference
+    {published} still work — we re-attempt formatting without it.
     """
     template = (settings.extraction_prompt or "").strip() or DEFAULT_EXTRACTION_PROMPT
     budget = _llm_article_budget()
+    pub = (published or "(not provided)").strip() or "(not provided)"
     try:
-        return template.format(title=title, text=text[:budget])
-    except (KeyError, IndexError) as e:
-        logger.warning(
-            "Custom extraction_prompt failed to format (%s); falling back to default.", e,
-        )
-        return DEFAULT_EXTRACTION_PROMPT.format(title=title, text=text[:budget])
+        return template.format(title=title, text=text[:budget], published=pub)
+    except (KeyError, IndexError):
+        # Custom template likely lacks the new {published} placeholder — retry
+        # without it (template still gets {title}+{text}).
+        try:
+            return template.format(title=title, text=text[:budget])
+        except (KeyError, IndexError) as e:
+            logger.warning(
+                "Custom extraction_prompt failed to format (%s); falling back to default.", e,
+            )
+            return DEFAULT_EXTRACTION_PROMPT.format(title=title, text=text[:budget], published=pub)
 
 
 def _active_gemini_key() -> str:
@@ -277,8 +297,42 @@ def parse_llm_response(text: str) -> dict | None:
     return None
 
 
-def validate_extracted_data(data: dict) -> dict | None:
-    """Validate and normalize extracted funding data."""
+def _parse_published_date(published: str) -> date | None:
+    """Best-effort parse of an RSS `published` string to a date.
+
+    Feed parsers hand us strings in many shapes — RFC 2822 ("Mon, 20 Apr 2026
+    12:34:56 +0000"), ISO 8601, "April 20, 2026", or already a YYYY-MM-DD.
+    Tries common formats; returns None on failure.
+    """
+    if not published:
+        return None
+    s = published.strip()
+    # Try email.utils first (handles RFC 2822 cleanly, the most common RSS format).
+    try:
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(s)
+        if dt:
+            return dt.date()
+    except (TypeError, ValueError):
+        pass
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z",
+                "%B %d, %Y", "%b %d, %Y", "%d %B %Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(s[:30], fmt).date()
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def validate_extracted_data(data: dict, article_published: str = "") -> dict | None:
+    """Validate and normalize extracted funding data.
+
+    `article_published` is the RSS-feed-provided publish date for the article
+    being extracted. Used to sanity-check the LLM's `date` field — if the LLM
+    returned a date significantly older than the feed date, prefer the feed
+    date (the LLM almost certainly grabbed a previously-mentioned funding round
+    from the article's context paragraphs).
+    """
     if data.get("is_funding") is False:
         return None  # Not a funding article
 
@@ -299,6 +353,20 @@ def validate_extracted_data(data: dict) -> dict | None:
     except (ValueError, TypeError):
         parsed_date = date.today()
 
+    # Sanity check vs the feed's published date. If the LLM date is more than
+    # 14 days BEFORE the article was published, that's almost certainly a
+    # historical mention ("had previously raised X in May 2024") and not the
+    # current announcement. Override with the article date.
+    feed_date = _parse_published_date(article_published)
+    if feed_date and parsed_date < feed_date:
+        if (feed_date - parsed_date).days > 14:
+            logger.info(
+                "Date sanity: LLM returned %s but feed published is %s; "
+                "preferring feed date to avoid historical-mention drift.",
+                parsed_date, feed_date,
+            )
+            parsed_date = feed_date
+
     return {
         "company_name": company[:255],
         "funding_round": funding_round[:50],
@@ -307,6 +375,81 @@ def validate_extracted_data(data: dict) -> dict | None:
         "location": data.get("location", "")[:255],
         "date": parsed_date,
     }
+
+
+async def _backfill_location_via_llm(
+    company: str, article_text: str, provider: LLMProvider
+) -> str:
+    """Second-pass focused LLM call to recover an empty location.
+
+    The main extraction prompt is structured and often returns "" when the
+    article body doesn't mention HQ explicitly. This focused follow-up:
+      1. Asks ONLY for HQ location for a known company name.
+      2. Allows the model to fall back to its general knowledge if the
+         article doesn't say (e.g. it knows AcuityMD is in Boston).
+    Returns "" on any failure — best-effort.
+    """
+    if not company:
+        return ""
+    prompt = (
+        f'What city/state-or-region/country is the company "{company}" headquartered in?\n'
+        f'Use the article excerpt below first; if it doesn\'t mention a location, '
+        f'use your general knowledge of the company. If you genuinely do not know, '
+        f'reply with the single word: unknown\n\n'
+        f'Reply with the location ONLY in the format "City, Region, Country" '
+        f'(e.g. "San Francisco, CA, USA" or "Berlin, Germany"). No extra text.\n\n'
+        f'Article excerpt:\n{(article_text or "")[:2500]}'
+    )
+    try:
+        raw = (await provider.extract(prompt) or "").strip()
+    except Exception as e:
+        logger.debug(f"Location backfill failed for {company}: {e}")
+        return ""
+    # Strip markdown fences / quotes / leading bullets the model sometimes adds
+    raw = re.sub(r"^[`\"'\-\*\s]+|[`\"'\s]+$", "", raw)
+    raw = raw.splitlines()[0].strip() if raw else ""
+    if not raw or raw.lower() in {"unknown", "n/a", "none", "not known", "not specified"}:
+        return ""
+    # Defensive: cap and reject obvious junk responses (sentence-length text)
+    if len(raw) > 120 or raw.count(" ") > 10:
+        return ""
+    return raw[:255]
+
+
+async def _backfill_country_via_llm(
+    company: str, location: str, article_text: str, provider: LLMProvider
+) -> str:
+    """Focused LLM call to derive a 2-letter country code for a single article.
+
+    Returns one of the codes from `country_detection.KNOWN_COUNTRY_CODES`
+    (`US`, `GB`, `IN`, …, `Other`) or `""` if the model couldn't decide.
+    """
+    from app.services.country_detection import KNOWN_COUNTRY_CODES
+
+    if not (company or location or article_text):
+        return ""
+    code_list = ", ".join(sorted(c for c in KNOWN_COUNTRY_CODES if c != "Other")) + ", or Other"
+    prompt = (
+        f'What country is the company "{company or "(unknown)"}" headquartered in?\n'
+        f'Known HQ location (may be empty): "{location or ""}"\n'
+        f'Article excerpt:\n{(article_text or "")[:2000]}\n\n'
+        f'Reply with EXACTLY one ISO-2 country code from this list: {code_list}.\n'
+        f'No prose, no punctuation, no flag emoji — just the code (e.g. US, GB, IN, Other).\n'
+        f'If you genuinely cannot tell, reply: unknown'
+    )
+    try:
+        raw = (await provider.extract(prompt) or "").strip()
+    except Exception as e:
+        logger.debug(f"Country backfill failed for {company}: {e}")
+        return ""
+    raw = re.sub(r"[^A-Za-z]", "", raw)[:8]
+    if not raw or raw.lower() in {"unknown", "none", "na"}:
+        return ""
+    # Case-insensitive match against known codes; "other" → "Other".
+    for code in KNOWN_COUNTRY_CODES:
+        if raw.lower() == code.lower():
+            return code
+    return ""
 
 
 async def extract_signal_from_article(
@@ -321,11 +464,12 @@ async def extract_signal_from_article(
     """
     title = article.get("title", "")
     text = await resolve_article_content(article.get("url", ""), article.get("summary", ""))
+    published = article.get("published", "") or ""
 
     if not title and not text:
         return None, "error", "empty article (no title and no text)"
 
-    prompt = _resolve_prompt(title, text)
+    prompt = _resolve_prompt(title, text, published)
 
     last_response: str | None = None
     last_error: str | None = None
@@ -339,7 +483,7 @@ async def extract_signal_from_article(
                 data = parse_llm_response(response)
                 if data is None:
                     return None, "parse_failed", response
-                validated = validate_extracted_data(data)
+                validated = validate_extracted_data(data, article_published=published)
                 if validated is None:
                     # is_funding=false OR missing required fields
                     if data.get("is_funding") is False:
@@ -348,6 +492,14 @@ async def extract_signal_from_article(
                 validated["source_url"] = article.get("url", "")
                 validated["source_title"] = title[:512]
                 validated["raw_text"] = text[:5000]
+                # Best-effort second-pass when the structured extraction returned
+                # no HQ — most articles don't dateline the company's HQ explicitly.
+                if not (validated.get("location") or "").strip():
+                    backfill = await _backfill_location_via_llm(
+                        validated["company_name"], text, p,
+                    )
+                    if backfill:
+                        validated["location"] = backfill[:255]
                 return validated, "funding", response
             except (LLMQuotaExceeded, LLMServiceUnavailable):
                 raise
@@ -408,6 +560,7 @@ async def extract_for_article_row(db: AsyncSession, article, force: bool = False
         # Already extracted — relink article without re-running the LLM
         article.verdict = "funding"
         article.signal_id = existing.id
+        _update_article_country_from_signal(article, existing)
         await db.commit()
         return article.verdict, article.llm_response, existing
 
@@ -445,8 +598,25 @@ async def extract_for_article_row(db: AsyncSession, article, force: bool = False
             article.id, verdict, existing.id,
         )
 
+    if signal is not None:
+        _update_article_country_from_signal(article, signal)
+
     await db.commit()
     return verdict, article.llm_response, signal
+
+
+def _update_article_country_from_signal(article, signal) -> None:
+    """When the linked Signal has a HQ location, derive an ISO-2 country and
+    write it onto the Article. Called after every LLM extract / relink so the
+    News Log Country column gets filled even when the cheap ingest-time keyword
+    match missed (e.g. Google News redirect summary contains no city tokens)."""
+    location = (signal.location or "").strip() if signal else ""
+    if not location:
+        return
+    from app.services.country_detection import detect_country_from_location
+    code = detect_country_from_location(location)
+    if code:
+        article.country = code[:8]
 
 
 async def save_signal(db: AsyncSession, data: dict) -> Signal:

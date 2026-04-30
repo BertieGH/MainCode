@@ -299,3 +299,84 @@
     </button>
   </mat-card-actions>
 </mat-card>
+
+<!-- Job Crawl Prompts -->
+<mat-card class="settings-card" id="job-crawl-prompts">
+  <mat-card-header>
+    <mat-icon mat-card-avatar>psychology</mat-icon>
+    <mat-card-title>Job Crawl Prompts</mat-card-title>
+    <mat-card-subtitle>
+      Edit the LLM prompts used by the job crawl pipeline (extract / match / classify).
+      Save reusable prompt sets as presets.
+    </mat-card-subtitle>
+  </mat-card-header>
+  <mat-card-content>
+    <div class="filter-row" style="align-items: center; gap: 12px; margin-bottom: 16px;">
+      <mat-form-field appearance="outline" style="min-width: 240px;">
+        <mat-label>Preset</mat-label>
+        <mat-select [(ngModel)]="selectedJobPromptId">
+          <mat-option [value]="''">— None —</mat-option>
+          @for (p of jobPromptProfiles; track p.id) {
+            <mat-option [value]="p.id">{{ p.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <button mat-stroked-button (click)="applyJobPromptProfile(selectedJobPromptId)" [disabled]="!selectedJobPromptId">
+        <mat-icon>download</mat-icon> Apply
+      </button>
+      <button mat-stroked-button (click)="updateSelectedJobPromptPreset()" [disabled]="!selectedJobPromptId">
+        <mat-icon>update</mat-icon> Update
+      </button>
+      <button mat-stroked-button color="warn" (click)="deleteSelectedJobPromptPreset()" [disabled]="!selectedJobPromptId">
+        <mat-icon>delete</mat-icon> Delete
+      </button>
+      <button mat-stroked-button (click)="saveAsNewJobPromptPreset()">
+        <mat-icon>add</mat-icon> Save As New
+      </button>
+    </div>
+
+    <h3 style="display:flex; align-items:center; justify-content:space-between;">
+      Extract Prompt
+      <button mat-button (click)="resetJobExtractPrompt()">
+        <mat-icon>restart_alt</mat-icon> Reset to default
+      </button>
+    </h3>
+    <mat-form-field appearance="outline" class="field-full">
+      <mat-label>LLM extraction prompt (used when JSON-LD/ATS/generic extractors fail)</mat-label>
+      <textarea matInput rows="10" [(ngModel)]="settings.jobExtractPrompt"
+                placeholder="Placeholders: {base_url}, {page_text}"></textarea>
+      <mat-hint>Available placeholders: <code>{{ '{base_url}' }}</code>, <code>{{ '{page_text}' }}</code></mat-hint>
+    </mat-form-field>
+
+    <h3 style="display:flex; align-items:center; justify-content:space-between;">
+      Match Prompt
+      <button mat-button (click)="resetJobMatchPrompt()">
+        <mat-icon>restart_alt</mat-icon> Reset to default
+      </button>
+    </h3>
+    <mat-form-field appearance="outline" class="field-full">
+      <mat-label>Semantic target-title matcher (filters jobs to your Target Job Titles)</mat-label>
+      <textarea matInput rows="14" [(ngModel)]="settings.jobMatchPrompt"
+                placeholder="Placeholders: {targets_json}, {candidates_json}"></textarea>
+      <mat-hint>Available placeholders: <code>{{ '{targets_json}' }}</code>, <code>{{ '{candidates_json}' }}</code></mat-hint>
+    </mat-form-field>
+
+    <h3 style="display:flex; align-items:center; justify-content:space-between;">
+      Classify Prompt
+      <button mat-button (click)="resetJobClassifyPrompt()">
+        <mat-icon>restart_alt</mat-icon> Reset to default
+      </button>
+    </h3>
+    <mat-form-field appearance="outline" class="field-full">
+      <mat-label>Department / seniority / type / skills classifier</mat-label>
+      <textarea matInput rows="10" [(ngModel)]="settings.jobClassifyPrompt"
+                placeholder="Placeholder: {jobs_json}"></textarea>
+      <mat-hint>Available placeholder: <code>{{ '{jobs_json}' }}</code></mat-hint>
+    </mat-form-field>
+  </mat-card-content>
+  <mat-card-actions align="end">
+    <button mat-raised-button color="primary" (click)="saveJobPrompts()">
+      <mat-icon>save</mat-icon> Save Prompts
+    </button>
+  </mat-card-actions>
+</mat-card>

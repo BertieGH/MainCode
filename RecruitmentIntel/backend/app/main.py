@@ -1,4 +1,13 @@
+import asyncio
+import sys
 from contextlib import asynccontextmanager
+
+# Playwright launches a subprocess; on Windows this requires ProactorEventLoop.
+# Python 3.14 / uvicorn-with-asyncio loop sometimes installs SelectorEventLoop
+# under which `loop.subprocess_exec` raises NotImplementedError and the SPA
+# Playwright retry path silently fails. Set the policy before the loop spins up.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -17,6 +26,7 @@ from app.api.outreach import router as outreach_router
 from app.api.ingestion_runs import router as ingestion_runs_router
 from app.api.articles import router as articles_router
 from app.api.extraction_profiles import router as extraction_profiles_router
+from app.api.job_prompt_profiles import router as job_prompt_profiles_router
 
 
 @asynccontextmanager
@@ -73,3 +83,4 @@ app.include_router(outreach_router, prefix="/api", tags=["outreach"])
 app.include_router(ingestion_runs_router, prefix="/api", tags=["ingestion-runs"])
 app.include_router(articles_router, prefix="/api", tags=["articles"])
 app.include_router(extraction_profiles_router, prefix="/api", tags=["extraction-profiles"])
+app.include_router(job_prompt_profiles_router, prefix="/api", tags=["job-prompt-profiles"])

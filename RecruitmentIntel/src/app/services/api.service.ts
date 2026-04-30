@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
-import { Signal, ProspectList, Prospect, Job, FeedSource, AppSettings, IngestionRun, Article, VerdictCount, ExtractionProfile, AddSignalsResult } from '../models/interfaces';
+import { Signal, ProspectList, Prospect, Job, FeedSource, AppSettings, IngestionRun, Article, VerdictCount, ExtractionProfile, JobPromptProfile, AddSignalsResult } from '../models/interfaces';
 
 const BASE = 'http://localhost:8002/api';
 
@@ -56,6 +56,14 @@ export class ApiService {
     return this.http.post<any>(`${BASE}/signals/ingest`, {}).pipe(map(toCamel));
   }
 
+  deleteSignal(id: string): Observable<any> {
+    return this.http.delete(`${BASE}/signals/${id}`);
+  }
+
+  bulkDeleteSignals(ids: string[]): Observable<{ deleted: number }> {
+    return this.http.post<{ deleted: number }>(`${BASE}/signals/bulk-delete`, { ids });
+  }
+
   getIngestionRuns(limit = 10): Observable<IngestionRun[]> {
     return this.http.get<any[]>(`${BASE}/ingestion-runs`, { params: { limit } }).pipe(map(toCamel));
   }
@@ -63,6 +71,8 @@ export class ApiService {
   getArticles(filters?: {
     runId?: string; feedId?: string; verdict?: string;
     keyword?: string[]; keywordMode?: 'any' | 'all';
+    q?: string; dateFrom?: string; dateTo?: string;
+    country?: string;
     limit?: number; offset?: number;
   }): Observable<Article[]> {
     let params = new HttpParams();
@@ -73,6 +83,10 @@ export class ApiService {
       for (const k of filters.keyword) params = params.append('keyword', k);
     }
     if (filters?.keywordMode) params = params.set('keyword_mode', filters.keywordMode);
+    if (filters?.q) params = params.set('q', filters.q);
+    if (filters?.dateFrom) params = params.set('date_from', filters.dateFrom);
+    if (filters?.dateTo) params = params.set('date_to', filters.dateTo);
+    if (filters?.country) params = params.set('country', filters.country);
     if (filters?.limit !== undefined) params = params.set('limit', String(filters.limit));
     if (filters?.offset !== undefined) params = params.set('offset', String(filters.offset));
     return this.http.get<any[]>(`${BASE}/articles`, { params }).pipe(map(toCamel));
@@ -80,6 +94,26 @@ export class ApiService {
 
   rescoreArticleKeywords(): Observable<{ status: string; updated: number; total: number }> {
     return this.http.post<any>(`${BASE}/articles/rescore-keywords`, {}).pipe(map(toCamel));
+  }
+
+  backfillArticleCountries(opts: { limit?: number; articleIds?: string[] } = {}): Observable<{ runId: string | null; status: string; total: number }> {
+    const body: any = {};
+    if (opts.articleIds && opts.articleIds.length) body.article_ids = opts.articleIds;
+    else body.limit = opts.limit ?? 100;
+    return this.http.post<any>(`${BASE}/articles/backfill-countries`, body).pipe(map(toCamel));
+  }
+
+  getBackfillRun(runId: string): Observable<{
+    id: string; kind: string; startedAt: string; finishedAt: string | null;
+    status: string; total: number; processed: number; updated: number;
+    stillUnknown: number; viaLocation: number; viaLlm: number;
+    message: string | null; trigger: string;
+  }> {
+    return this.http.get<any>(`${BASE}/articles/backfill-runs/${runId}`).pipe(map(toCamel));
+  }
+
+  dedupeArticles(dryRun: boolean): Observable<{ groupsWithDupes: number; kept: number; deleted: number; dryRun: boolean }> {
+    return this.http.post<any>(`${BASE}/articles/dedupe`, { dry_run: dryRun }).pipe(map(toCamel));
   }
 
   getVerdictSummary(runId?: string): Observable<VerdictCount[]> {
@@ -232,5 +266,22 @@ export class ApiService {
 
   deleteExtractionProfile(id: string): Observable<any> {
     return this.http.delete(`${BASE}/extraction-profiles/${id}`);
+  }
+
+  // --- Job Prompt Profiles ---
+  getJobPromptProfiles(): Observable<JobPromptProfile[]> {
+    return this.http.get<any[]>(`${BASE}/job-prompt-profiles`).pipe(map(toCamel));
+  }
+
+  createJobPromptProfile(data: { name: string; extractPrompt: string; matchPrompt: string; classifyPrompt: string }): Observable<JobPromptProfile> {
+    return this.http.post<any>(`${BASE}/job-prompt-profiles`, toSnake(data)).pipe(map(toCamel));
+  }
+
+  updateJobPromptProfile(id: string, data: Partial<{ name: string; extractPrompt: string; matchPrompt: string; classifyPrompt: string }>): Observable<JobPromptProfile> {
+    return this.http.put<any>(`${BASE}/job-prompt-profiles/${id}`, toSnake(data)).pipe(map(toCamel));
+  }
+
+  deleteJobPromptProfile(id: string): Observable<any> {
+    return this.http.delete(`${BASE}/job-prompt-profiles/${id}`);
   }
 }
