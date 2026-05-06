@@ -6,11 +6,6 @@
     </button>
   </h1>
   <div class="header-actions">
-    <button mat-stroked-button (click)="backfillLocations()"
-            [disabled]="backfilling"
-            matTooltip="LLM-fill empty location on selected rows (or up to 100 most recent if nothing selected)">
-      <mat-icon>place</mat-icon> Fix Locations
-    </button>
     <button mat-stroked-button (click)="exportCsv()" [disabled]="filteredSignals.length === 0"
             matTooltip="Download visible signals as CSV">
       <mat-icon>file_download</mat-icon> Export CSV
@@ -126,6 +121,12 @@
           </button>
         }
       </mat-form-field>
+
+      <button mat-stroked-button (click)="backfillLocations()"
+              [disabled]="backfilling"
+              matTooltip="LLM-fill empty location on selected rows (or up to 100 most recent if nothing selected)">
+        <mat-icon>place</mat-icon> Fix Locations
+      </button>
     </div>
   </mat-expansion-panel>
 </mat-accordion>
