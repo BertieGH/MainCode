@@ -8,8 +8,12 @@ from app.services.llm_provider import LLMProvider, LLMQuotaExceeded, LLMServiceU
 
 
 # Retry 5xx up to N times with exponential backoff. 503s during demand spikes
-# are usually resolved within 5-10 seconds.
-_SERVER_RETRY_DELAYS = (1, 3, 7)  # seconds
+# are usually resolved within 5-10 seconds. Total attempts = len(delays) + 1
+# (initial call + each retry). Currently 3 attempts: 1 initial + 2 retries
+# with 1s and 3s backoff. Keeps a single failed article's retry budget at ~4s
+# so a sustained Gemini outage produces fast `service_unavailable` flips
+# rather than minute-long hangs per article.
+_SERVER_RETRY_DELAYS = (1, 3)  # seconds — 2 retries → 3 total attempts
 
 
 def _retry_seconds_from_error(err: genai_errors.APIError) -> int | None:

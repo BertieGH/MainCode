@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     job_classify_prompt: str = ""
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:4200", "http://localhost:4201"]
+    cors_origins: list[str] = ["http://localhost:4200", "http://localhost:4201", "http://localhost:4300"]
 
     model_config = {"env_prefix": "RI_", "env_file": ".env"}
 
