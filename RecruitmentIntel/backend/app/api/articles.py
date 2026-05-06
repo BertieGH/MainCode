@@ -77,12 +77,33 @@ async def list_articles(
     if date_to:
         query = query.where(Article.created_at <= datetime.combine(date_to, time.max))
     query = query.order_by(Article.created_at.desc())
+
+    needles = (
+        [k.strip().lower() for k in keyword if k and k.strip()]
+        if keyword
+        else []
+    )
+
+    # Postgres path: push the keyword filter into SQL via JSONB ?| (any) /
+    # ?& (all) operators served by the GIN index on articles.keyword_hits
+    # (alembic 017). Lets us also push offset/limit into the query rather
+    # than materializing every match.
+    if needles and db.bind.dialect.name == "postgresql":
+        from sqlalchemy import text
+        op = "?&" if keyword_mode == "all" else "?|"
+        query = query.where(
+            text(f"articles.keyword_hits {op} :needles").bindparams(needles=needles)
+        )
+        query = query.offset(offset).limit(limit)
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    # SQLite (dev) fallback: load matching rows then post-filter in Python.
+    # Same semantics as before — kept verbatim for parity.
     result = await db.execute(query)
     rows = list(result.scalars().all())
 
-    if keyword:
-        needles = [k.strip().lower() for k in keyword if k and k.strip()]
-
+    if needles:
         def _matches(a: Article) -> bool:
             hits = a.keyword_hits or {}
             lower = {str(k).lower(): int(v or 0) for k, v in hits.items()}

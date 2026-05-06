@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -35,7 +35,12 @@ class Article(Base):
     llm_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Dict[keyword, count] — case-insensitive substring hits in title+summary at scrape time.
     # Empty dict when the feed had no keywords configured, or when no keywords matched.
-    keyword_hits: Mapped[dict] = mapped_column(JSON, default=dict)
+    # JSONB on Postgres (GIN-indexable; supports ?, ?|, ?&, @> operators);
+    # falls back to plain JSON on SQLite for dev parity.
+    keyword_hits: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"),
+        default=dict,
+    )
     # ISO-2 country code derived at ingest from title+summary (cheap regex
     # match, see services/country_detection.py). Empty when no preset matched
     # — fillable later via POST /articles/backfill-countries (LLM).
