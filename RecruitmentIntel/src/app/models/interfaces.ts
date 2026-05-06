@@ -71,6 +71,8 @@ export interface Job {
   skills: string[];
   matchTarget: string | null;
   discoveredAt: string;
+  linkedinUrl?: string | null;
+  website?: string | null;
 }
 
 export interface FeedSource {

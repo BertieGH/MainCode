@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.job import Job
@@ -51,9 +52,19 @@ async def get_outreach(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Prospect list not found")
 
-    query = _build_job_query(list_id, department, seniority, job_type, location, skills)
+    query = _build_job_query(list_id, department, seniority, job_type, location, skills).options(
+        selectinload(Job.prospect)
+    )
     result = await db.execute(query)
-    return result.scalars().all()
+    jobs = result.scalars().all()
+    return [
+        JobOut(
+            **{c.name: getattr(j, c.name) for c in Job.__table__.columns},
+            linkedin_url=j.prospect.linkedin_url if j.prospect else None,
+            website=j.prospect.website if j.prospect else None,
+        )
+        for j in jobs
+    ]
 
 
 @router.get("/outreach/{list_id}/summary", response_model=list[OutreachSummary])

@@ -16,7 +16,10 @@ class JobOut(BaseModel):
     location: str
     url: str
     skills: list[str]
+    match_target: str | None = None
     discovered_at: datetime
+    linkedin_url: str | None = None
+    website: str | None = None
 
     model_config = {"from_attributes": True}
 
