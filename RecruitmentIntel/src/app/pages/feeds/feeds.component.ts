@@ -13,6 +13,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { FeedSource } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
+import { downloadCsv } from '../../utils/csv-export';
 
 @Component({
   selector: 'app-feeds',
@@ -123,6 +124,17 @@ export class FeedsComponent implements OnInit {
   newFeed() {
     this.cancelForm();
     this.showForm = true;
+  }
+
+  exportCsv() {
+    downloadCsv('feeds', [
+      { header: 'Name', value: f => f.name },
+      { header: 'URL', value: f => f.url },
+      { header: 'Type', value: f => f.feedType },
+      { header: 'Active', value: f => f.isActive ? 'yes' : 'no' },
+      { header: 'Keywords', value: f => f.keywords },
+      { header: 'Last Fetched', value: f => f.lastFetched },
+    ], this.feeds);
   }
 
   addSuggested() {

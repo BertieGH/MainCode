@@ -5,9 +5,15 @@
       <mat-icon>info</mat-icon>
     </button>
   </h1>
-  <button mat-raised-button color="primary" (click)="showNewForm = !showNewForm">
-    <mat-icon>add</mat-icon> New Prospect Theam
-  </button>
+  <div class="header-actions">
+    <button mat-stroked-button (click)="exportCsv()" [disabled]="lists.length === 0"
+            matTooltip="Download theams as CSV">
+      <mat-icon>file_download</mat-icon> Export CSV
+    </button>
+    <button mat-raised-button color="primary" (click)="showNewForm = !showNewForm">
+      <mat-icon>add</mat-icon> New Prospect Theam
+    </button>
+  </div>
 </div>
 
 @if (showNewForm) {

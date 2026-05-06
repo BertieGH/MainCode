@@ -15,6 +15,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
+import { downloadCsv } from '../../utils/csv-export';
 
 @Component({
   selector: 'app-prospect-lists',
@@ -69,6 +70,18 @@ export class ProspectListsComponent implements OnInit {
       next: () => this.lists = this.lists.filter(l => l.id !== id),
       error: () => this.snackBar.open('Failed to delete list', 'OK', { duration: 3000 })
     });
+  }
+
+  exportCsv() {
+    downloadCsv('prospect-theams', [
+      { header: 'Name', value: l => l.name },
+      { header: 'Description', value: l => l.description },
+      { header: 'Companies', value: l => l.companyCount },
+      { header: 'Enriched', value: l => l.enrichedCount },
+      { header: 'Crawled', value: l => l.jobsCrawledCount },
+      { header: 'Total Jobs', value: l => l.totalJobs },
+      { header: 'Updated', value: l => l.updatedAt },
+    ], this.lists);
   }
 
   getEnrichmentPercent(list: ProspectList): number {
