@@ -10,6 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -19,6 +20,9 @@ import { Signal, ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
 import { InfoDialogComponent } from '../../components/info-dialog/info-dialog.component';
 import { SIGNAL_LOG_WORKFLOW } from '../../components/info-dialog/workflows';
+import { downloadCsv } from '../../utils/csv-export';
+import { ResizableColumnDirective } from '../../directives/resizable-column.directive';
+import { ColumnWidthsService } from '../../services/column-widths.service';
 
 @Component({
   selector: 'app-signal-log',
@@ -27,8 +31,9 @@ import { SIGNAL_LOG_WORKFLOW } from '../../components/info-dialog/workflows';
     CommonModule, FormsModule,
     MatCardModule, MatTableModule, MatCheckboxModule, MatSelectModule,
     MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
-    MatChipsModule, MatSortModule, MatDialogModule, MatSnackBarModule,
-    MatTooltipModule
+    MatChipsModule, MatExpansionModule, MatSortModule, MatDialogModule, MatSnackBarModule,
+    MatTooltipModule,
+    ResizableColumnDirective
   ],
   templateUrl: './signal-log.component.html',
   styleUrl: './signal-log.component.scss'
@@ -52,11 +57,75 @@ export class SignalLogComponent implements OnInit {
   filterLocation = '';
   filterDateFrom = '';
   filterDateTo = '';
+  /** Free-text quick-filter over company / industry / source title. Client-side. */
+  filterQuery = '';
+  /** Country code from `countryOptions`. Client-side substring match against `location`. */
+  filterCountry = '';
   selectedListId = '';
   newListName = '';
   showNewListInput = false;
 
-  constructor(private snackBar: MatSnackBar, private api: ApiService, private dialog: MatDialog) {}
+  /** Country options + heuristic substring patterns matched against the
+   * signal's `location` field (signals don't carry an explicit country column). */
+  countryOptions: { code: string; label: string; flag?: string; matchers?: string[] }[] = [
+    { code: '',   label: 'All countries' },
+    { code: 'US', label: 'United States', flag: '🇺🇸',
+      matchers: ['usa', 'united states', ', us', ' u.s.', 'america',
+                 'new york', 'san francisco', 'boston', 'seattle', 'austin', 'los angeles', 'chicago'] },
+    { code: 'GB', label: 'United Kingdom', flag: '🇬🇧',
+      matchers: ['uk', 'united kingdom', 'britain', 'england', 'london', 'manchester', 'edinburgh'] },
+    { code: 'IN', label: 'India', flag: '🇮🇳',
+      matchers: ['india', ', in ', 'mumbai', 'bangalore', 'bengaluru', 'delhi', 'hyderabad', 'chennai', 'pune'] },
+    { code: 'CA', label: 'Canada', flag: '🇨🇦',
+      matchers: ['canada', 'toronto', 'vancouver', 'montreal', 'ottawa'] },
+    { code: 'DE', label: 'Germany', flag: '🇩🇪',
+      matchers: ['germany', 'berlin', 'munich', 'münchen', 'hamburg', 'frankfurt'] },
+    { code: 'FR', label: 'France', flag: '🇫🇷',
+      matchers: ['france', 'paris', 'lyon', 'marseille'] },
+    { code: 'IL', label: 'Israel', flag: '🇮🇱',
+      matchers: ['israel', 'tel aviv', 'jerusalem', 'haifa'] },
+    { code: 'SG', label: 'Singapore', flag: '🇸🇬', matchers: ['singapore'] },
+    { code: 'AU', label: 'Australia', flag: '🇦🇺',
+      matchers: ['australia', 'sydney', 'melbourne', 'brisbane'] },
+    { code: 'NL', label: 'Netherlands', flag: '🇳🇱',
+      matchers: ['netherlands', 'amsterdam', 'rotterdam', 'the hague'] },
+    { code: 'OTHER', label: 'Other / unknown' },
+  ];
+
+  /** Expansion-panel state for the filter section (matches News Log behavior). */
+  filtersPanelOpen = false;
+
+  /** Count of filters currently narrowing the signals list. Shown in the
+   * collapsed panel header so the user knows what's hidden. */
+  get activeFilterCount(): number {
+    let n = 0;
+    if (this.filterIndustry && this.filterIndustry !== 'All') n++;
+    if (this.filterRound && this.filterRound !== 'All') n++;
+    if (this.filterAmountMin !== '' && this.filterAmountMin != null) n++;
+    if (this.filterAmountMax !== '' && this.filterAmountMax != null) n++;
+    if (this.filterLocation) n++;
+    if (this.filterDateFrom) n++;
+    if (this.filterDateTo) n++;
+    if (this.filterQuery.trim()) n++;
+    if (this.filterCountry) n++;
+    return n;
+  }
+
+  columnWidths: Record<string, number> = {};
+
+  constructor(
+    private snackBar: MatSnackBar,
+    private api: ApiService,
+    private dialog: MatDialog,
+    private widthsSvc: ColumnWidthsService,
+  ) {
+    this.columnWidths = this.widthsSvc.load('signal-log');
+  }
+
+  onColumnResized(col: string, w: number) {
+    this.columnWidths = { ...this.columnWidths, [col]: w };
+    this.widthsSvc.save('signal-log', this.columnWidths);
+  }
 
   openInfo() {
     this.dialog.open(InfoDialogComponent, { data: SIGNAL_LOG_WORKFLOW, width: '880px', maxWidth: '95vw' });
@@ -81,7 +150,7 @@ export class SignalLogComponent implements OnInit {
     this.api.getSignals(filters).subscribe({
       next: (data) => {
         this.signals = data;
-        this.filteredSignals = data;
+        this.applyClientFilters();
         this.loading = false;
       },
       error: () => {
@@ -89,6 +158,40 @@ export class SignalLogComponent implements OnInit {
         this.snackBar.open('Failed to load signals', 'OK', { duration: 3000 });
       }
     });
+  }
+
+  /** Re-derive `filteredSignals` from `signals` (the backend result) by applying
+   * the client-side text-search and country filters. Called whenever those
+   * change and after every backend reload. */
+  applyClientFilters() {
+    const q = this.filterQuery.trim().toLowerCase();
+    const matchers = this.countryMatchers();
+    const wantUnknownCountry = this.filterCountry === 'OTHER';
+    const knownCountryMatchers = this.countryOptions
+      .filter(o => o.code && o.code !== 'OTHER')
+      .flatMap(o => o.matchers || []);
+
+    this.filteredSignals = this.signals.filter(s => {
+      if (q) {
+        const haystack = `${s.companyName ?? ''} ${s.industry ?? ''} ${s.sourceTitle ?? ''}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      if (this.filterCountry) {
+        const loc = (s.location ?? '').toLowerCase();
+        if (wantUnknownCountry) {
+          // "Other / unknown": location doesn't match any known country pattern
+          if (knownCountryMatchers.some(m => loc.includes(m))) return false;
+        } else {
+          if (!matchers.length || !matchers.some(m => loc.includes(m))) return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  private countryMatchers(): string[] {
+    if (!this.filterCountry) return [];
+    return this.countryOptions.find(o => o.code === this.filterCountry)?.matchers ?? [];
   }
 
   loadLists() {
@@ -109,6 +212,8 @@ export class SignalLogComponent implements OnInit {
     this.filterLocation = '';
     this.filterDateFrom = '';
     this.filterDateTo = '';
+    this.filterQuery = '';
+    this.filterCountry = '';
     this.loadSignals();
   }
 
@@ -154,6 +259,19 @@ export class SignalLogComponent implements OnInit {
 
   getUniqueIndustries(): number {
     return new Set(this.filteredSignals.map(s => s.industry)).size;
+  }
+
+  exportCsv() {
+    downloadCsv('signals', [
+      { header: 'Company', value: s => s.companyName },
+      { header: 'Industry', value: s => s.industry },
+      { header: 'Funding Round', value: s => s.fundingRound },
+      { header: 'Amount (USD)', value: s => s.amount },
+      { header: 'Location', value: s => s.location },
+      { header: 'Date', value: s => s.date },
+      { header: 'Source Title', value: s => s.sourceTitle },
+      { header: 'Source URL', value: s => s.sourceUrl },
+    ], this.filteredSignals);
   }
 
   addToList() {
