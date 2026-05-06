@@ -6,12 +6,38 @@
     </button>
   </h1>
   <div class="header-actions">
+    <button mat-stroked-button (click)="backfillLocations()"
+            [disabled]="backfilling"
+            matTooltip="LLM-fill empty location on selected rows (or up to 100 most recent if nothing selected)">
+      <mat-icon>place</mat-icon> Fix Locations
+    </button>
     <button mat-stroked-button (click)="exportCsv()" [disabled]="filteredSignals.length === 0"
             matTooltip="Download visible signals as CSV">
       <mat-icon>file_download</mat-icon> Export CSV
     </button>
   </div>
 </div>
+
+@if (backfillRun) {
+  <mat-card class="backfill-progress">
+    <mat-card-content>
+      <div class="backfill-progress-row">
+        <mat-icon>place</mat-icon>
+        <div class="backfill-progress-text">
+          <div class="backfill-progress-headline">
+            Location backfill ({{ backfillRun.scopeMsg }}): {{ backfillRun.processed }} / {{ backfillRun.total }}
+          </div>
+          <div class="backfill-progress-detail">
+            {{ backfillRun.updated }} updated · {{ backfillRun.stillUnknown }} still unknown
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <span class="backfill-progress-pct">{{ backfillProgressPct }}%</span>
+      </div>
+      <mat-progress-bar mode="determinate" [value]="backfillProgressPct"></mat-progress-bar>
+    </mat-card-content>
+  </mat-card>
+}
 
 <!-- Filters (collapsed by default; expand to refine) -->
 <mat-accordion class="filter-accordion">
@@ -138,7 +164,7 @@
 
 <!-- Signal Table -->
 <mat-card class="table-card">
-  <table mat-table [dataSource]="filteredSignals" matSort (matSortChange)="sortData($event)" class="signal-table resizable-table">
+  <table mat-table [dataSource]="displaySignals" matSort (matSortChange)="sortData($event)" class="signal-table resizable-table">
 
     <ng-container matColumnDef="select">
       <th mat-header-cell *matHeaderCellDef>
@@ -222,6 +248,14 @@
     <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
     <tr mat-row *matRowDef="let row; columns: displayedColumns;" [class.selected-row]="selection.isSelected(row)"></tr>
   </table>
+
+  <mat-paginator [length]="filteredSignals.length"
+                 [pageIndex]="pageIndex"
+                 [pageSize]="pageSize"
+                 [pageSizeOptions]="pageSizeOptions"
+                 (page)="onPage($event)"
+                 showFirstLastButtons>
+  </mat-paginator>
 </mat-card>
 
 <!-- Add to Prospect List Action Bar -->

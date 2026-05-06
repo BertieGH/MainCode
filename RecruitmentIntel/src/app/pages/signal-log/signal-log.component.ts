@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -11,11 +11,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatExpansionModule } from '@angular/material/expansion';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { SelectionModel } from '@angular/cdk/collections';
+import { interval, Subscription, switchMap } from 'rxjs';
 import { Signal, ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
 import { InfoDialogComponent } from '../../components/info-dialog/info-dialog.component';
@@ -31,14 +34,14 @@ import { ColumnWidthsService } from '../../services/column-widths.service';
     CommonModule, FormsModule,
     MatCardModule, MatTableModule, MatCheckboxModule, MatSelectModule,
     MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
-    MatChipsModule, MatExpansionModule, MatSortModule, MatDialogModule, MatSnackBarModule,
+    MatChipsModule, MatExpansionModule, MatPaginatorModule, MatProgressBarModule, MatSortModule, MatDialogModule, MatSnackBarModule,
     MatTooltipModule,
     ResizableColumnDirective
   ],
   templateUrl: './signal-log.component.html',
   styleUrl: './signal-log.component.scss'
 })
-export class SignalLogComponent implements OnInit {
+export class SignalLogComponent implements OnInit, OnDestroy {
   signals: Signal[] = [];
   filteredSignals: Signal[] = [];
   selection = new SelectionModel<Signal>(true, []);
@@ -91,6 +94,48 @@ export class SignalLogComponent implements OnInit {
       matchers: ['netherlands', 'amsterdam', 'rotterdam', 'the hague'] },
     { code: 'OTHER', label: 'Other / unknown' },
   ];
+
+  /** Live progress for the location-backfill background job. Same pattern as
+   * the country backfill on News Log: 1.5s polling until terminal status. */
+  backfillRun: {
+    runId: string;
+    status: 'running' | 'done' | 'warning' | 'error';
+    total: number;
+    processed: number;
+    updated: number;
+    stillUnknown: number;
+    scopeMsg: string;
+  } | null = null;
+  private backfillPollSub?: Subscription;
+
+  get backfilling(): boolean {
+    return this.backfillRun?.status === 'running';
+  }
+
+  get backfillProgressPct(): number {
+    const r = this.backfillRun;
+    if (!r || !r.total) return 0;
+    return Math.min(100, Math.round((r.processed / r.total) * 100));
+  }
+
+  /** Pagination state (client-side; backend returns up to 2000 in one go).
+   * `displaySignals` slices `filteredSignals` for the visible page, while the
+   * stat cards / "Selected" count / CSV export still use the full filtered set. */
+  pageIndex = 0;
+  pageSize = 25;
+  pageSizeOptions = [10, 25, 50, 100, 200];
+
+  get displaySignals(): Signal[] {
+    const start = this.pageIndex * this.pageSize;
+    return this.filteredSignals.slice(start, start + this.pageSize);
+  }
+
+  onPage(e: PageEvent) {
+    this.pageIndex = e.pageIndex;
+    this.pageSize = e.pageSize;
+  }
+
+  private _resetPage() { this.pageIndex = 0; }
 
   /** Expansion-panel state for the filter section (matches News Log behavior). */
   filtersPanelOpen = false;
@@ -151,6 +196,7 @@ export class SignalLogComponent implements OnInit {
       next: (data) => {
         this.signals = data;
         this.applyClientFilters();
+        this._resetPage();
         this.loading = false;
       },
       error: () => {
@@ -164,6 +210,7 @@ export class SignalLogComponent implements OnInit {
    * the client-side text-search and country filters. Called whenever those
    * change and after every backend reload. */
   applyClientFilters() {
+    this._resetPage();
     const q = this.filterQuery.trim().toLowerCase();
     const matchers = this.countryMatchers();
     const wantUnknownCountry = this.filterCountry === 'OTHER';
@@ -204,6 +251,82 @@ export class SignalLogComponent implements OnInit {
     this.loadSignals();
   }
 
+  /** Kick off a background location-backfill job. Mirrors backfillCountries
+   * on News Log. If signals are selected, only those are processed; otherwise
+   * up to 100 most-recent empty-location rows are picked. */
+  backfillLocations() {
+    if (this.backfilling) return;
+    const ids = this.selection.selected.map(s => s.id);
+    const opts = ids.length > 0 ? { signalIds: ids } : { limit: 100 };
+    const scopeMsg = ids.length > 0
+      ? `${ids.length} selected signal${ids.length === 1 ? '' : 's'}`
+      : 'up to 100 empty-location signals';
+    this.api.backfillSignalLocations(opts).subscribe({
+      next: (res) => {
+        if (!res.runId || res.status === 'noop' || res.total === 0) {
+          this.snackBar.open('No signals to backfill — none have empty location.', 'OK', { duration: 3000 });
+          return;
+        }
+        this.backfillRun = {
+          runId: res.runId,
+          status: 'running',
+          total: res.total,
+          processed: 0,
+          updated: 0,
+          stillUnknown: 0,
+          scopeMsg,
+        };
+        this._startBackfillPoll(res.runId);
+      },
+      error: (err) => {
+        const msg = err?.error?.detail || 'Location backfill failed to start';
+        this.snackBar.open(msg, 'OK', { duration: 4000 });
+      }
+    });
+  }
+
+  private _startBackfillPoll(runId: string) {
+    this.backfillPollSub?.unsubscribe();
+    this.backfillPollSub = interval(1500)
+      .pipe(switchMap(() => this.api.getSignalBackfillRun(runId)))
+      .subscribe({
+        next: (run) => {
+          if (!this.backfillRun || this.backfillRun.runId !== runId) return;
+          this.backfillRun = {
+            ...this.backfillRun,
+            status: run.status as any,
+            total: run.total,
+            processed: run.processed,
+            updated: run.updated,
+            stillUnknown: run.stillUnknown,
+          };
+          if (run.status !== 'running') {
+            this._finishBackfill(run.status, run.message);
+          }
+        },
+        error: () => {
+          this._finishBackfill('error', 'Lost connection while polling backfill progress.');
+        }
+      });
+  }
+
+  private _finishBackfill(status: string, message: string | null) {
+    this.backfillPollSub?.unsubscribe();
+    this.backfillPollSub = undefined;
+    const r = this.backfillRun;
+    if (!r) return;
+    const headline = status === 'done'
+      ? `Location backfill (${r.scopeMsg}): updated ${r.updated}/${r.total}, still unknown ${r.stillUnknown}` + (message ? ` — ${message}` : '')
+      : `Location backfill ${status} after ${r.processed}/${r.total} — ${message || 'see API logs'}`;
+    this.snackBar.open(headline, 'OK', { duration: 6000 });
+    this.backfillRun = null;
+    this.loadSignals();
+  }
+
+  ngOnDestroy() {
+    this.backfillPollSub?.unsubscribe();
+  }
+
   clearFilters() {
     this.filterIndustry = 'All';
     this.filterRound = 'All';
@@ -233,6 +356,7 @@ export class SignalLogComponent implements OnInit {
   }
 
   sortData(sort: Sort) {
+    this._resetPage();
     const data = [...this.filteredSignals];
     if (!sort.active || sort.direction === '') {
       this.filteredSignals = data;

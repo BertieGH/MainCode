@@ -37,7 +37,9 @@ export class ApiService {
 
   // --- Signals ---
   getSignals(filters?: any): Observable<Signal[]> {
-    let params = new HttpParams();
+    // Fetch the full filtered set (up to backend ceiling 2000) and paginate
+    // client-side. Matches the News Log pattern.
+    let params = new HttpParams().set('limit', '2000');
     if (filters) {
       Object.entries(filters).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '' && v !== 'All') {
@@ -136,6 +138,22 @@ export class ApiService {
     if (opts.allPending) body.all_pending = true;
     if (opts.force) body.force = true;
     return this.http.post<any>(`${BASE}/articles/extract`, body).pipe(map(toCamel));
+  }
+
+  backfillSignalLocations(opts: { limit?: number; signalIds?: string[] } = {}): Observable<{ runId: string | null; status: string; total: number }> {
+    const body: any = {};
+    if (opts.signalIds && opts.signalIds.length) body.signal_ids = opts.signalIds;
+    else body.limit = opts.limit ?? 100;
+    return this.http.post<any>(`${BASE}/signals/backfill-locations`, body).pipe(map(toCamel));
+  }
+
+  getSignalBackfillRun(runId: string): Observable<{
+    id: string; kind: string; startedAt: string; finishedAt: string | null;
+    status: string; total: number; processed: number; updated: number;
+    stillUnknown: number; viaLocation: number; viaLlm: number;
+    message: string | null; trigger: string;
+  }> {
+    return this.http.get<any>(`${BASE}/signals/backfill-runs/${runId}`).pipe(map(toCamel));
   }
 
   getExtractionRun(runId: string): Observable<{

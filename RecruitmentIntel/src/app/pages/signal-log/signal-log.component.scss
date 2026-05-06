@@ -76,3 +76,18 @@
 .list-select { width: 220px; }
 
 ::ng-deep .mat-mdc-row:hover { background: #f5f5f5; cursor: pointer; }
+
+.backfill-progress {
+  margin: 12px 0;
+  border-left: 4px solid #1976d2;
+  background: #e3f2fd;
+}
+.backfill-progress-row {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+}
+.backfill-progress-row mat-icon { color: #1976d2; }
+.backfill-progress-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.backfill-progress-headline { font-weight: 500; font-size: 14px; color: #0d47a1; }
+.backfill-progress-detail { font-size: 12px; color: rgba(0, 0, 0, 0.65); }
+.backfill-progress-pct { font-weight: 600; color: #0d47a1; font-size: 14px; }
+.backfill-progress .spacer { flex: 1; }

@@ -1,6 +1,8 @@
+import asyncio
 import json
 import logging
 import re
+import sys
 from datetime import date, datetime
 
 import httpx
@@ -201,35 +203,133 @@ async def _fetch_via_httpx(url: str) -> str:
             )
         if resp.status_code < 400:
             return _clean_body_text(resp.text)
+        logger.warning("httpx fetch returned status %d for %s", resp.status_code, url)
     except Exception as e:
-        logger.debug(f"httpx fetch failed for {url}: {e}")
+        logger.warning("httpx fetch failed for %s: %r", url, e, exc_info=True)
     return ""
+
+
+# ---- Playwright health stats (process-lifetime counters) ----
+# Bumped from logger.debug to logger.warning so silent failures surface in
+# the API console. Counters expose via GET /signals/playwright-stats so we
+# can spot pool degradation without grepping logs.
+class _PlaywrightStats:
+    successes: int = 0
+    failures: int = 0
+    empty_results: int = 0
+    last_error: str = ""
+    last_error_at: str = ""
+    last_success_at: str = ""
+
+    @classmethod
+    def snapshot(cls) -> dict:
+        return {
+            "successes": cls.successes,
+            "failures": cls.failures,
+            "empty_results": cls.empty_results,
+            "last_error": cls.last_error,
+            "last_error_at": cls.last_error_at,
+            "last_success_at": cls.last_success_at,
+        }
+
+
+playwright_stats = _PlaywrightStats
+
+
+async def _do_playwright_fetch(url: str, nav_timeout_ms: int) -> str:
+    """Single Playwright attempt — fresh browser per call, no shared state."""
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        try:
+            page = await browser.new_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=nav_timeout_ms)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                pass
+            html = await page.content()
+        finally:
+            await browser.close()
+    return _clean_body_text(html)
+
+
+def _run_playwright_in_proactor_thread(url: str, nav_timeout_ms: int) -> str:
+    """Run a fresh Playwright fetch on a dedicated thread with its own
+    Proactor event loop.
+
+    Workaround for the NotImplementedError that hits when uvicorn's
+    --reload worker creates a SelectorEventLoop (Selector can't do
+    `subprocess_exec`, which Playwright's Chromium launch requires).
+    Setting the policy in app/main.py + dev_server.py *should* prevent
+    this, but something in uvicorn 0.x + Python 3.14 + reload still slips
+    through. This thread-isolated path is bulletproof.
+    """
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(_do_playwright_fetch(url, nav_timeout_ms))
+    finally:
+        loop.close()
 
 
 async def _fetch_via_playwright(url: str) -> str:
     """Chromium-rendered fetch — resolves JS-based redirects (e.g. Google News).
 
-    Waits for the navigation to settle on the real destination URL, then returns
-    the final page's cleaned body text.
+    Hardening:
+      - Failures log at WARNING with traceback (was DEBUG, swallowed silently).
+      - On empty result (browser launched fine but page returned no usable
+        content — common transient mode in long-running processes), retry
+        once with a longer nav timeout.
+      - Process-lifetime counters track success / failure / empty-result rates.
     """
+    from datetime import datetime, timezone
+    now = lambda: datetime.now(timezone.utc).isoformat()  # noqa: E731
+
+    async def _attempt(timeout_ms: int) -> str:
+        try:
+            return await _do_playwright_fetch(url, nav_timeout_ms=timeout_ms)
+        except NotImplementedError:
+            # SelectorEventLoop can't do subprocess_exec — fall back to a
+            # dedicated Proactor thread.
+            logger.warning(
+                "Playwright hit NotImplementedError on main loop for %s — "
+                "retrying in Proactor thread",
+                url,
+            )
+            return await asyncio.to_thread(
+                _run_playwright_in_proactor_thread, url, timeout_ms
+            )
+
     try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            try:
-                page = await browser.new_page()
-                await page.goto(url, wait_until="domcontentloaded", timeout=25000)
-                # Some redirect shells need a network-idle moment to swap URL
-                try:
-                    await page.wait_for_load_state("networkidle", timeout=8000)
-                except Exception:
-                    pass
-                html = await page.content()
-            finally:
-                await browser.close()
-            return _clean_body_text(html)
+        text = await _attempt(25000)
+        if text:
+            _PlaywrightStats.successes += 1
+            _PlaywrightStats.last_success_at = now()
+            return text
+        # Browser launched cleanly but returned empty — common when the
+        # Node driver is stuck. One retry with a longer timeout often clears.
+        _PlaywrightStats.empty_results += 1
+        logger.warning(
+            "Playwright returned empty body for %s — retrying once with 40s nav timeout",
+            url,
+        )
+        text = await _attempt(40000)
+        if text:
+            _PlaywrightStats.successes += 1
+            _PlaywrightStats.last_success_at = now()
+            return text
+        _PlaywrightStats.failures += 1
+        _PlaywrightStats.last_error = "empty body after retry"
+        _PlaywrightStats.last_error_at = now()
+        logger.warning("Playwright still empty after retry for %s", url)
     except Exception as e:
-        logger.debug(f"Playwright fetch failed for {url}: {e}")
+        _PlaywrightStats.failures += 1
+        _PlaywrightStats.last_error = f"{type(e).__name__}: {e}"
+        _PlaywrightStats.last_error_at = now()
+        logger.warning("Playwright fetch failed for %s: %r", url, e, exc_info=True)
     return ""
 
 
@@ -384,21 +484,32 @@ async def _backfill_location_via_llm(
 
     The main extraction prompt is structured and often returns "" when the
     article body doesn't mention HQ explicitly. This focused follow-up:
-      1. Asks ONLY for HQ location for a known company name.
-      2. Allows the model to fall back to its general knowledge if the
-         article doesn't say (e.g. it knows AcuityMD is in Boston).
+      1. Asks ONLY for the HQ stated in the article body.
+      2. ARTICLE-EVIDENCE ONLY — explicitly forbids using general knowledge
+         or guessing from the company name (which previously caused
+         hallucinations like Magrathea → "New York City, NY, USA").
+      3. Filters investor / VC / journalist locations.
     Returns "" on any failure — best-effort.
     """
     if not company:
         return ""
     prompt = (
-        f'What city/state-or-region/country is the company "{company}" headquartered in?\n'
-        f'Use the article excerpt below first; if it doesn\'t mention a location, '
-        f'use your general knowledge of the company. If you genuinely do not know, '
+        f'Find the headquarters of the company "{company}" using ONLY the '
+        f'article excerpt below.\n\n'
+        f'Look for phrases like "based in", "headquartered in", '
+        f'"{{city}}-based startup", or a dateline at the top of the article.\n\n'
+        f'STRICT RULES:\n'
+        f'  - Only use information stated in the article excerpt.\n'
+        f'  - Do NOT use general knowledge of the company.\n'
+        f'  - Do NOT guess based on the company name or domain.\n'
+        f'  - Do NOT return investor / VC / journalist locations '
+        f'(those are mentioned for context, not the company HQ).\n'
+        f'  - If the article does NOT explicitly state the company\'s HQ, '
         f'reply with the single word: unknown\n\n'
-        f'Reply with the location ONLY in the format "City, Region, Country" '
-        f'(e.g. "San Francisco, CA, USA" or "Berlin, Germany"). No extra text.\n\n'
-        f'Article excerpt:\n{(article_text or "")[:2500]}'
+        f'Otherwise reply with the location ONLY in the format '
+        f'"City, Region, Country" (e.g. "San Francisco, CA, USA" or '
+        f'"Berlin, Germany"). No extra text, no quotes, no markdown.\n\n'
+        f'Article excerpt:\n{(article_text or "")[:3500]}'
     )
     try:
         raw = (await provider.extract(prompt) or "").strip()
