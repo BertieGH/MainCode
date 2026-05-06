@@ -14,6 +14,7 @@ from app.config import settings as app_settings
 from app.database import async_session, get_db
 from app.models.article import Article
 from app.models.backfill_run import BackfillRun
+from app.models.extraction_run import ExtractionRun
 from app.models.feed_source import FeedSource
 from app.schemas.article import ArticleOut, VerdictCount
 from app.schemas.feed import BackfillRunOut
@@ -415,10 +416,142 @@ async def dedupe_articles(payload: DedupeRequest, db: AsyncSession = Depends(get
     }
 
 
+# Batched extraction tuning. Per the analysis in the implementation plan:
+#   - Chunk 25, concurrency 4 → ~110s for 100 articles, blast radius 25/100 on 503.
+#   - 503 in one chunk no longer aborts the entire run.
+_EXTRACT_CHUNK = 25
+_EXTRACT_LLM_CONCURRENCY = 4
+
+
+async def _extract_one_isolated(art_id: UUID, force: bool) -> tuple[UUID, str, Exception | None]:
+    """Run extract_for_article_row in its OWN AsyncSession.
+
+    Critical for safe concurrency: SQLAlchemy AsyncSession is single-threaded.
+    extract_for_article_row does multiple SELECT/COMMIT calls; sharing one
+    session across `asyncio.gather` coroutines deadlocks the connection pool
+    and blocks every other request to the API.
+    """
+    async with async_session() as own_db:
+        art = (
+            await own_db.execute(select(Article).where(Article.id == art_id))
+        ).scalar_one_or_none()
+        if not art:
+            return art_id, "missing", None
+        try:
+            verdict, _resp, _signal = await extract_for_article_row(own_db, art, force=force)
+            return art_id, verdict, None
+        except (LLMQuotaExceeded, LLMServiceUnavailable) as e:
+            return art_id, "error", e
+        except Exception as e:  # noqa: BLE001
+            logger.exception("_extract_one_isolated unexpected failure for article %s", art_id)
+            return art_id, "error", e
+
+
+async def _run_extraction_inproc(run_id: UUID, article_ids: list[UUID], force: bool) -> None:
+    """Background worker for /articles/extract.
+
+    Iterates the target IDs in chunks of _EXTRACT_CHUNK. Inside each chunk,
+    `_EXTRACT_LLM_CONCURRENCY` extractions run concurrently — each in its own
+    AsyncSession (see `_extract_one_isolated`). The outer session is reserved
+    for updating the ExtractionRun progress row only.
+
+    A 5xx batch increments `service_unavailable` and the run continues to
+    the next batch instead of aborting (key behavior change vs sequential).
+    """
+    sem = asyncio.Semaphore(_EXTRACT_LLM_CONCURRENCY)
+
+    async def _extract_with_sem(art_id: UUID):
+        async with sem:
+            return await _extract_one_isolated(art_id, force)
+
+    async with async_session() as db:
+        run = (
+            await db.execute(select(ExtractionRun).where(ExtractionRun.id == run_id))
+        ).scalar_one_or_none()
+        if not run:
+            return
+
+        quota_message: str | None = None
+
+        for start in range(0, len(article_ids), _EXTRACT_CHUNK):
+            batch_ids = article_ids[start : start + _EXTRACT_CHUNK]
+            results = await asyncio.gather(
+                *[_extract_with_sem(aid) for aid in batch_ids]
+            )
+
+            chunk_quota_hit = False
+            for art_id, verdict, err in results:
+                if err is None:
+                    if verdict in ("funding", "not_funding", "parse_failed", "validation_failed"):
+                        setattr(run, verdict, getattr(run, verdict) + 1)
+                    elif verdict == "missing":
+                        # Article ID not found (was deleted between selection and run start)
+                        pass
+                    else:
+                        run.error += 1
+                elif isinstance(err, LLMQuotaExceeded):
+                    # Quota is global — bail the entire run after this chunk.
+                    chunk_quota_hit = True
+                    quota_message = str(err)
+                    # Tag this article so the user can find which one tripped it.
+                    await db.execute(
+                        select(Article).where(Article.id == art_id)
+                    )  # warm cache
+                    art_row = (
+                        await db.execute(select(Article).where(Article.id == art_id))
+                    ).scalar_one_or_none()
+                    if art_row:
+                        art_row.verdict = "quota_exceeded"
+                        art_row.llm_response = quota_message
+                elif isinstance(err, LLMServiceUnavailable):
+                    # 503 after retries on THIS article — record but keep going.
+                    run.service_unavailable += 1
+                    art_row = (
+                        await db.execute(select(Article).where(Article.id == art_id))
+                    ).scalar_one_or_none()
+                    if art_row:
+                        art_row.verdict = "service_unavailable"
+                        art_row.llm_response = str(err)
+                else:
+                    run.error += 1
+
+                run.processed += 1
+
+            await db.commit()
+
+            if chunk_quota_hit:
+                run.status = "quota_exceeded"
+                run.message = f"Hit LLM quota after {run.processed}/{run.total} articles. {quota_message}"
+                run.finished_at = datetime.now(timezone.utc)
+                await db.commit()
+                return
+
+        # Done — pick a status based on what happened.
+        if run.service_unavailable > 0 or run.error > 0:
+            run.status = "warning"
+            run.message = (
+                f"Completed with {run.service_unavailable} service-unavailable + "
+                f"{run.error} error articles. The 503s are usually a brief Gemini demand spike — "
+                f"re-run those rows individually in a few minutes."
+            )
+        else:
+            run.status = "done"
+            run.message = None
+        run.finished_at = datetime.now(timezone.utc)
+        await db.commit()
+
+
 @router.post("/articles/extract")
 async def extract_articles(req: ExtractRequest, db: AsyncSession = Depends(get_db)):
-    """Run AI extraction on selected articles (or all pending)."""
-    query = select(Article)
+    """Run AI extraction on selected articles (or all pending) in batches.
+
+    Returns immediately with `{run_id, status, total}`. The frontend polls
+    `GET /articles/extract-runs/{run_id}` for progress.
+
+    Per-batch DB commits + 503-tolerant batches mean a transient Gemini blip
+    no longer wipes a 100-article run.
+    """
+    query = select(Article.id)
     if req.all_pending:
         query = query.where(Article.verdict == "pending")
     elif req.article_ids:
@@ -426,49 +559,48 @@ async def extract_articles(req: ExtractRequest, db: AsyncSession = Depends(get_d
     else:
         raise HTTPException(status_code=400, detail="Provide article_ids or set all_pending=true")
 
-    result = await db.execute(query)
-    articles = result.scalars().all()
+    rows = (await db.execute(query)).all()
+    target_ids: list[UUID] = [r[0] for r in rows]
+    if not target_ids:
+        return {"run_id": None, "status": "noop", "total": 0}
 
-    counts = {"funding": 0, "not_funding": 0, "parse_failed": 0, "validation_failed": 0, "error": 0}
-    quota_hit = False
-    service_unavailable = False
-    stop_message: str | None = None
+    run = ExtractionRun(
+        status="running",
+        total=len(target_ids),
+        trigger="manual",
+        force=req.force,
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
 
-    for article in articles:
-        if quota_hit or service_unavailable:
-            break
-        try:
-            verdict, _resp, _signal = await extract_for_article_row(db, article, force=req.force)
-        except LLMQuotaExceeded as e:
-            quota_hit = True
-            stop_message = str(e)
-            article.verdict = "quota_exceeded"
-            article.llm_response = stop_message
-            await db.commit()
-            break
-        except LLMServiceUnavailable as e:
-            service_unavailable = True
-            stop_message = str(e)
-            article.verdict = "service_unavailable"
-            article.llm_response = stop_message
-            await db.commit()
-            break
-        counts[verdict] = counts.get(verdict, 0) + 1
+    fire_and_forget(
+        _run_extraction_inproc(run.id, target_ids, req.force),
+        name=f"extract:{run.id}",
+    )
+    return {"run_id": str(run.id), "status": "queued", "total": len(target_ids)}
 
-    if quota_hit:
-        msg = f"Hit LLM quota after {sum(counts.values())} articles. {stop_message}"
-    elif service_unavailable:
-        msg = (
-            f"LLM service returned 5xx after retries ({sum(counts.values())} articles processed first). "
-            f"This is usually a brief demand spike — try again in a few minutes. {stop_message}"
-        )
-    else:
-        msg = None
 
+@router.get("/articles/extract-runs/{run_id}")
+async def get_extraction_run(run_id: UUID, db: AsyncSession = Depends(get_db)):
+    run = (
+        await db.execute(select(ExtractionRun).where(ExtractionRun.id == run_id))
+    ).scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Extraction run not found")
     return {
-        "status": "warning" if (quota_hit or service_unavailable) else "ok",
-        "processed": sum(counts.values()),
-        "total_requested": len(articles),
-        "counts": counts,
-        "message": msg,
+        "id": str(run.id),
+        "status": run.status,
+        "total": run.total,
+        "processed": run.processed,
+        "funding": run.funding,
+        "not_funding": run.not_funding,
+        "parse_failed": run.parse_failed,
+        "validation_failed": run.validation_failed,
+        "service_unavailable": run.service_unavailable,
+        "error": run.error,
+        "message": run.message,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "force": run.force,
     }

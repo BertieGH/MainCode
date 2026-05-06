@@ -30,6 +30,7 @@ async def init_db():
     import app.models.extraction_profile  # noqa: F401
     import app.models.job_prompt_profile  # noqa: F401
     import app.models.backfill_run  # noqa: F401
+    import app.models.extraction_run  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

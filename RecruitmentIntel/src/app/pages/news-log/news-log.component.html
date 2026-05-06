@@ -10,6 +10,10 @@
        matTooltip="Edit the AI extraction prompt and scrape keywords">
       <mat-icon>psychology</mat-icon> Configure Intent
     </a>
+    <button mat-stroked-button (click)="exportCsv()" [disabled]="displayArticles.length === 0"
+            matTooltip="Download visible articles as CSV">
+      <mat-icon>file_download</mat-icon> Export CSV
+    </button>
     <button mat-stroked-button (click)="load()" matTooltip="Reload">
       <mat-icon>refresh</mat-icon> Refresh
     </button>
@@ -303,6 +307,31 @@
         <span class="backfill-progress-pct">{{ backfillProgressPct }}%</span>
       </div>
       <mat-progress-bar mode="determinate" [value]="backfillProgressPct"></mat-progress-bar>
+    </mat-card-content>
+  </mat-card>
+}
+
+@if (extractRun) {
+  <mat-card class="backfill-progress">
+    <mat-card-content>
+      <div class="backfill-progress-row">
+        <mat-icon>psychology</mat-icon>
+        <div class="backfill-progress-text">
+          <div class="backfill-progress-headline">
+            Extracting ({{ extractRun.scopeMsg }}): {{ extractRun.processed }} / {{ extractRun.total }}
+          </div>
+          <div class="backfill-progress-detail">
+            {{ extractRun.funding }} signal{{ extractRun.funding === 1 ? '' : 's' }} ·
+            {{ extractRun.notFunding }} not-funding ·
+            {{ extractRun.parseFailed + extractRun.validationFailed }} parse/validation ·
+            {{ extractRun.serviceUnavailable }} 503 ·
+            {{ extractRun.error }} error
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <span class="backfill-progress-pct">{{ extractProgressPct }}%</span>
+      </div>
+      <mat-progress-bar mode="determinate" [value]="extractProgressPct"></mat-progress-bar>
     </mat-card-content>
   </mat-card>
 }

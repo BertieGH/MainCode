@@ -22,6 +22,7 @@ import { NEWS_LOG_WORKFLOW } from '../../components/info-dialog/workflows';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Article, FeedSource, VerdictCount, IngestionRun } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
+import { downloadCsv } from '../../utils/csv-export';
 
 type SortBy = 'newest' | 'oldest' | 'hits_desc' | 'hits_asc' | 'title' | 'title_desc' | 'feed' | 'feed_desc' | 'country' | 'country_desc';
 type SortColumn = 'title' | 'hits' | 'feed' | 'date' | 'country';
@@ -85,6 +86,34 @@ export class NewsLogComponent implements OnInit, OnDestroy {
     scopeMsg: string;
   } | null = null;
   private backfillPollSub?: Subscription;
+
+  /** Live progress for the batched LLM extraction background job. Same
+   * pattern as `backfillRun` — updated by a 1.5 s poller until the run
+   * reaches a terminal status. */
+  extractRun: {
+    runId: string;
+    status: 'running' | 'done' | 'warning' | 'quota_exceeded' | 'error';
+    total: number;
+    processed: number;
+    funding: number;
+    notFunding: number;
+    parseFailed: number;
+    validationFailed: number;
+    serviceUnavailable: number;
+    error: number;
+    scopeMsg: string;
+  } | null = null;
+  private extractPollSub?: Subscription;
+
+  get extracting(): boolean {
+    return this.extractRun?.status === 'running';
+  }
+
+  get extractProgressPct(): number {
+    const r = this.extractRun;
+    if (!r || !r.total) return 0;
+    return Math.min(100, Math.round((r.processed / r.total) * 100));
+  }
 
   /** Used by the existing template `[disabled]="backfilling"` bindings. */
   get backfilling(): boolean {
@@ -398,53 +427,111 @@ export class NewsLogComponent implements OnInit, OnDestroy {
 
   extractSelected(force = false) {
     if (this.selected.size === 0) return;
+    if (this.extracting) return;
     if (force && !confirm(`Re-extract ${this.selected.size} article(s) — this deletes any existing Signal rows for the same URLs and reruns the LLM with the current prompt. Continue?`)) return;
-    this.busy = true;
-    this.api.extractArticles({ ids: [...this.selected], force }).subscribe({
-      next: (res) => {
-        this.busy = false;
-        this.snackBar.open(this._extractMessage(res), 'OK', { duration: 5000 });
-        this.selected.clear();
-        this.load();
-      },
-      error: () => { this.busy = false; this.snackBar.open('Extraction failed', 'OK', { duration: 3000 }); }
-    });
+    const ids = [...this.selected];
+    const scopeMsg = `${ids.length} selected article${ids.length === 1 ? '' : 's'}`;
+    this._startExtractRun({ ids, force }, scopeMsg, /*clearSelectedOnStart*/ true);
   }
 
   extractAllPending() {
-    this.busy = true;
-    this.api.extractArticles({ allPending: true }).subscribe({
-      next: (res) => {
-        this.busy = false;
-        this.snackBar.open(this._extractMessage(res), 'OK', { duration: 5000 });
-        this.load();
-      },
-      error: () => { this.busy = false; this.snackBar.open('Extraction failed', 'OK', { duration: 3000 }); }
-    });
+    if (this.extracting) return;
+    this._startExtractRun({ allPending: true }, 'all pending articles', false);
   }
 
   extractOne(article: Article, force = false) {
-    this.busy = true;
-    this.api.extractArticles({ ids: [article.id], force }).subscribe({
+    if (this.extracting) return;
+    // Single-article path goes through the same batched runner — overhead is
+    // negligible (one chunk, one LLM call) and keeps progress UI consistent.
+    this._startExtractRun(
+      { ids: [article.id], force },
+      `1 article ("${(article.title || '').slice(0, 50)}")`,
+      false,
+    );
+  }
+
+  private _startExtractRun(
+    opts: { ids?: string[]; allPending?: boolean; force?: boolean },
+    scopeMsg: string,
+    clearSelectedOnStart: boolean,
+  ) {
+    this.api.extractArticles(opts).subscribe({
       next: (res) => {
-        this.busy = false;
-        this.snackBar.open(this._extractMessage(res), 'OK', { duration: 4000 });
-        this.load();
+        if (!res.runId || res.status === 'noop' || res.total === 0) {
+          this.snackBar.open('No articles to extract — selection was empty or already processed.', 'OK', { duration: 3000 });
+          return;
+        }
+        if (clearSelectedOnStart) this.selected.clear();
+        this.extractRun = {
+          runId: res.runId,
+          status: 'running',
+          total: res.total,
+          processed: 0,
+          funding: 0,
+          notFunding: 0,
+          parseFailed: 0,
+          validationFailed: 0,
+          serviceUnavailable: 0,
+          error: 0,
+          scopeMsg,
+        };
+        this._startExtractPoll(res.runId);
       },
-      error: () => { this.busy = false; this.snackBar.open('Extraction failed', 'OK', { duration: 3000 }); }
+      error: (err) => {
+        const msg = err?.error?.detail || 'Extraction failed to start';
+        this.snackBar.open(msg, 'OK', { duration: 4000 });
+      }
     });
   }
 
-  private _extractMessage(res: any): string {
-    if (res?.status === 'warning' && res?.message) return res.message;
-    const c = res?.counts || {};
-    const parts: string[] = [];
-    if (c.funding) parts.push(`${c.funding} signal${c.funding === 1 ? '' : 's'}`);
-    if (c.not_funding) parts.push(`${c.not_funding} not-funding`);
-    if (c.parse_failed) parts.push(`${c.parse_failed} parse-failed`);
-    if (c.validation_failed) parts.push(`${c.validation_failed} validation-failed`);
-    if (c.error) parts.push(`${c.error} error`);
-    return parts.length ? `Extracted: ${parts.join(', ')}` : 'No articles extracted';
+  private _startExtractPoll(runId: string) {
+    this.extractPollSub?.unsubscribe();
+    this.extractPollSub = interval(1500)
+      .pipe(switchMap(() => this.api.getExtractionRun(runId)))
+      .subscribe({
+        next: (run) => {
+          if (!this.extractRun || this.extractRun.runId !== runId) return;
+          this.extractRun = {
+            ...this.extractRun,
+            status: run.status as any,
+            total: run.total,
+            processed: run.processed,
+            funding: run.funding,
+            notFunding: run.notFunding,
+            parseFailed: run.parseFailed,
+            validationFailed: run.validationFailed,
+            serviceUnavailable: run.serviceUnavailable,
+            error: run.error,
+          };
+          if (run.status !== 'running') {
+            this._finishExtract(run.status, run.message);
+          }
+        },
+        error: () => {
+          this._finishExtract('error', 'Lost connection while polling extraction progress.');
+        }
+      });
+  }
+
+  private _finishExtract(status: string, message: string | null) {
+    this.extractPollSub?.unsubscribe();
+    this.extractPollSub = undefined;
+    const r = this.extractRun;
+    if (!r) return;
+    const counts: string[] = [];
+    if (r.funding) counts.push(`${r.funding} signal${r.funding === 1 ? '' : 's'}`);
+    if (r.notFunding) counts.push(`${r.notFunding} not-funding`);
+    if (r.parseFailed) counts.push(`${r.parseFailed} parse-failed`);
+    if (r.validationFailed) counts.push(`${r.validationFailed} validation-failed`);
+    if (r.serviceUnavailable) counts.push(`${r.serviceUnavailable} 503`);
+    if (r.error) counts.push(`${r.error} error`);
+    const tally = counts.length ? ` — ${counts.join(', ')}` : '';
+    const headline = status === 'done'
+      ? `Extracted ${r.processed}/${r.total} (${r.scopeMsg})${tally}`
+      : `Extraction ${status} after ${r.processed}/${r.total} (${r.scopeMsg})${tally}${message ? ' — ' + message : ''}`;
+    this.snackBar.open(headline, 'OK', { duration: 7000 });
+    this.extractRun = null;
+    this.load();
   }
 
   deleteSelected() {
@@ -473,6 +560,19 @@ export class NewsLogComponent implements OnInit, OnDestroy {
       },
       error: () => this.snackBar.open('Delete failed', 'OK', { duration: 3000 })
     });
+  }
+
+  exportCsv() {
+    downloadCsv('news-log', [
+      { header: 'Title', value: a => a.title },
+      { header: 'Verdict', value: a => a.verdict },
+      { header: 'Feed', value: a => a.feedName },
+      { header: 'Created', value: a => a.createdAt },
+      { header: 'URL', value: a => a.url },
+      { header: 'Total Keyword Hits', value: a => this.totalKeywordHits(a) },
+      { header: 'Keyword Hits', value: a => this.keywordHitList(a).map(h => `${h.keyword}:${h.count}`).join('; ') },
+      { header: 'Summary', value: a => a.summary },
+    ], this.displayArticles);
   }
 
   clearFilters() {
@@ -566,6 +666,7 @@ export class NewsLogComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.backfillPollSub?.unsubscribe();
+    this.extractPollSub?.unsubscribe();
   }
 
   dedupeArticles() {

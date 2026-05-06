@@ -130,12 +130,21 @@ export class ApiService {
     return this.http.post<any>(`${BASE}/articles/delete-batch`, { article_ids: ids });
   }
 
-  extractArticles(opts: { ids?: string[]; allPending?: boolean; force?: boolean }): Observable<any> {
+  extractArticles(opts: { ids?: string[]; allPending?: boolean; force?: boolean }): Observable<{ runId: string | null; status: string; total: number }> {
     const body: any = {};
     if (opts.ids) body.article_ids = opts.ids;
     if (opts.allPending) body.all_pending = true;
     if (opts.force) body.force = true;
     return this.http.post<any>(`${BASE}/articles/extract`, body).pipe(map(toCamel));
+  }
+
+  getExtractionRun(runId: string): Observable<{
+    id: string; status: string; total: number; processed: number;
+    funding: number; notFunding: number; parseFailed: number; validationFailed: number;
+    serviceUnavailable: number; error: number;
+    message: string | null; startedAt: string; finishedAt: string | null; force: boolean;
+  }> {
+    return this.http.get<any>(`${BASE}/articles/extract-runs/${runId}`).pipe(map(toCamel));
   }
 
   // --- Prospect Lists ---
