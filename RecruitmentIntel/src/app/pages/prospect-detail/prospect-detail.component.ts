@@ -13,6 +13,9 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Prospect, ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
+import { downloadCsv } from '../../utils/csv-export';
+import { ResizableColumnDirective } from '../../directives/resizable-column.directive';
+import { ColumnWidthsService } from '../../services/column-widths.service';
 
 @Component({
   selector: 'app-prospect-detail',
@@ -21,7 +24,8 @@ import { ApiService } from '../../services/api.service';
     CommonModule, RouterLink,
     MatCardModule, MatTableModule, MatButtonModule, MatIconModule,
     MatChipsModule, MatProgressBarModule, MatProgressSpinnerModule,
-    MatTooltipModule, MatMenuModule, MatSnackBarModule
+    MatTooltipModule, MatMenuModule, MatSnackBarModule,
+    ResizableColumnDirective
   ],
   templateUrl: './prospect-detail.component.html',
   styleUrl: './prospect-detail.component.scss'
@@ -53,13 +57,22 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
    * between polls so we can surface snackbars when a row settles. */
   private prevStatuses: Map<string, { e?: string; c?: string }> = new Map();
 
+  columnWidths: Record<string, number> = {};
+
   constructor(
     private route: ActivatedRoute,
     private snackBar: MatSnackBar,
     private api: ApiService,
     private cdr: ChangeDetectorRef,
+    private widthsSvc: ColumnWidthsService,
   ) {
     this.listId = this.route.snapshot.paramMap.get('id') || '';
+    this.columnWidths = this.widthsSvc.load('prospect-detail');
+  }
+
+  onColumnResized(col: string, w: number) {
+    this.columnWidths = { ...this.columnWidths, [col]: w };
+    this.widthsSvc.save('prospect-detail', this.columnWidths);
   }
 
   ngOnInit() {
@@ -304,6 +317,25 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
         );
       }
     });
+  }
+
+  exportCsv() {
+    const slug = (this.list?.name || 'prospects').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    downloadCsv(`prospects-${slug}`, [
+      { header: 'Company', value: p => p.companyName },
+      { header: 'Industry', value: p => p.industry },
+      { header: 'Funding Round', value: p => p.fundingRound },
+      { header: 'Amount (USD)', value: p => p.amount },
+      { header: 'Website', value: p => p.website },
+      { header: 'LinkedIn', value: p => p.linkedinUrl },
+      { header: 'Enrichment Status', value: p => p.enrichmentStatus },
+      { header: 'Enrichment Strategy', value: p => p.enrichmentStrategy },
+      { header: 'Job Crawl Status', value: p => p.jobCrawlStatus },
+      { header: 'Job Crawl Strategy', value: p => p.jobCrawlStrategy },
+      { header: 'Careers URL', value: p => p.careersUrl },
+      { header: 'Jobs Found', value: p => p.jobCount },
+      { header: 'Raw Listings', value: p => p.jobCrawlRawCount },
+    ], this.prospects);
   }
 
   removeProspect(prospect: Prospect) {

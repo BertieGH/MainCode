@@ -14,7 +14,8 @@
         }
       </mat-select>
     </mat-form-field>
-    <button mat-raised-button color="primary" (click)="exportCsv()">
+    <button mat-stroked-button (click)="exportCsv()" [disabled]="jobs.length === 0"
+            matTooltip="Download visible jobs as CSV">
       <mat-icon>file_download</mat-icon> Export CSV
     </button>
   </div>
@@ -84,20 +85,26 @@
 
 <!-- Jobs Table -->
 <mat-card class="table-card">
-  <table mat-table [dataSource]="filteredJobs" matSort (matSortChange)="sortData($event)" class="jobs-table">
+  <table mat-table [dataSource]="filteredJobs" matSort (matSortChange)="sortData($event)" class="jobs-table resizable-table">
 
     <ng-container matColumnDef="companyName">
-      <th mat-header-cell *matHeaderCellDef mat-sort-header>Company</th>
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
+          resizableColumn [width]="columnWidths['companyName']"
+          (resized)="onColumnResized('companyName', $event)">Company</th>
       <td mat-cell *matCellDef="let row"><strong>{{ row.companyName }}</strong></td>
     </ng-container>
 
     <ng-container matColumnDef="title">
-      <th mat-header-cell *matHeaderCellDef mat-sort-header>Job Title</th>
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
+          resizableColumn [width]="columnWidths['title']"
+          (resized)="onColumnResized('title', $event)">Job Title</th>
       <td mat-cell *matCellDef="let row">{{ row.title }}</td>
     </ng-container>
 
     <ng-container matColumnDef="matchTarget">
-      <th mat-header-cell *matHeaderCellDef mat-sort-header>Matched Target</th>
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
+          resizableColumn [width]="columnWidths['matchTarget']"
+          (resized)="onColumnResized('matchTarget', $event)">Matched Target</th>
       <td mat-cell *matCellDef="let row">
         @if (row.matchTarget) {
           <span class="match-chip" [matTooltip]="'Matched configured target: ' + row.matchTarget">
@@ -110,37 +117,77 @@
     </ng-container>
 
     <ng-container matColumnDef="department">
-      <th mat-header-cell *matHeaderCellDef mat-sort-header>Dept</th>
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
+          resizableColumn [width]="columnWidths['department']"
+          (resized)="onColumnResized('department', $event)">Dept</th>
       <td mat-cell *matCellDef="let row">
         <span class="dept-chip" [attr.data-dept]="row.department">{{ row.department }}</span>
       </td>
     </ng-container>
 
     <ng-container matColumnDef="seniority">
-      <th mat-header-cell *matHeaderCellDef>Seniority</th>
+      <th mat-header-cell *matHeaderCellDef
+          resizableColumn [width]="columnWidths['seniority']"
+          (resized)="onColumnResized('seniority', $event)">Seniority</th>
       <td mat-cell *matCellDef="let row">{{ row.seniority }}</td>
     </ng-container>
 
     <ng-container matColumnDef="jobType">
-      <th mat-header-cell *matHeaderCellDef>Type</th>
+      <th mat-header-cell *matHeaderCellDef
+          resizableColumn [width]="columnWidths['jobType']"
+          (resized)="onColumnResized('jobType', $event)">Type</th>
       <td mat-cell *matCellDef="let row">
         <span class="type-badge">{{ row.jobType }}</span>
       </td>
     </ng-container>
 
     <ng-container matColumnDef="location">
-      <th mat-header-cell *matHeaderCellDef>Location</th>
+      <th mat-header-cell *matHeaderCellDef
+          resizableColumn [width]="columnWidths['location']"
+          (resized)="onColumnResized('location', $event)">Location</th>
       <td mat-cell *matCellDef="let row">{{ row.location }}</td>
     </ng-container>
 
     <ng-container matColumnDef="skills">
-      <th mat-header-cell *matHeaderCellDef>Skills</th>
+      <th mat-header-cell *matHeaderCellDef
+          resizableColumn [width]="columnWidths['skills']"
+          (resized)="onColumnResized('skills', $event)">Skills</th>
       <td mat-cell *matCellDef="let row">
         <div class="skills-wrap">
           @for (skill of row.skills; track skill) {
             <span class="skill-tag">{{ skill }}</span>
           }
         </div>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="website">
+      <th mat-header-cell *matHeaderCellDef
+          resizableColumn [width]="columnWidths['website']"
+          (resized)="onColumnResized('website', $event)">Website</th>
+      <td mat-cell *matCellDef="let row">
+        @if (row.website) {
+          <a [href]="row.website" target="_blank" class="link" matTooltip="Open website">
+            {{ row.website | slice:0:35 }}
+          </a>
+        } @else {
+          <span class="match-none">—</span>
+        }
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="linkedin">
+      <th mat-header-cell *matHeaderCellDef
+          resizableColumn [width]="columnWidths['linkedin']"
+          (resized)="onColumnResized('linkedin', $event)">LinkedIn</th>
+      <td mat-cell *matCellDef="let row">
+        @if (row.linkedinUrl) {
+          <a [href]="row.linkedinUrl" target="_blank" mat-icon-button matTooltip="Open LinkedIn">
+            <mat-icon>link</mat-icon>
+          </a>
+        } @else {
+          <span class="match-none">—</span>
+        }
       </td>
     </ng-container>
 

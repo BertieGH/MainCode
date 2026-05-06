@@ -17,6 +17,9 @@ import { Job, ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
 import { InfoDialogComponent } from '../../components/info-dialog/info-dialog.component';
 import { OUTREACH_WORKFLOW } from '../../components/info-dialog/workflows';
+import { downloadCsv } from '../../utils/csv-export';
+import { ResizableColumnDirective } from '../../directives/resizable-column.directive';
+import { ColumnWidthsService } from '../../services/column-widths.service';
 
 @Component({
   selector: 'app-outreach',
@@ -25,7 +28,8 @@ import { OUTREACH_WORKFLOW } from '../../components/info-dialog/workflows';
     CommonModule, FormsModule,
     MatCardModule, MatTableModule, MatSelectModule, MatFormFieldModule,
     MatInputModule, MatButtonModule, MatIconModule, MatChipsModule, MatSortModule,
-    MatTooltipModule, MatDialogModule, MatSnackBarModule
+    MatTooltipModule, MatDialogModule, MatSnackBarModule,
+    ResizableColumnDirective
   ],
   templateUrl: './outreach.component.html',
   styleUrl: './outreach.component.scss'
@@ -33,7 +37,7 @@ import { OUTREACH_WORKFLOW } from '../../components/info-dialog/workflows';
 export class OutreachComponent implements OnInit {
   jobs: Job[] = [];
   lists: ProspectList[] = [];
-  displayedColumns = ['companyName', 'title', 'matchTarget', 'department', 'seniority', 'jobType', 'location', 'skills', 'link'];
+  displayedColumns = ['companyName', 'title', 'matchTarget', 'department', 'seniority', 'jobType', 'location', 'skills', 'website', 'linkedin', 'link'];
 
   selectedList = '';
   filterDept = 'All';
@@ -49,7 +53,21 @@ export class OutreachComponent implements OnInit {
   // Client-side alias retained so the template doesn't need to change
   get filteredJobs(): Job[] { return this.jobs; }
 
-  constructor(private api: ApiService, private snackBar: MatSnackBar, private dialog: MatDialog) {}
+  columnWidths: Record<string, number> = {};
+
+  constructor(
+    private api: ApiService,
+    private snackBar: MatSnackBar,
+    private dialog: MatDialog,
+    private widthsSvc: ColumnWidthsService,
+  ) {
+    this.columnWidths = this.widthsSvc.load('outreach');
+  }
+
+  onColumnResized(col: string, w: number) {
+    this.columnWidths = { ...this.columnWidths, [col]: w };
+    this.widthsSvc.save('outreach', this.columnWidths);
+  }
 
   openInfo() {
     this.dialog.open(InfoDialogComponent, { data: OUTREACH_WORKFLOW, width: '880px', maxWidth: '95vw' });
@@ -124,8 +142,21 @@ export class OutreachComponent implements OnInit {
   }
 
   exportCsv() {
-    if (!this.selectedList) return;
-    const url = this.api.exportOutreachCsv(this.selectedList, this.buildFilters());
-    window.location.href = url;
+    const listName = this.lists.find(l => l.id === this.selectedList)?.name || 'outreach';
+    const slug = listName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    downloadCsv(`outreach-${slug}`, [
+      { header: 'Company', value: j => j.companyName },
+      { header: 'Title', value: j => j.title },
+      { header: 'Match Target', value: j => j.matchTarget },
+      { header: 'Department', value: j => j.department },
+      { header: 'Seniority', value: j => j.seniority },
+      { header: 'Job Type', value: j => j.jobType },
+      { header: 'Location', value: j => j.location },
+      { header: 'Skills', value: j => j.skills },
+      { header: 'Website', value: j => j.website },
+      { header: 'LinkedIn', value: j => j.linkedinUrl },
+      { header: 'URL', value: j => j.url },
+      { header: 'Discovered', value: j => j.discoveredAt },
+    ], this.jobs);
   }
 }

@@ -56,3 +56,37 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
   line-height: 20px;
 }
 .page-header h1 .info-icon:hover { color: #1976d2; background: rgba(25,118,210,0.08); }
+
+/* ----- Resizable mat-table columns -----
+ * Apply class="resizable-table" to a <table mat-table>; combined with
+ * the [resizableColumn] directive on each <th> this enables drag-to-resize.
+ * `table-layout: fixed` is required for inline `width` on <th> to be honored.
+ */
+table.resizable-table {
+  table-layout: fixed;
+  width: 100%;
+
+  th {
+    position: relative;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  th .resize-handle {
+    transition: background-color 120ms ease;
+  }
+  th .resize-handle:hover,
+  th .resize-handle.resizing {
+    background-color: rgba(63, 81, 181, 0.35);
+  }
+}
+body.col-resizing,
+body.col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
