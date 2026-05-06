@@ -56,6 +56,26 @@ async def enrich_list(
     return {"status": "queued", "job_id": None, "mode": "inproc"}
 
 
+@router.post("/prospect-lists/recover-stuck-enrichment")
+async def recover_stuck_enrichment(db: AsyncSession = Depends(get_db)):
+    """Reset prospects orphaned in `enrichment_status='pending'`.
+
+    The /enrich endpoint eagerly marks rows pending before the worker picks
+    them up. If the worker (in-process or arq) dies — e.g. API restart, no
+    Redis available, or task crash — those rows stay pending forever and
+    the UI's Enrich button stays disabled while the polling sees them.
+
+    Call once after a restart to release them. Returns the count reset.
+    """
+    result = await db.execute(
+        update(Prospect)
+        .where(Prospect.enrichment_status == "pending")
+        .values(enrichment_status="not_started", enrichment_error=None)
+    )
+    await db.commit()
+    return {"recovered": result.rowcount or 0}
+
+
 @router.post("/prospects/{prospect_id}/enrich")
 async def enrich_single(prospect_id: UUID, db: AsyncSession = Depends(get_db)):
     """Trigger enrichment for a single prospect. Always re-runs (ignores current status)."""

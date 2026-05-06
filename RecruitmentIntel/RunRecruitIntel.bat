@@ -125,7 +125,7 @@ tasklist /FI "WINDOWTITLE eq RecruitmentIntel - Worker*" 2>nul | find "cmd.exe" 
 if not errorlevel 1 (
     echo       A worker window is already open. Skipping.
 ) else (
-    start "RecruitmentIntel - Worker" cmd /k "cd /d ""%ROOT%backend"" && arq app.tasks.worker.WorkerSettings"
+    start "RecruitmentIntel - Worker" cmd /k "cd /d ""%ROOT%backend"" && python dev_worker.py"
     echo       Worker launched.
 )
 echo.

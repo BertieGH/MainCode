@@ -8,7 +8,11 @@ class Settings(BaseSettings):
     database_url_sync: str = "sqlite:///./recruitmentintel.db"
 
     # Redis (optional for local dev)
-    redis_url: str = "redis://localhost:6379/0"
+    # Use 127.0.0.1 explicitly: on Windows, "localhost" often resolves to ::1
+    # first, which Memurai's default bind doesn't listen on, causing a 5s+
+    # timeout per connection attempt. Memurai out-of-the-box listens on 0.0.0.0
+    # / 127.0.0.1 only.
+    redis_url: str = "redis://127.0.0.1:6379/0"
 
     # LLM Provider
     llm_provider: Literal["gemini", "ollama"] = "gemini"

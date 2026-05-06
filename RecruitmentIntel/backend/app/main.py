@@ -43,6 +43,30 @@ async def lifespan(app: FastAPI):
         await load_into_settings(db)
         await seed_default_profile_if_empty(db)
 
+    # Recover prospects orphaned in `enrichment_status='pending'` from a
+    # previous run whose in-process enrichment task was killed (API restart,
+    # crash, or no Redis worker available). Without this, the UI's Enrich
+    # button stays disabled forever because polling sees stale pending rows.
+    from sqlalchemy import update
+    from app.models.prospect import Prospect
+    async with async_session() as db:
+        try:
+            res = await db.execute(
+                update(Prospect)
+                .where(Prospect.enrichment_status == "pending")
+                .values(enrichment_status="not_started", enrichment_error=None)
+            )
+            await db.commit()
+            if res.rowcount:
+                import logging
+                logging.getLogger(__name__).info(
+                    "Recovered %d prospect(s) stuck in enrichment_status=pending from previous run",
+                    res.rowcount,
+                )
+        except Exception:
+            # Best-effort recovery — don't block API startup if it fails
+            pass
+
     # Arq pool for enqueuing background jobs from HTTP routes.
     # When Redis isn't running (e.g. `run.bat` doesn't start it), arq's default
     # 5-retry × 1 s backoff spams the log. Use conn_retries=1 so we fail fast
