@@ -101,6 +101,14 @@ def main() -> int:
     grand_src, grand_dst = 0, 0
 
     with sqlite_engine.connect() as src, pg_engine.begin() as dst:
+        # Disable FK + trigger enforcement during bulk load. SQLite doesn't
+        # enforce FKs by default, so dev DBs typically have dangling refs
+        # (e.g. articles.signal_id pointing at deleted signals). On Postgres
+        # those would fail the load; replication-role=replica is the
+        # standard way to bypass for a one-shot import. Resets at session end.
+        from sqlalchemy import text as _sql_text
+        dst.execute(_sql_text("SET session_replication_role = 'replica'"))
+
         for table in tables:
             src_rows = src.execute(select(table)).mappings().all()
             src_count = len(src_rows)
