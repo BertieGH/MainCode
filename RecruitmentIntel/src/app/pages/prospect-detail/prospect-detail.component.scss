@@ -5,6 +5,11 @@
   display: flex; align-items: center; gap: 8px;
   h1 { margin: 0; font-size: 28px; font-weight: 500; color: #333; }
   .subtitle { font-size: 14px; color: #888; }
+  // Inline "(N companies)" tucked into the title — saves a row vs the
+  // old subtitle layout.
+  .title-count {
+    font-size: 14px; font-weight: 400; color: #888; margin-left: 4px;
+  }
 }
 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
@@ -15,6 +20,9 @@
 .status-header {
   display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
   font-weight: 500; font-size: 14px;
+  // The live-indicator + refresh button stick to the far right of the row.
+  .live-indicator { margin-left: auto; }
+  .refresh-btn { margin-left: -4px; width: 32px; height: 32px; line-height: 32px; }
 }
 .status-chips { display: flex; gap: 8px; margin-top: 8px; }
 .chip {

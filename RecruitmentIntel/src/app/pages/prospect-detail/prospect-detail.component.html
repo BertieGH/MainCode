@@ -3,25 +3,10 @@
     <a mat-icon-button routerLink="/prospects">
       <mat-icon>arrow_back</mat-icon>
     </a>
-    <div>
-      <h1>Prospect List - {{ list?.name || 'Unknown' }}</h1>
-      <span class="subtitle">
-        {{ prospects.length }} companies
-        @if (anyPending()) {
-          <span class="live-indicator"
-                matTooltip="Polling every 2s — backend may take 30–90s for enrichment, longer for job crawl">
-            <mat-progress-spinner diameter="14" mode="indeterminate"></mat-progress-spinner>
-            live
-            @if (secondsSinceRefresh() !== null) {
-              <span class="refresh-age">· refreshed {{ secondsSinceRefresh() }}s ago</span>
-            }
-          </span>
-          <button mat-icon-button (click)="loadProspects()" matTooltip="Force-refresh now">
-            <mat-icon>refresh</mat-icon>
-          </button>
-        }
-      </span>
-    </div>
+    <h1>
+      Prospect List - {{ list?.name || 'Unknown' }}
+      <span class="title-count">({{ prospects.length }} companies)</span>
+    </h1>
   </div>
   <div class="header-actions">
     <!-- Enrich: split button (click = pending, menu = re-run all) -->
@@ -81,6 +66,19 @@
     <div class="status-header">
       <mat-icon color="primary">search</mat-icon>
       <span>Enrichment Status</span>
+      @if (enrichPending()) {
+        <span class="live-indicator"
+              matTooltip="Polling every 2s — enrichment usually takes 30–90s per prospect">
+          <mat-progress-spinner diameter="14" mode="indeterminate"></mat-progress-spinner>
+          live
+          @if (secondsSinceRefresh() !== null) {
+            <span class="refresh-age">· refreshed {{ secondsSinceRefresh() }}s ago</span>
+          }
+        </span>
+        <button mat-icon-button class="refresh-btn" (click)="loadProspects()" matTooltip="Force-refresh now">
+          <mat-icon>refresh</mat-icon>
+        </button>
+      }
     </div>
     <mat-progress-bar mode="determinate" [value]="enrichPercent" color="primary"></mat-progress-bar>
     <div class="status-chips">
@@ -94,6 +92,19 @@
     <div class="status-header">
       <mat-icon color="accent">bug_report</mat-icon>
       <span>Job Crawl Status</span>
+      @if (crawlPending()) {
+        <span class="live-indicator"
+              matTooltip="Polling every 2s — job crawl can take 1–3 minutes per prospect">
+          <mat-progress-spinner diameter="14" mode="indeterminate"></mat-progress-spinner>
+          live
+          @if (secondsSinceRefresh() !== null) {
+            <span class="refresh-age">· refreshed {{ secondsSinceRefresh() }}s ago</span>
+          }
+        </span>
+        <button mat-icon-button class="refresh-btn" (click)="loadProspects()" matTooltip="Force-refresh now">
+          <mat-icon>refresh</mat-icon>
+        </button>
+      }
     </div>
     <mat-progress-bar mode="determinate" [value]="crawlPercent" color="accent"></mat-progress-bar>
     <div class="status-chips">
@@ -107,7 +118,8 @@
 
 <!-- Prospect Table -->
 <mat-card class="table-card">
-  <table mat-table [dataSource]="displayProspects" class="prospect-table resizable-table">
+  <table mat-table [dataSource]="displayProspects" matSort (matSortChange)="sortData($event)"
+         class="prospect-table resizable-table">
 
     <ng-container matColumnDef="select">
       <th mat-header-cell *matHeaderCellDef>
@@ -126,14 +138,14 @@
     </ng-container>
 
     <ng-container matColumnDef="companyName">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['companyName']"
           (resized)="onColumnResized('companyName', $event)">Company</th>
       <td mat-cell *matCellDef="let row"><strong>{{ row.companyName }}</strong></td>
     </ng-container>
 
     <ng-container matColumnDef="industry">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['industry']"
           (resized)="onColumnResized('industry', $event)">Industry</th>
       <td mat-cell *matCellDef="let row">
@@ -142,14 +154,14 @@
     </ng-container>
 
     <ng-container matColumnDef="fundingRound">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['fundingRound']"
           (resized)="onColumnResized('fundingRound', $event)">Round</th>
       <td mat-cell *matCellDef="let row">{{ row.fundingRound }}</td>
     </ng-container>
 
     <ng-container matColumnDef="amount">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['amount']"
           (resized)="onColumnResized('amount', $event)">Amount</th>
       <td mat-cell *matCellDef="let row"><strong class="amount">{{ formatAmount(row.amount) }}</strong></td>
@@ -206,7 +218,7 @@
     </ng-container>
 
     <ng-container matColumnDef="jobCount">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['jobCount']"
           (resized)="onColumnResized('jobCount', $event)">Jobs</th>
       <td mat-cell *matCellDef="let row">

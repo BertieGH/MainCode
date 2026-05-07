@@ -86,22 +86,31 @@ async def enrich_list(
 
 @router.post("/prospect-lists/recover-stuck-enrichment")
 async def recover_stuck_enrichment(db: AsyncSession = Depends(get_db)):
-    """Reset prospects orphaned in `enrichment_status='pending'`.
+    """Reset prospects orphaned in `enrichment_status='pending'` OR
+    `job_crawl_status='pending'`.
 
-    The /enrich endpoint eagerly marks rows pending before the worker picks
-    them up. If the worker (in-process or arq) dies — e.g. API restart, no
-    Redis available, or task crash — those rows stay pending forever and
-    the UI's Enrich button stays disabled while the polling sees them.
+    Both /enrich and /crawl-jobs eagerly mark rows pending before the worker
+    picks them up. If the worker (in-process or arq) dies mid-job — API
+    restart, no Redis, task crash — those rows stay pending forever and
+    the UI's "live" indicator + buttons stay active.
 
-    Call once after a restart to release them. Returns the count reset.
+    Call once after a restart to release them. Returns counts per kind.
     """
-    result = await db.execute(
+    res_e = await db.execute(
         update(Prospect)
         .where(Prospect.enrichment_status == "pending")
         .values(enrichment_status="not_started", enrichment_error=None)
     )
+    res_c = await db.execute(
+        update(Prospect)
+        .where(Prospect.job_crawl_status == "pending")
+        .values(job_crawl_status="not_started", job_crawl_error=None)
+    )
     await db.commit()
-    return {"recovered": result.rowcount or 0}
+    return {
+        "recovered_enrichment": res_e.rowcount or 0,
+        "recovered_crawl": res_c.rowcount or 0,
+    }
 
 
 @router.post("/prospects/{prospect_id}/enrich")

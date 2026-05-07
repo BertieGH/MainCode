@@ -10,6 +10,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
@@ -28,7 +29,7 @@ import { ColumnWidthsService } from '../../services/column-widths.service';
     CommonModule, FormsModule, RouterLink,
     MatCardModule, MatCheckboxModule, MatTableModule, MatButtonModule, MatIconModule,
     MatChipsModule, MatPaginatorModule, MatProgressBarModule, MatProgressSpinnerModule,
-    MatTooltipModule, MatMenuModule, MatSnackBarModule,
+    MatSortModule, MatTooltipModule, MatMenuModule, MatSnackBarModule,
     ResizableColumnDirective
   ],
   templateUrl: './prospect-detail.component.html',
@@ -79,6 +80,29 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
   clearSelection() { this.selection.clear(); }
 
   private _resetPage() { this.pageIndex = 0; }
+
+  /** Client-side sort handler — mutates `this.prospects` so the
+   * paginated `displayProspects` getter picks up the new order. */
+  sortData(sort: Sort) {
+    if (!sort.active || sort.direction === '') return;
+    const isAsc = sort.direction === 'asc';
+    const cmp = (a: number | string, b: number | string) =>
+      a < b ? (isAsc ? -1 : 1) : a > b ? (isAsc ? 1 : -1) : 0;
+    const data = [...this.prospects];
+    data.sort((a, b) => {
+      switch (sort.active) {
+        case 'companyName':  return cmp((a.companyName || '').toLowerCase(), (b.companyName || '').toLowerCase());
+        case 'industry':     return cmp((a.industry || '').toLowerCase(), (b.industry || '').toLowerCase());
+        case 'fundingRound': return cmp((a.fundingRound || '').toLowerCase(), (b.fundingRound || '').toLowerCase());
+        case 'amount':       return cmp(a.amount || 0, b.amount || 0);
+        case 'jobCount':     return cmp(a.jobCount || 0, b.jobCount || 0);
+        default: return 0;
+      }
+    });
+    this.prospects = data;
+    this._resetPage();
+    if (this.prospectTable) this.prospectTable.renderRows();
+  }
 
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private pollStart = 0;
@@ -180,6 +204,13 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
     }
     this.prospects = [...data];  // new ref so OnPush + plain-array diffs notice
     this.lastPollAt = Date.now();
+    // Apply a one-shot pin-to-top scheduled by a recent bulk action so the
+    // user sees all spinners on page 1 without scrolling pagination.
+    if (this._pendingPromoteIds) {
+      this._promoteToTop(this._pendingPromoteIds);
+      this._resetPage();
+      this._pendingPromoteIds = null;
+    }
     // MatTable with `[dataSource]="prospects"` (a plain array) doesn't re-render
     // automatically when the underlying contents change — even a fresh array
     // reference isn't always enough. Tell it explicitly.
@@ -199,6 +230,40 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
     return this.prospects.some(p =>
       p.enrichmentStatus === 'pending' || p.jobCrawlStatus === 'pending'
     );
+  }
+
+  /** True iff any prospect is mid-enrichment. Drives the live indicator
+   * shown next to the Enrichment Status header. */
+  enrichPending(): boolean {
+    return this.prospects.some(p => p.enrichmentStatus === 'pending');
+  }
+
+  /** True iff any prospect is mid-crawl. Drives the live indicator
+   * shown next to the Job Crawl Status header. */
+  crawlPending(): boolean {
+    return this.prospects.some(p => p.jobCrawlStatus === 'pending');
+  }
+
+  /** IDs to pin to the top of the prospects list after the next loadProspects()
+   * completes. Bulk actions set this so the visual reorder happens AFTER the
+   * fresh API data arrives (otherwise loadProspects would clobber an earlier
+   * pre-load reorder). One-shot — cleared after the next _applyProspects. */
+  private _pendingPromoteIds: string[] | null = null;
+
+  /** Schedule a one-shot promote-to-top + page-1 jump for the next load. */
+  private _schedulePromote(ids: string[]) {
+    if (ids.length) this._pendingPromoteIds = ids;
+  }
+
+  /** Move the given prospect IDs to the top of the prospects array (preserving
+   * the relative order among the rest). */
+  private _promoteToTop(ids: string[]) {
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    const top = this.prospects.filter(p => idSet.has(p.id));
+    const rest = this.prospects.filter(p => !idSet.has(p.id));
+    this.prospects = [...top, ...rest];
+    if (this.prospectTable) this.prospectTable.renderRows();
   }
 
   isRowPending(p: Prospect): boolean {
@@ -298,6 +363,10 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
           `Enrich queued for ${ids.length} prospect${ids.length === 1 ? '' : 's'} (${res?.mode || 'inproc'}) — watch progress`,
           'OK', { duration: 3500 }
         );
+        // Schedule a one-shot pin-to-top + page-1 jump that fires after
+        // loadProspects pulls fresh data (otherwise loadProspects would
+        // clobber any pre-call reorder).
+        this._schedulePromote(ids);
         this.loadProspects();
       },
       error: () => this.snackBar.open('Failed to queue enrichment', 'OK', { duration: 3000 })
@@ -324,6 +393,8 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
           `Job crawl queued for ${eligible} prospect${eligible === 1 ? '' : 's'} (${res?.mode || 'inproc'})`,
           'OK', { duration: 3500 }
         );
+        // Schedule a one-shot pin-to-top + page-1 jump after the next load.
+        this._schedulePromote(ids);
         this.loadProspects();
       },
       error: () => this.snackBar.open('Failed to queue job crawl', 'OK', { duration: 3000 })

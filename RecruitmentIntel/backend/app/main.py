@@ -43,25 +43,31 @@ async def lifespan(app: FastAPI):
         await load_into_settings(db)
         await seed_default_profile_if_empty(db)
 
-    # Recover prospects orphaned in `enrichment_status='pending'` from a
-    # previous run whose in-process enrichment task was killed (API restart,
-    # crash, or no Redis worker available). Without this, the UI's Enrich
-    # button stays disabled forever because polling sees stale pending rows.
+    # Recover prospects orphaned in `enrichment_status='pending'` OR
+    # `job_crawl_status='pending'` from a previous run whose worker was
+    # killed mid-job (API restart, worker crash, no-Redis fallback).
+    # Without this, the UI's "live" indicator + Enrich/Crawl buttons stay
+    # active forever because polling sees stale pending rows.
     from sqlalchemy import update
     from app.models.prospect import Prospect
     async with async_session() as db:
         try:
-            res = await db.execute(
+            res_e = await db.execute(
                 update(Prospect)
                 .where(Prospect.enrichment_status == "pending")
                 .values(enrichment_status="not_started", enrichment_error=None)
             )
+            res_c = await db.execute(
+                update(Prospect)
+                .where(Prospect.job_crawl_status == "pending")
+                .values(job_crawl_status="not_started", job_crawl_error=None)
+            )
             await db.commit()
-            if res.rowcount:
+            if res_e.rowcount or res_c.rowcount:
                 import logging
                 logging.getLogger(__name__).info(
-                    "Recovered %d prospect(s) stuck in enrichment_status=pending from previous run",
-                    res.rowcount,
+                    "Recovered %d enrich-pending + %d crawl-pending prospect(s) from previous run",
+                    res_e.rowcount, res_c.rowcount,
                 )
         except Exception:
             # Best-effort recovery — don't block API startup if it fails
