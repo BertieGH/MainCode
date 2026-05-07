@@ -10,6 +10,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule } from '@angular/material/core';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
@@ -45,6 +47,7 @@ const DESC_FIRST_COLUMNS: Set<SortColumn> = new Set(['hits', 'date']);
     CommonModule, FormsModule, RouterLink,
     MatCardModule, MatButtonModule, MatIconModule, MatFormFieldModule,
     MatInputModule, MatSelectModule, MatChipsModule, MatTooltipModule,
+    MatDatepickerModule, MatNativeDateModule,
     MatExpansionModule, MatCheckboxModule, MatPaginatorModule,
     MatProgressSpinnerModule, MatProgressBarModule, MatDialogModule, MatSnackBarModule,
   ],
@@ -65,8 +68,8 @@ export class NewsLogComponent implements OnInit, OnDestroy {
   filterKeywords: string[] = [];
   filterKeywordMode: 'any' | 'all' = 'any';
   filterQuery = '';
-  filterDateFrom = '';
-  filterDateTo = '';
+  filterDateFrom: Date | null = null;
+  filterDateTo: Date | null = null;
   filterCountry = '';
   sortBy: SortBy = 'newest';
   deduping = false;
@@ -244,6 +247,17 @@ export class NewsLogComponent implements OnInit, OnDestroy {
   /** Reset to page 0 whenever a filter changes the result-set length. */
   private _resetPage() { this.pageIndex = 0; }
 
+  /** Format a Date as YYYY-MM-DD for the backend filter API.
+   * Local-date components (not toISOString) so a date picked in the UI
+   * matches the user's calendar day rather than UTC. */
+  private _toIsoDate(d: Date | null): string | undefined {
+    if (!d) return undefined;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }
+
   applySearch() {
     this._resetPage();
     this.load();
@@ -377,8 +391,9 @@ export class NewsLogComponent implements OnInit, OnDestroy {
       keyword: this.filterKeywords.length ? this.filterKeywords : undefined,
       keywordMode: this.filterKeywordMode,
       q: this.filterQuery.trim() || undefined,
-      dateFrom: this.filterDateFrom || undefined,
-      dateTo: this.filterDateTo || undefined,
+      // mat-datepicker gives us Date objects; backend expects YYYY-MM-DD strings.
+      dateFrom: this._toIsoDate(this.filterDateFrom),
+      dateTo: this._toIsoDate(this.filterDateTo),
       country: this.filterCountry || undefined,
       limit: 500,
     }).subscribe({
@@ -583,8 +598,8 @@ export class NewsLogComponent implements OnInit, OnDestroy {
     this.filterKeywords = [];
     this.filterKeywordMode = 'any';
     this.filterQuery = '';
-    this.filterDateFrom = '';
-    this.filterDateTo = '';
+    this.filterDateFrom = null;
+    this.filterDateTo = null;
     this.filterCountry = '';
     this.sortBy = 'newest';
     this._resetPage();

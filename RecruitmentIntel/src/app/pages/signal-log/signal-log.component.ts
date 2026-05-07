@@ -10,6 +10,8 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule } from '@angular/material/core';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -34,7 +36,7 @@ import { ColumnWidthsService } from '../../services/column-widths.service';
     CommonModule, FormsModule,
     MatCardModule, MatTableModule, MatCheckboxModule, MatSelectModule,
     MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
-    MatChipsModule, MatExpansionModule, MatPaginatorModule, MatProgressBarModule, MatSortModule, MatDialogModule, MatSnackBarModule,
+    MatChipsModule, MatDatepickerModule, MatNativeDateModule, MatExpansionModule, MatPaginatorModule, MatProgressBarModule, MatSortModule, MatDialogModule, MatSnackBarModule,
     MatTooltipModule,
     ResizableColumnDirective
   ],
@@ -58,8 +60,8 @@ export class SignalLogComponent implements OnInit, OnDestroy {
   filterAmountMin = '';
   filterAmountMax = '';
   filterLocation = '';
-  filterDateFrom = '';
-  filterDateTo = '';
+  filterDateFrom: Date | null = null;
+  filterDateTo: Date | null = null;
   /** Free-text quick-filter over company / industry / source title. Client-side. */
   filterQuery = '';
   /** Country code from `countryOptions`. Client-side substring match against `location`. */
@@ -172,6 +174,16 @@ export class SignalLogComponent implements OnInit, OnDestroy {
     this.widthsSvc.save('signal-log', this.columnWidths);
   }
 
+  /** Format a Date as YYYY-MM-DD for the backend filter API.
+   * Uses local-date components so a date picked in the UI matches the
+   * user's calendar day rather than UTC (toISOString shifts on edge hours). */
+  private _toIsoDate(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }
+
   openInfo() {
     this.dialog.open(InfoDialogComponent, { data: SIGNAL_LOG_WORKFLOW, width: '880px', maxWidth: '95vw' });
   }
@@ -189,8 +201,9 @@ export class SignalLogComponent implements OnInit, OnDestroy {
     if (this.filterAmountMin) filters.amount_min = +this.filterAmountMin * 1000000;
     if (this.filterAmountMax) filters.amount_max = +this.filterAmountMax * 1000000;
     if (this.filterLocation) filters.location = this.filterLocation;
-    if (this.filterDateFrom) filters.date_from = this.filterDateFrom;
-    if (this.filterDateTo) filters.date_to = this.filterDateTo;
+    // Backend expects YYYY-MM-DD strings; mat-datepicker gives us a Date.
+    if (this.filterDateFrom) filters.date_from = this._toIsoDate(this.filterDateFrom);
+    if (this.filterDateTo) filters.date_to = this._toIsoDate(this.filterDateTo);
 
     this.api.getSignals(filters).subscribe({
       next: (data) => {
@@ -333,8 +346,8 @@ export class SignalLogComponent implements OnInit, OnDestroy {
     this.filterAmountMin = '';
     this.filterAmountMax = '';
     this.filterLocation = '';
-    this.filterDateFrom = '';
-    this.filterDateTo = '';
+    this.filterDateFrom = null;
+    this.filterDateTo = null;
     this.filterQuery = '';
     this.filterCountry = '';
     this.loadSignals();
