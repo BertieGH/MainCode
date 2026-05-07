@@ -800,6 +800,43 @@ async def classify_jobs(raw_jobs: list[dict]) -> list[dict]:
 # -------------------------------------------------------------------------
 
 
+async def crawl_prospect_jobs_with_timeout(
+    db: AsyncSession, prospect: Prospect, force: bool = False, max_seconds: int | None = None
+) -> int:
+    """Wraps `crawl_prospect_jobs` with a hard wall-clock budget.
+
+    On timeout: marks the prospect `failed` with a 'timeout' error message
+    and returns 0 so the caller (worker loop) keeps moving. Without this,
+    a single stuck prospect (captcha, infinite redirect, JS hang on the
+    careers page) blocks the entire batch.
+
+    `max_seconds` defaults to `settings.job_crawl_max_seconds_per_prospect`.
+    """
+    import asyncio
+    from app.config import settings as _s
+
+    budget = max_seconds or _s.job_crawl_max_seconds_per_prospect
+    try:
+        return await asyncio.wait_for(
+            crawl_prospect_jobs(db, prospect, force=force),
+            timeout=budget,
+        )
+    except asyncio.TimeoutError:
+        # Surface the timeout in the same place per-prospect errors live so
+        # the UI's failed-row tooltip is informative.
+        prospect.job_crawl_status = "failed"
+        prospect.job_crawl_error = (
+            f"Crawl exceeded {budget}s wall-clock budget — likely a slow site, "
+            f"captcha wall, infinite redirect, or JS hang. Try Force re-crawl "
+            f"or skip this prospect."
+        )
+        try:
+            await db.commit()
+        except Exception:
+            pass
+        return 0
+
+
 async def crawl_prospect_jobs(db: AsyncSession, prospect: Prospect, force: bool = False) -> int:
     """Full job crawl pipeline for a single prospect.
 

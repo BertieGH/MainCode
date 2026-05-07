@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     job_max_listing_pages: int = 4
     # Per hub-page cap on sub-category links we follow when expanding.
     job_max_subcategory_pages: int = 6
+    # Hard wall-clock budget for a single prospect's job crawl. Inner httpx
+    # (15s) + Playwright (20s) caps exist but stack across multiple
+    # candidate URLs and strategies — without an outer limit a single slow
+    # site (captcha, infinite redirect, JS hang) blocks the worker for the
+    # entire batch. On timeout the prospect is marked `failed` with a clear
+    # error and the worker moves on to the next.
+    job_crawl_max_seconds_per_prospect: int = 240  # 4 minutes
     # Editable LLM prompts for the three job-crawl LLM call sites.
     # Empty string → falls back to DEFAULT_JOB_*_PROMPT in services/job_scraper.py.
     job_extract_prompt: str = ""

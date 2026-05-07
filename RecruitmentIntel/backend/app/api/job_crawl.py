@@ -11,7 +11,7 @@ from app.database import async_session, get_db
 from app.deps import get_arq_pool
 from app.models.prospect import Prospect
 from app.models.prospect_list import ProspectList
-from app.services.job_scraper import crawl_prospect_jobs
+from app.services.job_scraper import crawl_prospect_jobs, crawl_prospect_jobs_with_timeout
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -43,7 +43,8 @@ async def _run_crawl_list_inproc(
                 query = query.where(Prospect.job_crawl_status.in_(["pending", "not_started", "failed"]))
             res = await db.execute(query)
             for p in res.scalars().all():
-                await crawl_prospect_jobs(db, p, force=force)
+                # Timeout wrapper so a stuck prospect doesn't block the batch.
+                await crawl_prospect_jobs_with_timeout(db, p, force=force)
         except Exception as e:
             logger.error(f"In-process crawl_list failed for {list_id}: {e}")
 
@@ -108,7 +109,9 @@ async def crawl_jobs_for_prospect(
     if not prospect:
         raise HTTPException(status_code=404, detail="Prospect not found")
 
-    job_count = await crawl_prospect_jobs(db, prospect, force=force)
+    # Synchronous per-row endpoint also uses the timeout wrapper so the HTTP
+    # request can't hang the browser indefinitely on a slow careers page.
+    job_count = await crawl_prospect_jobs_with_timeout(db, prospect, force=force)
     return {
         "id": str(prospect.id),
         "company_name": prospect.company_name,

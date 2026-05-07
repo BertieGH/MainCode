@@ -15,7 +15,7 @@ from app.models.prospect import Prospect
 from app.models.prospect_list import ProspectList
 from app.services.rss_ingestion import ingest_all
 from app.services.enrichment import enrich_all_in_list, enrich_prospect
-from app.services.job_scraper import crawl_prospect_jobs
+from app.services.job_scraper import crawl_prospect_jobs, crawl_prospect_jobs_with_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,9 @@ async def task_crawl_jobs_for_list(
         prospects = result.scalars().all()
         totals = {"total": len(prospects), "done": 0, "empty": 0, "failed": 0, "total_jobs": 0}
         for p in prospects:
-            count = await crawl_prospect_jobs(db, p, force=force)
+            # Use the timeout wrapper so a single stuck prospect doesn't
+            # block the entire batch.
+            count = await crawl_prospect_jobs_with_timeout(db, p, force=force)
             if p.job_crawl_status == "done":
                 totals["done"] += 1
                 totals["total_jobs"] += count
@@ -117,7 +119,8 @@ async def task_crawl_jobs_for_prospect(ctx: dict, prospect_id: str) -> dict:
         prospect = result.scalar_one_or_none()
         if not prospect:
             return {"status": "error", "message": "prospect not found"}
-        count = await crawl_prospect_jobs(db, prospect)
+        # Single-prospect path also uses the timeout wrapper for parity.
+        count = await crawl_prospect_jobs_with_timeout(db, prospect)
         return {
             "id": str(prospect.id),
             "status": prospect.job_crawl_status,
