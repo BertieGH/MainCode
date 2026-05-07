@@ -128,14 +128,27 @@ export class OutreachComponent implements OnInit {
   }
 
   sortData(sort: Sort) {
-    const data = [...this.jobs];
     if (!sort.active || sort.direction === '') return;
+    const isAsc = sort.direction === 'asc';
+    const cmpStr = (a: string, b: string) => {
+      const sa = (a || '').toLowerCase();
+      const sb = (b || '').toLowerCase();
+      // Empty values sort last regardless of direction so blank rows
+      // don't push useful data off the visible page.
+      if (!sa && sb) return 1;
+      if (sa && !sb) return -1;
+      return sa < sb ? (isAsc ? -1 : 1) : sa > sb ? (isAsc ? 1 : -1) : 0;
+    };
+    const data = [...this.jobs];
     this.jobs = data.sort((a, b) => {
-      const isAsc = sort.direction === 'asc';
       switch (sort.active) {
-        case 'companyName': return (a.companyName < b.companyName ? -1 : 1) * (isAsc ? 1 : -1);
-        case 'title': return (a.title < b.title ? -1 : 1) * (isAsc ? 1 : -1);
-        case 'department': return (a.department < b.department ? -1 : 1) * (isAsc ? 1 : -1);
+        case 'companyName': return cmpStr(a.companyName, b.companyName);
+        case 'title':       return cmpStr(a.title, b.title);
+        case 'matchTarget': return cmpStr(a.matchTarget || '', b.matchTarget || '');
+        case 'department':  return cmpStr(a.department, b.department);
+        case 'seniority':   return cmpStr(a.seniority, b.seniority);
+        case 'jobType':     return cmpStr(a.jobType, b.jobType);
+        case 'location':    return cmpStr(a.location, b.location);
         default: return 0;
       }
     });

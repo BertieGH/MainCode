@@ -126,14 +126,14 @@
     </ng-container>
 
     <ng-container matColumnDef="seniority">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['seniority']"
           (resized)="onColumnResized('seniority', $event)">Seniority</th>
       <td mat-cell *matCellDef="let row">{{ row.seniority }}</td>
     </ng-container>
 
     <ng-container matColumnDef="jobType">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['jobType']"
           (resized)="onColumnResized('jobType', $event)">Type</th>
       <td mat-cell *matCellDef="let row">
@@ -142,7 +142,7 @@
     </ng-container>
 
     <ng-container matColumnDef="location">
-      <th mat-header-cell *matHeaderCellDef
+      <th mat-header-cell *matHeaderCellDef mat-sort-header
           resizableColumn [width]="columnWidths['location']"
           (resized)="onColumnResized('location', $event)">Location</th>
       <td mat-cell *matCellDef="let row">{{ row.location }}</td>
