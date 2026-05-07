@@ -437,13 +437,19 @@ async def enrich_prospect(db: AsyncSession, prospect: Prospect):
     await db.commit()
 
 
-async def enrich_all_in_list(db: AsyncSession, list_id, force: bool = False):
+async def enrich_all_in_list(db: AsyncSession, list_id, force: bool = False, only_ids=None):
     """Enrich prospects in a list. By default re-runs not_started/failed AND any
     `pending` rows (the route's eager UPDATE marks targets pending so the UI can
     poll; the worker must still pick them up). Pass force=True to re-run every
     prospect including those already 'done'.
+
+    `only_ids` (optional list[UUID]) restricts the run to a subset of prospects
+    in the list — used by the bulk-select UI on Prospect Detail. If empty/None,
+    runs across the full list as before.
     """
     query = select(Prospect).where(Prospect.list_id == list_id)
+    if only_ids:
+        query = query.where(Prospect.id.in_(only_ids))
     if not force:
         query = query.where(Prospect.enrichment_status.in_(["not_started", "failed", "pending"]))
     result = await db.execute(query)

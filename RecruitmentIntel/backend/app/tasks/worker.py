@@ -42,10 +42,18 @@ async def task_ingest_all(ctx: dict) -> dict:
     return result
 
 
-async def task_enrich_list(ctx: dict, list_id: str, force: bool = False) -> dict:
-    """On-demand: enrich all prospects in a list."""
+async def task_enrich_list(
+    ctx: dict,
+    list_id: str,
+    force: bool = False,
+    prospect_ids: list[str] | None = None,
+) -> dict:
+    """On-demand: enrich prospects in a list. `prospect_ids` (optional)
+    restricts the run to a subset; arq passes args by serialization so we
+    receive strings and convert."""
+    only_ids = [UUID(p) for p in prospect_ids] if prospect_ids else None
     async with async_session() as db:
-        return await enrich_all_in_list(db, UUID(list_id), force=force)
+        return await enrich_all_in_list(db, UUID(list_id), force=force, only_ids=only_ids)
 
 
 async def task_enrich_prospect(ctx: dict, prospect_id: str) -> dict:
@@ -64,8 +72,15 @@ async def task_enrich_prospect(ctx: dict, prospect_id: str) -> dict:
         }
 
 
-async def task_crawl_jobs_for_list(ctx: dict, list_id: str, force: bool = False) -> dict:
-    """On-demand: crawl jobs for every enriched prospect in a list."""
+async def task_crawl_jobs_for_list(
+    ctx: dict,
+    list_id: str,
+    force: bool = False,
+    prospect_ids: list[str] | None = None,
+) -> dict:
+    """On-demand: crawl jobs for enriched prospects in a list.
+    `prospect_ids` (optional) restricts to a subset of prospects."""
+    only_ids = [UUID(p) for p in prospect_ids] if prospect_ids else None
     async with async_session() as db:
         result = await db.execute(select(ProspectList).where(ProspectList.id == UUID(list_id)))
         if not result.scalar_one_or_none():
@@ -75,6 +90,8 @@ async def task_crawl_jobs_for_list(ctx: dict, list_id: str, force: bool = False)
             Prospect.list_id == UUID(list_id),
             Prospect.enrichment_status == "done",
         )
+        if only_ids:
+            query = query.where(Prospect.id.in_(only_ids))
         if not force:
             query = query.where(Prospect.job_crawl_status.in_(["not_started", "failed"]))
 

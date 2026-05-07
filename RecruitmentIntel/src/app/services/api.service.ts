@@ -196,9 +196,12 @@ export class ApiService {
   }
 
   // --- Enrichment ---
-  enrichList(listId: string, force = false): Observable<any> {
-    const params = force ? new HttpParams().set('force', 'true') : undefined;
-    return this.http.post<any>(`${BASE}/prospect-lists/${listId}/enrich`, {}, { params });
+  enrichList(listId: string, force = false, prospectIds?: string[]): Observable<any> {
+    // Endpoint now takes a JSON body { force, prospect_ids? }. Empty array
+    // omitted so the backend treats it as "whole list".
+    const body: any = { force };
+    if (prospectIds && prospectIds.length) body.prospect_ids = prospectIds;
+    return this.http.post<any>(`${BASE}/prospect-lists/${listId}/enrich`, body);
   }
 
   enrichProspect(prospectId: string): Observable<any> {
@@ -206,9 +209,10 @@ export class ApiService {
   }
 
   // --- Job Crawl ---
-  crawlJobsForList(listId: string, force = false): Observable<any> {
-    const params = force ? new HttpParams().set('force', 'true') : undefined;
-    return this.http.post<any>(`${BASE}/prospect-lists/${listId}/crawl-jobs`, {}, { params });
+  crawlJobsForList(listId: string, force = false, prospectIds?: string[]): Observable<any> {
+    const body: any = { force };
+    if (prospectIds && prospectIds.length) body.prospect_ids = prospectIds;
+    return this.http.post<any>(`${BASE}/prospect-lists/${listId}/crawl-jobs`, body);
   }
 
   crawlJobsForProspect(prospectId: string, force = false): Observable<any> {

@@ -1,16 +1,20 @@
 import { ChangeDetectorRef, Component, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatTable, MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { SelectionModel } from '@angular/cdk/collections';
 import { Prospect, ProspectList } from '../../models/interfaces';
 import { ApiService } from '../../services/api.service';
 import { downloadCsv } from '../../utils/csv-export';
@@ -21,9 +25,9 @@ import { ColumnWidthsService } from '../../services/column-widths.service';
   selector: 'app-prospect-detail',
   standalone: true,
   imports: [
-    CommonModule, RouterLink,
-    MatCardModule, MatTableModule, MatButtonModule, MatIconModule,
-    MatChipsModule, MatProgressBarModule, MatProgressSpinnerModule,
+    CommonModule, FormsModule, RouterLink,
+    MatCardModule, MatCheckboxModule, MatTableModule, MatButtonModule, MatIconModule,
+    MatChipsModule, MatPaginatorModule, MatProgressBarModule, MatProgressSpinnerModule,
     MatTooltipModule, MatMenuModule, MatSnackBarModule,
     ResizableColumnDirective
   ],
@@ -34,7 +38,47 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
   listId = '';
   list: ProspectList | undefined;
   prospects: Prospect[] = [];
-  displayedColumns = ['companyName', 'industry', 'fundingRound', 'amount', 'website', 'linkedin', 'jobCount', 'actions'];
+  displayedColumns = ['select', 'companyName', 'industry', 'fundingRound', 'amount', 'website', 'linkedin', 'jobCount', 'actions'];
+
+  /** Multi-select for bulk actions. Operates on the FULL filtered set, not just
+   * the visible page (so "Select all" via the master checkbox picks all 318
+   * even when only 25 are on screen). */
+  selection = new SelectionModel<Prospect>(true, []);
+
+  /** Client-side pagination state — same pattern as Signal Log. */
+  pageIndex = 0;
+  pageSize = 25;
+  pageSizeOptions = [10, 25, 50, 100, 200];
+
+  get displayProspects(): Prospect[] {
+    const start = this.pageIndex * this.pageSize;
+    return this.prospects.slice(start, start + this.pageSize);
+  }
+
+  onPage(e: PageEvent) {
+    this.pageIndex = e.pageIndex;
+    this.pageSize = e.pageSize;
+  }
+
+  /** True when every visible row on the current page is selected. */
+  isAllVisibleSelected(): boolean {
+    const visible = this.displayProspects;
+    return visible.length > 0 && visible.every(p => this.selection.isSelected(p));
+  }
+
+  /** Toggle the master "select all visible" checkbox. */
+  toggleAllVisible() {
+    const visible = this.displayProspects;
+    if (this.isAllVisibleSelected()) {
+      visible.forEach(p => this.selection.deselect(p));
+    } else {
+      visible.forEach(p => this.selection.select(p));
+    }
+  }
+
+  clearSelection() { this.selection.clear(); }
+
+  private _resetPage() { this.pageIndex = 0; }
 
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private pollStart = 0;
@@ -100,6 +144,17 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
     this.api.getProspects(this.listId).subscribe({
       next: (data) => {
         this._applyProspects(data);
+        // Drop selection entries for prospects no longer in the list (e.g.
+        // after a remove). Keep the rest so a partial reload doesn't clobber.
+        const present = new Set(data.map(p => p.id));
+        this.selection.selected
+          .filter(p => !present.has(p.id))
+          .forEach(p => this.selection.deselect(p));
+        // First load resets to page 1; subsequent polls keep the user where
+        // they were. Caller distinguishes via .anyPending() heuristic — when
+        // there's no pending work, this is most likely a user-initiated
+        // refresh so we reset; otherwise it's a poll mid-run.
+        if (!this.anyPending()) this._resetPage();
         if (this.anyPending()) this.startPolling();
         else this.stopPolling();
       },
@@ -230,6 +285,57 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
     });
   }
 
+  // ----- Bulk actions on selected prospects -----
+
+  enrichSelected(force = false) {
+    const ids = this.selection.selected.map(p => p.id);
+    if (!ids.length) return;
+    if (force && !confirm(`Re-enrich ${ids.length} selected prospect(s), including ones already 'done'?`)) return;
+    this.startPolling();
+    this.api.enrichList(this.listId, force, ids).subscribe({
+      next: (res: any) => {
+        this.snackBar.open(
+          `Enrich queued for ${ids.length} prospect${ids.length === 1 ? '' : 's'} (${res?.mode || 'inproc'}) — watch progress`,
+          'OK', { duration: 3500 }
+        );
+        this.loadProspects();
+      },
+      error: () => this.snackBar.open('Failed to queue enrichment', 'OK', { duration: 3000 })
+    });
+  }
+
+  crawlSelected(force = false) {
+    const ids = this.selection.selected.map(p => p.id);
+    if (!ids.length) return;
+    // Backend filters to enrichment_status=done; warn if user picked rows that won't be processed.
+    const eligible = this.selection.selected.filter(p => p.enrichmentStatus === 'done').length;
+    if (eligible === 0) {
+      this.snackBar.open('None of the selected prospects are enriched yet — enrich first.', 'OK', { duration: 4000 });
+      return;
+    }
+    if (eligible < ids.length) {
+      if (!confirm(`${ids.length - eligible} of ${ids.length} selected aren't enriched yet and will be skipped. Continue with the ${eligible} enriched?`)) return;
+    }
+    if (force && !confirm(`Re-crawl jobs for ${eligible} selected prospect(s)? Existing Job rows + cached careers URLs are wiped first.`)) return;
+    this.startPolling();
+    this.api.crawlJobsForList(this.listId, force, ids).subscribe({
+      next: (res: any) => {
+        this.snackBar.open(
+          `Job crawl queued for ${eligible} prospect${eligible === 1 ? '' : 's'} (${res?.mode || 'inproc'})`,
+          'OK', { duration: 3500 }
+        );
+        this.loadProspects();
+      },
+      error: () => this.snackBar.open('Failed to queue job crawl', 'OK', { duration: 3000 })
+    });
+  }
+
+  /** True when at least one selected row is `enrichment_status=done` (i.e.
+   * crawlable). Drives the [disabled] state of "Crawl Selected". */
+  hasEnrichedSelected(): boolean {
+    return this.selection.selected.some(p => p.enrichmentStatus === 'done');
+  }
+
   enrichOne(prospect: Prospect) {
     this.snackBar.open(`Enriching ${prospect.companyName}…`, '', { duration: 1500 });
     // Optimistic: mark row pending so spinner shows immediately
@@ -321,6 +427,9 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
 
   exportCsv() {
     const slug = (this.list?.name || 'prospects').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    // When the user has rows selected, export ONLY those — otherwise export
+    // the whole list (prior behavior).
+    const rows = this.selection.selected.length > 0 ? this.selection.selected : this.prospects;
     downloadCsv(`prospects-${slug}`, [
       { header: 'Company', value: p => p.companyName },
       { header: 'Industry', value: p => p.industry },
@@ -335,7 +444,7 @@ export class ProspectDetailComponent implements OnInit, OnDestroy {
       { header: 'Careers URL', value: p => p.careersUrl },
       { header: 'Jobs Found', value: p => p.jobCount },
       { header: 'Raw Listings', value: p => p.jobCrawlRawCount },
-    ], this.prospects);
+    ], rows);
   }
 
   removeProspect(prospect: Prospect) {
