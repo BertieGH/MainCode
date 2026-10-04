@@ -1,0 +1,516 @@
+<title>How Prospect Engine Works</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --bg:#eef1f2; --surface:#fff; --surface-2:#f5f7f7;
+    --text:#171b21; --muted:#5c6672; --faint:#8b949c;
+    --border:#d7dcdc; --border-strong:#c3caca;
+    --accent:#1f6f64; --accent-soft:#e3efec; --accent-ink:#fff;
+    --gate:#a86a1e; --gate-soft:#f7ecd9;
+    --good:#2f7a54; --good-soft:#e5f1e9;
+    --critical:#b34a3f; --critical-soft:#f8e8e6;
+    --mono-bg:#e7ebea;
+    --shadow:0 1px 2px rgba(23,27,33,.06),0 6px 20px rgba(23,27,33,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#12151a; --surface:#1a1f25; --surface-2:#20262d;
+      --text:#eef1f0; --muted:#9aa5a8; --faint:#6b7680;
+      --border:#2b3238; --border-strong:#3a434a;
+      --accent:#5fc0af; --accent-soft:#193028; --accent-ink:#0b1613;
+      --gate:#e0a862; --gate-soft:#2e2416;
+      --good:#5cae83; --good-soft:#1c2c22;
+      --critical:#e0897c; --critical-soft:#2f1e1c;
+      --mono-bg:#242b31;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12151a; --surface:#1a1f25; --surface-2:#20262d;
+    --text:#eef1f0; --muted:#9aa5a8; --faint:#6b7680;
+    --border:#2b3238; --border-strong:#3a434a;
+    --accent:#5fc0af; --accent-soft:#193028; --accent-ink:#0b1613;
+    --gate:#e0a862; --gate-soft:#2e2416;
+    --good:#5cae83; --good-soft:#1c2c22;
+    --critical:#e0897c; --critical-soft:#2f1e1c;
+    --mono-bg:#242b31;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.3);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:'Fraunces',Georgia,serif;font-weight:600;margin:0;letter-spacing:-.01em;text-wrap:balance;}
+  .wrap{max-width:1220px;margin:0 auto;padding:44px 24px 90px;}
+  .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:10px;}
+  .lede{color:var(--muted);max-width:70ch;margin-top:10px;line-height:1.6;}
+  header{border-bottom:1px solid var(--border);padding-bottom:26px;margin-bottom:30px;}
+  .hint{display:inline-flex;align-items:center;gap:7px;margin-top:16px;font-size:.8rem;color:var(--muted);
+    background:var(--accent-soft);border-radius:99px;padding:6px 14px;}
+  .hint b{color:var(--accent);}
+
+  section{margin:48px 0;}
+  .sec-head{margin-bottom:16px;}
+  .sec-head h2{font-size:1.3rem;}
+  .sec-head p{color:var(--muted);max-width:72ch;margin:6px 0 0;line-height:1.6;}
+
+  .stage{display:grid;grid-template-columns:1fr 306px;gap:20px;align-items:start;}
+  @media (max-width:940px){ .stage{grid-template-columns:1fr;} }
+
+  figure{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:var(--shadow);padding:18px 18px 10px;overflow-x:auto;}
+  figure svg{width:100%;height:auto;display:block;min-width:640px;}
+  figcaption{font-size:.83rem;color:var(--muted);padding:13px 4px 6px;border-top:1px solid var(--border);margin-top:14px;line-height:1.55;}
+
+  /* hover target styling */
+  .node{cursor:pointer;}
+  .node rect,.node circle{transition:filter .12s ease;}
+  .node:hover rect,.node:focus rect{filter:brightness(1.04);}
+  .node:hover .nb,.node:focus .nb{stroke-width:2.4;}
+  .node.on .nb{stroke-width:2.6;}
+
+  /* detail panel */
+  .panel{position:sticky;top:20px;background:var(--surface);border:1px solid var(--border);
+    border-radius:14px;box-shadow:var(--shadow);padding:20px 22px;min-height:230px;}
+  .panel .ph{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--faint);}
+  .panel h3{font-size:1.05rem;margin:6px 0 10px;}
+  .panel p{font-size:.87rem;line-height:1.62;color:var(--muted);margin:0 0 11px;}
+  .panel p b{color:var(--text);font-weight:500;}
+  .panel .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;}
+  .tag{font-family:'IBM Plex Mono',monospace;font-size:.67rem;padding:3px 9px;border-radius:5px;
+    background:var(--mono-bg);color:var(--muted);}
+  .tag.a{background:var(--accent-soft);color:var(--accent);}
+  .tag.g{background:var(--gate-soft);color:var(--gate);}
+  .tag.c{background:var(--critical-soft);color:var(--critical);}
+  .panel .idle{color:var(--faint);font-style:italic;}
+
+  .keyrow{display:flex;flex-wrap:wrap;gap:18px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+  .keyitem{display:flex;align-items:center;gap:7px;font-size:.76rem;color:var(--muted);}
+  .sw{width:22px;height:11px;border-radius:3px;border:1.5px solid currentColor;}
+  .sw.gen{color:var(--accent);background:var(--accent-soft);}
+  .sw.gate{color:var(--gate);background:var(--gate-soft);}
+  .sw.lgm{color:var(--critical);background:var(--critical-soft);}
+
+  .note{background:var(--gate-soft);border-left:3px solid var(--gate);border-radius:0 10px 10px 0;
+    padding:15px 18px;font-size:.88rem;line-height:1.6;margin-top:20px;}
+  .note b{color:var(--gate);}
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--border);font-size:.8rem;color:var(--muted);}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Sales Demand Gen360 · Prospect Engine</span>
+    <h1 style="font-size:2rem;">How the system works</h1>
+    <p class="lede">Three diagrams: the end-to-end flow, the interface between Gen360 and La Growth Machine,
+      and what can still change once a campaign is running. The single most consequential fact in the
+      architecture is where the <strong>freeze boundary</strong> falls.</p>
+    <span class="hint"><b>Hover</b> any box for what it does and why it is shaped that way</span>
+  </header>
+
+  <!-- ============ DIAGRAM 1 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">01 — End to end</span>
+      <h2>From an imported list to a sent message</h2>
+      <p>Everything above the freeze line is ours and can be changed. Everything below it belongs to
+        La Growth Machine and cannot. The line is not a policy — it is where content stops being editable,
+        because LGM reads copy from the lead record rather than from us at send time.</p>
+    </div>
+
+    <div class="stage">
+      <figure>
+        <svg viewBox="0 0 960 900" role="img" aria-label="End-to-end flow: account lists are copied into a campaign queue, promoted into a campaign; per account the system pulls CRM, researches, extracts signals, builds context, qualifies, forms strategy, drafts the whole arc, evaluates and takes human approval; then content is written to the La Growth Machine lead and frozen, LGM sends the sequence, and engagement flows back into outcomes and learning.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+            <marker id="arc2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--critical)"/>
+            </marker>
+          </defs>
+
+          <!-- ---------- band label: selection ---------- -->
+          <text x="20" y="26" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1" fill="currentColor" opacity=".5">SELECTION — HUMAN CHOOSES</text>
+
+          <g class="node" tabindex="0" data-t="Account List" data-k="Gen360"
+             data-d="An import set — a labelled bag of accounts. Static: it only grows by CSV import or manual add. Research runs against it. |Lists never shrink on their own and never sync outward. What happens next is a deliberate copy."
+             data-tags="static|CSV or manual|M1">
+            <rect class="nb" x="20" y="44" width="230" height="66" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.6"/>
+            <text x="135" y="72" text-anchor="middle" font-family="IBM Plex Sans" font-size="13.5" font-weight="600" fill="var(--accent)">Account Lists</text>
+            <text x="135" y="92" text-anchor="middle" font-family="IBM Plex Sans" font-size="10.5" fill="var(--accent)" opacity=".85">import sets, labelled</text>
+          </g>
+
+          <line x1="250" y1="77" x2="352" y2="77" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+          <text x="301" y="68" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".65">copies</text>
+
+          <g class="node" tabindex="0" data-t="Campaign Queue" data-k="Gen360"
+             data-d="Accounts copied out of one or more lists — a whole list, a handful, or one account from each. Editable while it is a draft. |The copy is one-way. New imports into the source list never appear here, and status changes there do not flow through. Promoting locks the queue permanently; to reuse it, clone it."
+             data-tags="copied, not linked|draft → locked|M3">
+            <rect class="nb" x="354" y="44" width="230" height="66" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.6"/>
+            <text x="469" y="72" text-anchor="middle" font-family="IBM Plex Sans" font-size="13.5" font-weight="600" fill="var(--accent)">Campaign Queue</text>
+            <text x="469" y="92" text-anchor="middle" font-family="IBM Plex Sans" font-size="10.5" fill="var(--accent)" opacity=".85">editable while draft</text>
+          </g>
+
+          <line x1="584" y1="77" x2="686" y2="77" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+          <text x="635" y="68" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".65">promotes</text>
+
+          <g class="node" tabindex="0" data-t="Outreach Campaign" data-k="Gen360"
+             data-d="Composed from one or more queues, and it selects one registered LGM cadence — it does not author one. |Pre-flight blocks creation when a contact already holds a live sequence elsewhere, because LGM stores copy on the lead and a second enrolment would overwrite it."
+             data-tags="selects an LGM cadence|contact lock|M4">
+            <rect class="nb" x="688" y="44" width="252" height="66" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.6"/>
+            <text x="814" y="72" text-anchor="middle" font-family="IBM Plex Sans" font-size="13.5" font-weight="600" fill="var(--accent)">Outreach Campaign</text>
+            <text x="814" y="92" text-anchor="middle" font-family="IBM Plex Sans" font-size="10.5" fill="var(--accent)" opacity=".85">picks an LGM cadence</text>
+          </g>
+
+          <path d="M 814,110 L 814,138 L 100,138 L 100,166" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+          <text x="450" y="132" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".65">for every account in the campaign</text>
+
+          <!-- ---------- band: intelligence ---------- -->
+          <text x="20" y="188" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1" fill="currentColor" opacity=".5">INTELLIGENCE — EVIDENCE FIRST</text>
+
+          <g class="node" tabindex="0" data-t="CRM pull" data-k="Gen360"
+             data-d="The first research step, deliberately. An existing customer or a recently lost deal should stop a cold campaign before it costs a single token or enrichment credit. |Read-only inbound. CRM notes are treated as evidence, never as instructions — the same rule applied to any scraped page."
+             data-tags="runs first|read-only|custom CRM adapter">
+            <rect class="nb" x="20" y="204" width="168" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="104" y="230" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">CRM pull</text>
+            <text x="104" y="249" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">relationship first</text>
+          </g>
+          <line x1="188" y1="235" x2="212" y2="235" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Research" data-k="Gen360"
+             data-d="Seven query families run in parallel — funding, hiring, tech stack, news, leadership, reviews, plus CRM. Enrichment resolves the buying committee through Apollo and ContactOut. |A family that returns nothing is reported as a coverage gap, not silently treated as a pass. Enrichment is separate from research because it costs provider credits per lookup: research everything, enrich only what qualifies."
+             data-tags="7 families|parallel|coverage gaps surfaced">
+            <rect class="nb" x="214" y="204" width="168" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="298" y="230" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Research</text>
+            <text x="298" y="249" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">web + enrichment</text>
+          </g>
+          <line x1="382" y1="235" x2="406" y2="235" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Evidence" data-k="Gen360"
+             data-d="Source, date, excerpt — stored immutably and never interpreted at this stage. Every downstream claim in the system traces back to a row here. |A rep's own knowledge enters here too, as manual evidence attributed to them. It is not a side channel: a conversation is evidence with a person as its source."
+             data-tags="immutable|source + date|manual entries welcome">
+            <rect class="nb" x="408" y="204" width="168" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="492" y="230" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Evidence</text>
+            <text x="492" y="249" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">stored, not judged</text>
+          </g>
+          <line x1="576" y1="235" x2="600" y2="235" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Signals" data-k="Gen360"
+             data-d="Typed, dated, strength- and confidence-scored, each linked to the evidence it came from. Signals age through active → stale → expired on a per-type TTL. |The schema enforces at least one evidence id, and the service layer drops any signal citing an id that does not resolve — logged as an evaluation failure. A hallucinated citation is the one failure mode that would destroy rep trust, so it fails closed."
+             data-tags="evidence_ids min 1|TTL per type|fails closed">
+            <rect class="nb" x="602" y="204" width="168" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="686" y="230" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Signals</text>
+            <text x="686" y="249" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">typed + scored</text>
+          </g>
+          <line x1="770" y1="235" x2="794" y2="235" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Account Context" data-k="Gen360"
+             data-d="A versioned, compressed assembly of what is known — not the raw research corpus handed to a prompt. |Versioning matters because a qualification or strategy built last month was built against a different picture, and the audit trail has to be able to say which."
+             data-tags="versioned|compressed">
+            <rect class="nb" x="796" y="204" width="144" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="868" y="230" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Context</text>
+            <text x="868" y="249" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">versioned</text>
+          </g>
+
+          <path d="M 868,266 L 868,290 L 104,290 L 104,318" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <!-- ---------- band: decision ---------- -->
+          <text x="20" y="340" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1" fill="currentColor" opacity=".5">DECISION &amp; CONTENT</text>
+
+          <g class="node" tabindex="0" data-t="Qualification" data-k="Gen360"
+             data-d="Six dimensions — Fit, Opportunity, Buyer, Commercial, Intent, Engagement — combining into an Opportunity Priority. |The model assesses each dimension with cited evidence; the roll-up arithmetic is deterministic Python from a versioned scoring config. That split means re-scoring the entire book after a weight change is free and needs no LLM call."
+             data-tags="LLM assesses|Python computes|re-score is free">
+            <rect class="nb" x="20" y="356" width="212" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="126" y="382" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Qualification</text>
+            <text x="126" y="401" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">6 dimensions → priority</text>
+          </g>
+          <line x1="232" y1="387" x2="256" y2="387" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Strategy" data-k="Gen360"
+             data-d="Answers a different question from qualification: not is this worth pursuing, but how. Every mapped persona is weighted against every catalogue service, and each activated persona becomes its own thread with its own problem hypothesis and angle. |Two people at one account get genuinely different arguments, not the same message twice. A cap of two concurrent threads per account stops it feeling like a swarm."
+             data-tags="persona × service|thread cap 2|own hypothesis each">
+            <rect class="nb" x="258" y="356" width="212" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="364" y="382" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Strategy</text>
+            <text x="364" y="401" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">one thread per persona</text>
+          </g>
+          <line x1="470" y1="387" x2="494" y2="387" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Draft the whole arc" data-k="Gen360"
+             data-d="Every touch of the sequence written in one pass, sharing one cached context. |This is not an efficiency choice — LGM cannot fetch content at send time, so all of it must exist before enrolment. It also means one approval per thread rather than six: at 24 threads that is the difference between 24 review actions and 144, and 144 is where a rep abandons the system. |Late touches are schema-forced to use durable framing, because touch 6 is written on day 0 and sends on day 15."
+             data-tags="one pass|signal_dependence enforced|prompt-cached">
+            <rect class="nb" x="496" y="356" width="212" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="602" y="382" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Draft the whole arc</text>
+            <text x="602" y="401" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">all touches, one pass</text>
+          </g>
+          <line x1="708" y1="387" x2="732" y2="387" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Evaluation" data-k="Gate"
+             data-d="Deterministic rules plus LLM semantic checks, run before a human sees anything. Catches unsupported claims, unapproved proof points, compliance breaches, and late touches that lean on a dated signal. |It cannot override business rules — it flags, and the human decides."
+             data-tags="rules + LLM|runs before the human">
+            <rect class="nb" x="734" y="356" width="206" height="62" rx="9" fill="var(--gate-soft)" stroke="var(--gate)" stroke-width="1.6"/>
+            <text x="837" y="382" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="var(--gate)">Evaluation</text>
+            <text x="837" y="401" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="var(--gate)" opacity=".85">automated check</text>
+          </g>
+
+          <path d="M 837,418 L 837,442 L 480,442 L 480,466" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Human approval" data-k="Gate"
+             data-d="Threads split into two strata. Anything flagged — an evaluation warning, low confidence, an unverified contact — is always read individually. The clean remainder is accepted on a random sample the app draws and the rep cannot hand-pick. |One rejection in the sample doubles it; two send the whole batch to individual review. Every decision records whether it was read individually, sampled, or inherited, so the Learning layer can later prove whether sampling was safe."
+             data-tags="stratified|sample is random|review_depth recorded">
+            <rect class="nb" x="240" y="466" width="480" height="60" rx="10" fill="var(--gate-soft)" stroke="var(--gate)" stroke-width="2" stroke-dasharray="6 3"/>
+            <text x="480" y="492" text-anchor="middle" font-family="IBM Plex Sans" font-size="13.5" font-weight="600" fill="var(--gate)">Human approval — stratified sample</text>
+            <text x="480" y="511" text-anchor="middle" font-family="IBM Plex Sans" font-size="10.5" fill="var(--gate)" opacity=".85">flagged always read · clean sampled · nothing sends without this</text>
+          </g>
+
+          <!-- ---------- FREEZE LINE ---------- -->
+          <line x1="20" y1="560" x2="940" y2="560" stroke="var(--critical)" stroke-width="2.4" stroke-dasharray="9 5"/>
+          <rect x="316" y="546" width="328" height="28" rx="14" fill="var(--critical-soft)" stroke="var(--critical)" stroke-width="1.4"/>
+          <text x="480" y="565" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing=".8" fill="var(--critical)">FROZEN BELOW THIS LINE</text>
+          <line x1="480" y1="526" x2="480" y2="546" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="480" y1="574" x2="480" y2="600" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <!-- ---------- band: LGM ---------- -->
+          <text x="20" y="622" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1" fill="var(--critical)" opacity=".8">LA GROWTH MACHINE — WE NO LONGER CONTROL THE WORDS</text>
+
+          <g class="node" tabindex="0" data-t="Write attributes" data-k="Interface"
+             data-d="The whole arc is written into the LGM lead's custom attributes in one batch, before the campaign starts. This is the entire interface between the two systems. |Ten attributes per lead is a hard cap, and they belong to the lead rather than the campaign — which is exactly why one contact can only be in one campaign at a time."
+             data-tags="one batch|10 per lead|before enrolment">
+            <rect class="nb" x="20" y="638" width="272" height="64" rx="9" fill="var(--critical-soft)" stroke="var(--critical)" stroke-width="1.5"/>
+            <text x="156" y="664" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="var(--critical)">Write custom attributes</text>
+            <text x="156" y="683" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="var(--critical)" opacity=".85">6 of 10, one batch</text>
+          </g>
+          <line x1="292" y1="670" x2="322" y2="670" stroke="var(--critical)" stroke-width="1.3" marker-end="url(#arc2)"/>
+
+          <g class="node" tabindex="0" data-t="LGM lead" data-k="LGM"
+             data-d="One lead holds one set of custom attributes, shared across the whole account — confirmed by LGM. |Enrolling the same person in a second campaign overwrites the copy the first is still sending. Nothing errors; the only person who finds out is the recipient. A partial unique index in our database makes that state impossible to reach."
+             data-tags="attributes are global|one campaign per contact">
+            <rect class="nb" x="324" y="638" width="252" height="64" rx="9" fill="var(--critical-soft)" stroke="var(--critical)" stroke-width="1.5"/>
+            <text x="450" y="664" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="var(--critical)">LGM lead record</text>
+            <text x="450" y="683" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="var(--critical)" opacity=".85">attributes live here</text>
+          </g>
+          <line x1="576" y1="670" x2="606" y2="670" stroke="var(--critical)" stroke-width="1.3" marker-end="url(#arc2)"/>
+
+          <g class="node" tabindex="0" data-t="LGM sends the sequence" data-k="LGM"
+             data-d="LGM owns the steps, the timing, the daily send caps, and any runtime branching. Each step inserts its variable and sends. |We cannot see when a step will fire, and cannot know whether it reads its attribute at step start or at send. That pair of unknowns is why nothing is rewritten mid-flight — the only reliable control left is to stop the lead."
+             data-tags="LGM owns timing|stop is the only lever">
+            <rect class="nb" x="608" y="638" width="332" height="64" rx="9" fill="var(--critical-soft)" stroke="var(--critical)" stroke-width="1.5"/>
+            <text x="774" y="664" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="var(--critical)">LGM sends the sequence</text>
+            <text x="774" y="683" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="var(--critical)" opacity=".85">steps, timing, rate limits</text>
+          </g>
+
+          <path d="M 774,702 L 774,726 L 156,726 L 156,752" fill="none" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <!-- ---------- band: feedback ---------- -->
+          <g class="node" tabindex="0" data-t="Engagement webhooks" data-k="Gen360"
+             data-d="Sent, opened, clicked, connection accepted, replied, bounced. A reply pauses every other thread on that account until a human acknowledges it. |Bounce rate is the quietly valuable one: it is the only honest read on whether a provider's verified emails were actually verified."
+             data-tags="reply pauses siblings|bounce = quality signal">
+            <rect class="nb" x="20" y="752" width="272" height="60" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="156" y="777" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Engagement webhooks</text>
+            <text x="156" y="796" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">opens, replies, bounces</text>
+          </g>
+          <line x1="292" y1="782" x2="322" y2="782" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Outcomes" data-k="Gen360"
+             data-d="Replies, meetings, opportunities, wins and losses, plus the rep's own feedback and rejection reasons. |Written additively to the CRM — created and appended, never overwriting a rep's manual notes."
+             data-tags="additive CRM sync|rejection reasons kept">
+            <rect class="nb" x="324" y="752" width="252" height="60" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="450" y="777" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Outcomes</text>
+            <text x="450" y="796" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">meetings, wins, feedback</text>
+          </g>
+          <line x1="576" y1="782" x2="606" y2="782" stroke="currentColor" stroke-width="1.3" marker-end="url(#ar)"/>
+
+          <g class="node" tabindex="0" data-t="Learning" data-k="Gen360"
+             data-d="Cross-account patterns — which signals precede meetings, which personas answer, which angles convert. |A pattern is a conclusion, so it carries evidence like any other: every candidate shows its supporting cases and its counter-examples, and cannot be promoted without opening them. Promotion writes a new scoring config version rather than editing the live one."
+             data-tags="counter-examples shown|promotion is versioned|M6">
+            <rect class="nb" x="608" y="752" width="332" height="60" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <text x="774" y="777" text-anchor="middle" font-family="IBM Plex Sans" font-size="12.5" font-weight="600" fill="currentColor">Learning</text>
+            <text x="774" y="796" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" fill="currentColor" opacity=".6">patterns, human-promoted</text>
+          </g>
+
+          <path d="M 940,782 L 954,782 L 954,387 L 946,387" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" opacity=".55"/>
+          <path d="M 954,387 L 954,340 L 126,340 L 126,356" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" opacity=".55" marker-end="url(#ar)"/>
+          <text x="600" y="334" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".55">promoted patterns re-weight future scoring — never past decisions</text>
+        </svg>
+        <figcaption>The freeze line is the architectural fact everything else bends around: content must exist
+          on the LGM lead before the campaign starts, because LGM cannot fetch it at send time.</figcaption>
+      </figure>
+
+      <aside class="panel" id="panel">
+        <div class="ph" id="pk">Detail</div>
+        <h3 id="pt">Hover a box</h3>
+        <p class="idle" id="pd">Every stage carries a note on what it does and, more usefully, why it is
+          shaped the way it is — the constraint or failure mode that forced the design.</p>
+        <div class="tags" id="pg"></div>
+        <div class="keyrow">
+          <span class="keyitem"><span class="sw gen"></span>Gen360 owns</span>
+          <span class="keyitem"><span class="sw gate"></span>Governance gate</span>
+          <span class="keyitem"><span class="sw lgm"></span>LGM owns</span>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ DIAGRAM 2 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">02 — The interface</span>
+      <h2>Where the two systems actually meet</h2>
+      <p>One narrow join: we write numbered variables onto a lead, and LGM's steps read them. Everything
+        about the division of labour follows from this being the only channel.</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 960 300" role="img" aria-label="Gen360 writes six drafts into six numbered custom attributes on the La Growth Machine lead; each step of the LGM sequence reads one attribute when it fires. Ten attributes exist per lead and they are shared across the account.">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <text x="20" y="24" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1" fill="var(--accent)">GEN360 — WRITES</text>
+        <text x="620" y="24" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1" fill="var(--critical)">LGM — READS AND SENDS</text>
+
+        <rect x="20" y="38" width="230" height="228" rx="11" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+        <text x="135" y="62" text-anchor="middle" font-family="IBM Plex Sans" font-size="12" font-weight="600" fill="var(--accent)">Approved arc</text>
+        <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--accent)">
+          <text x="40" y="88">draft 1 — LinkedIn note</text>
+          <text x="40" y="118">draft 2 — email body</text>
+          <text x="40" y="148">draft 3 — engage comment</text>
+          <text x="40" y="178">draft 4 — proof point</text>
+          <text x="40" y="208">draft 5 — direct ask</text>
+          <text x="40" y="238">draft 6 — breakup</text>
+        </g>
+
+        <g stroke="currentColor" stroke-width="1.2" marker-end="url(#ar2)">
+          <line x1="250" y1="84" x2="352" y2="84"/><line x1="250" y1="114" x2="352" y2="114"/>
+          <line x1="250" y1="144" x2="352" y2="144"/><line x1="250" y1="174" x2="352" y2="174"/>
+          <line x1="250" y1="204" x2="352" y2="204"/><line x1="250" y1="234" x2="352" y2="234"/>
+        </g>
+        <text x="301" y="72" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="currentColor" opacity=".6">one batch, before start</text>
+
+        <rect x="354" y="38" width="246" height="228" rx="11" fill="var(--critical-soft)" stroke="var(--critical)" stroke-width="1.5"/>
+        <text x="477" y="62" text-anchor="middle" font-family="IBM Plex Sans" font-size="12" font-weight="600" fill="var(--critical)">Lead record — 10 slots</text>
+        <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--critical)">
+          <text x="374" y="88">custom_attribute_1</text><text x="374" y="118">custom_attribute_2</text>
+          <text x="374" y="148">custom_attribute_3</text><text x="374" y="178">custom_attribute_4</text>
+          <text x="374" y="208">custom_attribute_5</text><text x="374" y="238">custom_attribute_6</text>
+        </g>
+        <text x="477" y="258" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="var(--critical)" opacity=".75">7–10 free · shared across the account</text>
+
+        <g stroke="var(--critical)" stroke-width="1.2" marker-end="url(#ar2)" color="var(--critical)">
+          <line x1="600" y1="84" x2="700" y2="84"/><line x1="600" y1="114" x2="700" y2="114"/>
+          <line x1="600" y1="144" x2="700" y2="144"/><line x1="600" y1="174" x2="700" y2="174"/>
+          <line x1="600" y1="204" x2="700" y2="204"/><line x1="600" y1="234" x2="700" y2="234"/>
+        </g>
+        <text x="650" y="72" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" fill="var(--critical)" opacity=".8">read when the step fires</text>
+
+        <rect x="702" y="38" width="238" height="228" rx="11" fill="none" stroke="var(--critical)" stroke-width="1.5"/>
+        <text x="821" y="62" text-anchor="middle" font-family="IBM Plex Sans" font-size="12" font-weight="600" fill="var(--critical)">LGM sequence steps</text>
+        <g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="var(--critical)" opacity=".9">
+          <text x="722" y="88">D1  · LinkedIn connect</text><text x="722" y="118">D3  · Email</text>
+          <text x="722" y="148">D6  · LinkedIn engage</text><text x="722" y="178">D8  · Email</text>
+          <text x="722" y="208">D12 · InMail</text><text x="722" y="238">D15 · Email</text>
+        </g>
+      </svg>
+      <figcaption>Six drafts, six numbered slots, six steps. The slots belong to the <em>lead</em>, not the
+        campaign — which is the whole reason a contact can only be worked by one campaign at a time.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ DIAGRAM 3 ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">03 — Before and after</span>
+      <h2>What a new signal can still change</h2>
+      <p>The same event — a rep learns something material — has completely different reach depending on
+        which side of enrolment the account sits.</p>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 960 268" role="img" aria-label="Before enrolment a new signal can change qualification, strategy, cadence selection and every draft. After enrolment it can change qualification and strategy for future campaigns only; the running sequence can only be stopped.">
+        <defs>
+          <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <rect x="20" y="20" width="450" height="228" rx="12" fill="var(--good-soft)" stroke="var(--good)" stroke-width="1.5"/>
+        <text x="245" y="46" text-anchor="middle" font-family="IBM Plex Sans" font-size="13" font-weight="600" fill="var(--good)">Before enrolment — everything is reachable</text>
+        <g font-family="IBM Plex Sans" font-size="11.5" fill="var(--good)">
+          <text x="46" y="80">Qualification re-scores</text>
+          <text x="46" y="108">Strategy hypothesis can change</text>
+          <text x="46" y="136">A different LGM cadence can be selected</text>
+          <text x="46" y="164">Any draft can be edited or regenerated</text>
+          <text x="46" y="192">The thread can be dropped entirely</text>
+        </g>
+        <g stroke="var(--good)" stroke-width="1.4">
+          <path d="M32,75 l5,5 l9,-11" fill="none"/><path d="M32,103 l5,5 l9,-11" fill="none"/>
+          <path d="M32,131 l5,5 l9,-11" fill="none"/><path d="M32,159 l5,5 l9,-11" fill="none"/>
+          <path d="M32,187 l5,5 l9,-11" fill="none"/>
+        </g>
+        <text x="245" y="224" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--good)" opacity=".85">nothing has been written to LGM yet</text>
+
+        <line x1="480" y1="60" x2="480" y2="210" stroke="var(--critical)" stroke-width="2" stroke-dasharray="7 4"/>
+        <text x="480" y="46" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--critical)">ENROL</text>
+
+        <rect x="490" y="20" width="450" height="228" rx="12" fill="var(--critical-soft)" stroke="var(--critical)" stroke-width="1.5"/>
+        <text x="715" y="46" text-anchor="middle" font-family="IBM Plex Sans" font-size="13" font-weight="600" fill="var(--critical)">After enrolment — the words are fixed</text>
+        <g font-family="IBM Plex Sans" font-size="11.5" fill="var(--critical)">
+          <text x="516" y="80">Qualification re-scores — future use only</text>
+          <text x="516" y="108">Strategy updates — applies to the next campaign</text>
+          <text x="516" y="136">Cadence cannot change</text>
+          <text x="516" y="164">Drafts cannot be edited or regenerated</text>
+          <text x="516" y="192">The sequence can be stopped — that is all</text>
+        </g>
+        <g stroke="var(--critical)" stroke-width="1.4">
+          <path d="M502,75 l5,5 l9,-11" fill="none"/><path d="M502,103 l5,5 l9,-11" fill="none"/>
+          <path d="M503,127 l10,10 M513,127 l-10,10" fill="none"/>
+          <path d="M503,155 l10,10 M513,155 l-10,10" fill="none"/>
+          <path d="M503,183 l10,10 M513,183 l-10,10" fill="none" opacity=".45"/>
+        </g>
+        <text x="715" y="224" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--critical)" opacity=".85">to change the words: stop, then re-enrol from touch 1</text>
+      </svg>
+      <figcaption>The practical consequence: material new intelligence arriving mid-sequence is a reason to
+        stop, not a reason to edit.</figcaption>
+    </figure>
+
+    <div class="note">
+      <b>Why this is not a limitation to design around.</b> A cadence whose copy silently changes underneath
+      an approved sequence would be worse. Freezing at enrolment means the words a rep approved are exactly
+      the words that go out — which is the property the whole approval gate exists to guarantee.
+    </div>
+  </section>
+
+  <footer>
+    Sales Demand Gen360 · Prospect Engine — system flow, drafted for CGVAK outbound.
+    Reflects the LGM integration constraints confirmed September 2026.
+  </footer>
+</div>
+
+<script>
+  var panel = { k: document.getElementById('pk'), t: document.getElementById('pt'),
+                d: document.getElementById('pd'), g: document.getElementById('pg') };
+  var last = null;
+
+  function show(el){
+    if (last) last.classList.remove('on');
+    el.classList.add('on'); last = el;
+    panel.k.textContent = el.dataset.k || 'Detail';
+    panel.t.textContent = el.dataset.t || '';
+    panel.d.classList.remove('idle');
+    panel.d.innerHTML = (el.dataset.d || '').split('|')
+      .map(function(part){ return '<span>' + part.trim() + '</span>'; })
+      .join('</p><p>');
+    panel.g.innerHTML = (el.dataset.tags || '').split('|').filter(Boolean)
+      .map(function(t){
+        var cls = el.dataset.k === 'LGM' || el.dataset.k === 'Interface' ? 'c'
+                : el.dataset.k === 'Gate' ? 'g' : 'a';
+        return '<span class="tag ' + cls + '">' + t.trim() + '</span>';
+      }).join('');
+  }
+
+  document.querySelectorAll('.node').forEach(function(n){
+    n.addEventListener('mouseenter', function(){ show(n); });
+    n.addEventListener('focus', function(){ show(n); });
+    n.addEventListener('click', function(){ show(n); });
+  });
+</script>

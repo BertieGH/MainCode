@@ -1,0 +1,1102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospect Engine</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #eef1f2;
+    --bg-raised: #ffffff;
+    --text: #171b21;
+    --text-muted: #5c6672;
+    --border: #d7dcdc;
+    --accent: #1f6f64;
+    --accent-ink: #ffffff;
+    --accent-soft: #e3efec;
+    --gate: #a86a1e;
+    --gate-soft: #f7ecd9;
+    --good: #2f7a54;
+    --good-soft: #e5f1e9;
+    --warn: #b8801f;
+    --warn-soft: #f7ecd9;
+    --critical: #b34a3f;
+    --critical-soft: #f8e8e6;
+    --mono-bg: #e7ebea;
+    --shadow: 0 1px 2px rgba(23,27,33,0.06), 0 6px 20px rgba(23,27,33,0.05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14181d;
+      --bg-raised: #1b2027;
+      --text: #eef1f0;
+      --text-muted: #9aa5a8;
+      --border: #2c3339;
+      --accent: #59baa9;
+      --accent-ink: #0d1613;
+      --accent-soft: #1c2f2c;
+      --gate: #e0a862;
+      --gate-soft: #2e2416;
+      --good: #5cae83;
+      --good-soft: #1c2c22;
+      --warn: #e0a862;
+      --warn-soft: #2e2416;
+      --critical: #e0897c;
+      --critical-soft: #2f1e1c;
+      --mono-bg: #232a30;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181d;
+    --bg-raised: #1b2027;
+    --text: #eef1f0;
+    --text-muted: #9aa5a8;
+    --border: #2c3339;
+    --accent: #59baa9;
+    --accent-ink: #0d1613;
+    --accent-soft: #1c2f2c;
+    --gate: #e0a862;
+    --gate-soft: #2e2416;
+    --good: #5cae83;
+    --good-soft: #1c2c22;
+    --warn: #e0a862;
+    --warn-soft: #2e2416;
+    --critical: #e0897c;
+    --critical-soft: #2f1e1c;
+    --mono-bg: #232a30;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 6px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 28px 100px; }
+
+  h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; text-wrap: balance; letter-spacing: -0.01em; }
+  h1 { font-size: clamp(2rem, 4vw, 2.75rem); font-weight: 600; margin: 0 0 10px; }
+  h2 { font-size: 1.5rem; font-weight: 600; margin: 0 0 6px; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 0 0 4px; }
+  p { margin: 0 0 1em; }
+  .lede { font-size: 1.1rem; color: var(--text-muted); max-width: 660px; }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+    display: inline-block;
+    margin-bottom: 14px;
+  }
+
+  header.doc {
+    padding-bottom: 32px;
+    margin-bottom: 44px;
+    border-bottom: 1px solid var(--border);
+  }
+  .meta-row {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+  .meta-row span b { color: var(--text); font-weight: 500; }
+
+  section { margin: 64px 0; }
+  section > .eyebrow { margin-bottom: 8px; }
+  .section-head { margin-bottom: 22px; }
+  .section-head p { color: var(--text-muted); max-width: 640px; }
+
+  .note {
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 0.92rem;
+    color: var(--text);
+    margin: 0 0 40px;
+  }
+  .note b { color: var(--accent); }
+
+  /* diagram */
+  figure.diagram {
+    margin: 0;
+    padding: 20px 20px 8px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  figure.diagram svg { width: 100%; height: auto; display: block; }
+  figcaption {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 12px 4px 6px;
+    border-top: 1px solid var(--border);
+    margin-top: 14px;
+  }
+  figure.chain { margin: 0 0 8px; padding: 18px 20px 6px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+  figure.chain svg { width: 100%; height: auto; display: block; }
+
+  /* input spec */
+  .input-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+  }
+  .input-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .input-card .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .input-card p { margin: 0; font-size: 0.88rem; color: var(--text-muted); }
+  .input-card strong { color: var(--text); font-weight: 500; }
+
+  /* dashboard mock */
+  .dash {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .dash-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dash-head h3 { margin-bottom: 2px; }
+  .dash-head .sub { font-size: 0.85rem; color: var(--text-muted); }
+  .badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    padding: 5px 11px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge.good { background: var(--good-soft); color: var(--good); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+
+  .formula-strip {
+    padding: 12px 24px;
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.76rem;
+    color: var(--accent);
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+  .formula-strip b { color: var(--text); }
+
+  .dash-body {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 0;
+  }
+  .dash-col { padding: 22px 24px; }
+  .dash-col + .dash-col { border-left: 1px solid var(--border); }
+
+  .score-row { display: grid; grid-template-columns: 90px 1fr 40px; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .score-row:last-child { margin-bottom: 0; }
+  .score-label { font-size: 0.82rem; color: var(--text-muted); }
+  .score-track { height: 8px; border-radius: 999px; background: var(--mono-bg); overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+  .score-val { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .legacy-line { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border); font-size: 0.78rem; color: var(--text-muted); }
+  .legacy-line b { color: var(--text); font-weight: 500; }
+
+  .signal-list { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .signal-list li { font-size: 0.85rem; color: var(--text-muted); padding-left: 16px; position: relative; }
+  .signal-list li::before { content: "—"; position: absolute; left: 0; color: var(--accent); }
+
+  .rating-gauge { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 4px; }
+  .rating-gauge .num { font-family: 'Fraunces', serif; font-size: 2.1rem; font-weight: 600; color: var(--accent); }
+  .rating-gauge .of { font-size: 0.85rem; color: var(--text-muted); }
+  .play-box {
+    margin-top: 4px;
+    padding: 14px 16px;
+    background: var(--accent-soft);
+    border-radius: 10px;
+    font-size: 0.85rem;
+  }
+  .play-box b { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+  .ev-chip { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; background: var(--mono-bg); padding: 2px 8px; border-radius: 5px; margin: 8px 6px 0 0; color: var(--text-muted); }
+
+  /* cadence timeline */
+  .cadence {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+  }
+  .touch {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 12px;
+    position: relative;
+  }
+  .touch .day {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .touch .channel { font-weight: 600; font-size: 0.88rem; margin: 6px 0 4px; }
+  .touch .what { font-size: 0.78rem; color: var(--text-muted); }
+  .touch.li { border-top: 3px solid var(--accent); }
+  .touch.em { border-top: 3px solid var(--gate); }
+  .agent-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
+
+  /* pitch layer */
+  .pitch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 20px; }
+  .pitch-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+  .pitch-card h3 { margin-bottom: 10px; }
+  .pitch-card p, .pitch-card ol { font-size: 0.9rem; }
+  .pitch-card blockquote {
+    margin: 0;
+    padding-left: 14px;
+    border-left: 3px solid var(--accent);
+    font-style: italic;
+    color: var(--text);
+    font-size: 0.92rem;
+  }
+  .pitch-card ol, .pitch-card ul { padding-left: 20px; color: var(--text-muted); margin: 0; }
+  .pitch-card ol li, .pitch-card ul li { margin-bottom: 6px; }
+  .pitch-card ol li strong { color: var(--text); }
+
+  /* generic spec table */
+  table.spec { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  table.spec th, table.spec td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.spec th { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; }
+  table.spec tr:last-child td { border-bottom: none; }
+  table.spec td.risk { color: var(--critical); font-weight: 500; }
+  table.spec td.no { color: var(--critical); font-weight: 500; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); box-shadow: var(--shadow); }
+  .table-wrap table.spec { min-width: 640px; }
+  .table-wrap th:first-child, .table-wrap td:first-child { padding-left: 20px; }
+  .table-wrap code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    background: var(--mono-bg);
+    padding: 1px 7px;
+    border-radius: 5px;
+    color: var(--accent);
+  }
+
+  /* strategy / kv card */
+  .kv-card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .kv-row { display: grid; grid-template-columns: 170px 1fr; gap: 16px; padding: 13px 24px; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+  .kv-row:last-child { border-bottom: none; }
+  .kv-row .k { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); padding-top: 2px; }
+  .kv-row .v { color: var(--text); }
+  .kv-row .v.accent { color: var(--accent); font-weight: 600; }
+
+  .quiz-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }
+  .quiz-chip { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; font-size: 0.82rem; color: var(--text-muted); }
+  .quiz-chip b { color: var(--text); font-weight: 500; }
+
+  .strategy-threads { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+  /* human approval rep view */
+  .btn-row { display: flex; gap: 10px; padding: 18px 24px 0; flex-wrap: wrap; }
+  .fake-btn { font-family: 'IBM Plex Sans', sans-serif; font-size: 0.82rem; font-weight: 500; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-raised); color: var(--text); }
+  .fake-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .fake-btn.danger { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, var(--border)); }
+  .reject-wrap { padding: 14px 24px 22px; }
+  .reject-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 10px; }
+  .reject-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .reject-chip { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; padding: 4px 10px; border-radius: 999px; background: var(--critical-soft); color: var(--critical); }
+
+  /* phases */
+  .phases { display: flex; flex-direction: column; gap: 0; border-left: 2px solid var(--border); margin-left: 8px; }
+  .phase { position: relative; padding: 4px 0 32px 28px; }
+  .phase:last-child { padding-bottom: 4px; }
+  .phase::before {
+    content: attr(data-n);
+    position: absolute;
+    left: -21px;
+    top: 2px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--bg-raised);
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .phase h3 { margin-bottom: 4px; }
+  .phase .what { font-size: 0.9rem; color: var(--text-muted); max-width: 640px; }
+  .phase .gate { display: inline-block; margin-top: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: var(--gate); background: var(--gate-soft); padding: 3px 9px; border-radius: 6px; }
+
+  .avoid-wrap { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+  .avoid-head { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 12px; }
+  .avoid-chip { font-family: 'IBM Plex Sans', sans-serif; font-size: 0.8rem; padding: 7px 14px 7px 11px; border-radius: 999px; background: var(--critical-soft); color: var(--critical); border: 1px solid color-mix(in srgb, var(--critical) 25%, var(--border)); }
+  .avoid-chip::before { content: "\2715  "; font-weight: 600; }
+
+  /* tech map */
+  .stack-grid { display: grid; grid-template-columns: 1fr; gap: 0; }
+  .stack-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: baseline;
+  }
+  .stack-row:last-child { border-bottom: none; }
+  .stack-row .stage { font-weight: 600; font-size: 0.88rem; }
+  .stack-row .impl { font-size: 0.85rem; color: var(--text-muted); }
+  .stack-row .impl code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    background: var(--mono-bg);
+    padding: 1px 6px;
+    border-radius: 5px;
+    color: var(--text);
+  }
+
+  footer.doc {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 720px) {
+    .dash-body { grid-template-columns: 1fr; }
+    .dash-col + .dash-col { border-left: none; border-top: 1px solid var(--border); }
+    .cadence { grid-template-columns: repeat(2, 1fr); }
+    .pitch-grid { grid-template-columns: 1fr; }
+    .stack-row { grid-template-columns: 1fr; }
+    .quiz-grid { grid-template-columns: 1fr 1fr; }
+    .kv-row { grid-template-columns: 130px 1fr; }
+    .strategy-threads { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="doc">
+    <span class="eyebrow">Architecture &amp; Approach · V2 · Claude Agent SDK</span>
+    <h1>Prospect Engine</h1>
+    <p class="lede">A Claude-powered sales intelligence system for CGVAK: it turns account research into evidence-backed signals, assembles a versioned Account Context, qualifies across six dimensions, and produces an approved Strategy that Outreach and Sales Prep execute — not invent. A human approves every message; La Growth Machine sends it.</p>
+    <div class="meta-row">
+      <span>For: <b>CGVAK outbound sales</b></span>
+      <span>Prepared for: <b>Bertie</b></span>
+      <span>Status: <b>Draft approach — v2</b></span>
+      <span>Model: <b>Claude, via Agent SDK</b></span>
+    </div>
+  </header>
+
+  <div class="note">
+    <b>What changed in V2:</b> this revision folds in CGVAK's internal V2 strategy review. Three structural shifts worth
+    knowing before you read on — qualification is no longer a single MAN score, it's six dimensions that combine into an
+    Opportunity Priority, with MAN kept as an optional legacy view; a new <b>Strategy Agent</b> now sits between
+    qualification and action, so Outreach and Sales Prep stop improvising the play; and every signal that drives a
+    decision is now traceable to dated, sourced evidence instead of being asserted outright.
+  </div>
+
+  <section id="overview">
+    <span class="eyebrow">01 — The mechanism</span>
+    <div class="section-head">
+      <h2>Fourteen steps, one governed loop</h2>
+      <p>Research still fans out in parallel, but nothing reaches a rep's inbox on inference alone. Findings become evidence-linked signals, signals assemble into one versioned Account Context, qualification and strategy are kept as separate decisions, and an automated evaluation pass checks the draft before a human ever sees it. Outcomes flow back into memory, so the next account benefits from this one.</p>
+    </div>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 980 1470" role="img" aria-label="Pipeline: input and account resolution feeds three parallel research sub-agents — company research, decision-maker enrichment, and signal scan — which merge into signal extraction and the evidence store, then a context builder, a six-dimension qualification engine, and a strategy agent. Strategy fans out to an outreach agent and a sales prep agent, which merge into an evaluation agent, then a human approval gate, then execution via La Growth Machine, then engagement and CRM sync, then outcome and learning, which feeds back into the context builder for future runs.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+          </marker>
+        </defs>
+
+        <!-- A: Input & Account Resolution -->
+        <rect x="280" y="16" width="420" height="78" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="490" y="42" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="currentColor">Input &amp; Account Resolution</text>
+        <text x="490" y="62" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">company list · dedup vs CRM · ICP match</text>
+        <text x="490" y="78" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">sales objective</text>
+
+        <text x="490" y="126" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="0.04em" fill="currentColor" opacity="0.6">PARALLEL RESEARCH</text>
+        <line x1="490" y1="94" x2="170" y2="150" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="490" y1="94" x2="490" y2="150" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="490" y1="94" x2="810" y2="150" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- B: Research fan (3) -->
+        <g font-family="IBM Plex Sans, sans-serif">
+          <rect x="40" y="150" width="260" height="92" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="170" y="180" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">Company research</text>
+          <text x="170" y="200" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">firmographics, tech stack,</text>
+          <text x="170" y="214" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">funding</text>
+
+          <rect x="360" y="150" width="260" height="92" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="490" y="180" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">Decision-maker enrichment</text>
+          <text x="490" y="200" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">org chart &amp; titles</text>
+          <text x="490" y="214" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">email + phone (verified)</text>
+          <text x="490" y="228" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">LinkedIn profile</text>
+
+          <rect x="680" y="150" width="260" height="92" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="810" y="180" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">Signal scan</text>
+          <text x="810" y="200" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">news, hiring,</text>
+          <text x="810" y="214" text-anchor="middle" font-size="10.5" fill="currentColor" opacity="0.65">social posts</text>
+        </g>
+
+        <line x1="170" y1="242" x2="350" y2="300" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="490" y1="242" x2="490" y2="300" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="810" y1="242" x2="630" y2="300" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="490" y="278" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="0.04em" fill="currentColor" opacity="0.6">MERGES</text>
+
+        <!-- C: Signal Extraction + Evidence Store -->
+        <rect x="210" y="300" width="560" height="96" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="490" y="326" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="currentColor">Signal Extraction + Evidence Store</text>
+        <text x="490" y="346" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">raw findings → normalized signals with evidence links</text>
+        <text x="490" y="364" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">date · source · strength · confidence per signal</text>
+
+        <line x1="490" y1="396" x2="490" y2="436" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- D: Context Builder -->
+        <rect x="280" y="436" width="420" height="88" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="490" y="462" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="currentColor">Context Builder</text>
+        <text x="490" y="482" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">assembles the Account Context —</text>
+        <text x="490" y="498" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">the shared, versioned handoff contract</text>
+
+        <line x1="490" y1="524" x2="490" y2="560" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- E: Qualification Engine -->
+        <rect x="210" y="560" width="560" height="100" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="490" y="586" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="currentColor">Qualification Engine</text>
+        <text x="490" y="606" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">Fit · Opportunity · Buyer · Commercial · Intent · Engagement</text>
+        <text x="490" y="624" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">FIT + INTENT + TIMING + ACCESS = OPPORTUNITY PRIORITY</text>
+        <text x="490" y="642" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.5">(MAN kept as a configurable legacy view)</text>
+
+        <line x1="490" y1="660" x2="490" y2="706" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="610" y="686" text-anchor="start" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity="0.6">priority ≥ threshold</text>
+
+        <!-- F: Strategy Agent (accent) -->
+        <rect x="210" y="706" width="560" height="92" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.8"/>
+        <text x="490" y="734" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13.5" font-weight="600" fill="var(--accent)">Strategy Agent</text>
+        <text x="490" y="754" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="var(--accent)" opacity="0.9">weighted persona plays · problem hypothesis · trigger</text>
+        <text x="490" y="770" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="var(--accent)" opacity="0.9">CGVAK capability · positioning · channel · CTA</text>
+
+        <text x="490" y="822" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" letter-spacing="0.03em" fill="currentColor" opacity="0.55">each thread expresses its own strategy</text>
+        <line x1="490" y1="798" x2="300" y2="844" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="490" y1="798" x2="680" y2="844" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- G: Action generation fan (2) -->
+        <rect x="140" y="844" width="320" height="84" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="300" y="872" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Outreach Agent</text>
+        <text x="300" y="892" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">LinkedIn + email,</text>
+        <text x="300" y="908" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">per active persona thread</text>
+
+        <rect x="520" y="844" width="320" height="84" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="680" y="872" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Sales Prep Agent</text>
+        <text x="680" y="892" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">call brief, discovery Qs,</text>
+        <text x="680" y="908" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">pitch</text>
+
+        <line x1="300" y1="928" x2="400" y2="974" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="680" y1="928" x2="580" y2="974" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="490" y="954" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="0.04em" fill="currentColor" opacity="0.6">MERGES</text>
+
+        <!-- H: Evaluation Agent (amber solid) -->
+        <rect x="260" y="974" width="460" height="72" rx="10" fill="var(--gate-soft)" stroke="var(--gate)" stroke-width="1.6"/>
+        <text x="490" y="1000" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="var(--gate)">Evaluation Agent</text>
+        <text x="490" y="1020" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="var(--gate)" opacity="0.9">factual support · compliance · hallucination risk</text>
+
+        <line x1="490" y1="1046" x2="490" y2="1082" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- I: Human Approval Gate (amber dashed) -->
+        <rect x="230" y="1082" width="520" height="64" rx="10" fill="var(--gate-soft)" stroke="var(--gate)" stroke-width="1.8" stroke-dasharray="5 3"/>
+        <text x="490" y="1108" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="var(--gate)">Human Approval Gate</text>
+        <text x="490" y="1126" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="var(--gate)" opacity="0.9">approve · edit · regenerate · reject — reason required</text>
+
+        <line x1="490" y1="1146" x2="490" y2="1182" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- J: Execution — La Growth Machine -->
+        <rect x="280" y="1182" width="420" height="58" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="490" y="1206" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Execution — La Growth Machine</text>
+        <text x="490" y="1224" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">sends LinkedIn + email, own rate limits</text>
+
+        <line x1="490" y1="1240" x2="490" y2="1276" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- K: Engagement & CRM Sync -->
+        <rect x="260" y="1276" width="460" height="62" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="490" y="1300" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Engagement &amp; CRM Sync</text>
+        <text x="490" y="1318" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">replies · meetings — written additively to CRM</text>
+
+        <line x1="490" y1="1338" x2="490" y2="1374" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+        <!-- L: Outcome & Learning -->
+        <rect x="260" y="1374" width="460" height="76" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="490" y="1400" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Outcome &amp; Learning</text>
+        <text x="490" y="1420" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">wins/losses + rep feedback →</text>
+        <text x="490" y="1436" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor" opacity="0.65">Account Memory + Sales Learning</text>
+
+        <!-- feedback loop -->
+        <path d="M 260,1412 L 26,1412 L 26,480 L 280,480" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.5" marker-end="url(#arrow)"/>
+        <text x="18" y="946" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="9.5" letter-spacing="0.04em" fill="currentColor" opacity="0.55" transform="rotate(-90 18 946)">LEARNING LOOP → FUTURE RUNS</text>
+      </svg>
+      <figcaption>Two governance points, not one: an automated Evaluation Agent checks factual support and compliance before the Human Approval Gate ever sees a draft. Everything downstream of Strategy is disposable and regeneratable; nothing upstream of it gets silently rewritten.</figcaption>
+    </figure>
+  </section>
+
+  <section id="inputs">
+    <span class="eyebrow">02 — Inputs</span>
+    <div class="section-head">
+      <h2>What the agent needs before it starts</h2>
+      <p>Five assets. The first is per-target; the rest are configuration — set up once, reused on every run.</p>
+    </div>
+    <div class="input-grid">
+      <div class="input-card">
+        <span class="tag">Target</span>
+        <p><strong>Company list or single account</strong> — a name, domain, or a CSV, resolved against existing CRM records to skip duplicates.</p>
+      </div>
+      <div class="input-card">
+        <span class="tag">Context</span>
+        <p><strong>CGVAK business profile &amp; ICP</strong> — proof points and who counts as a good-fit buyer.</p>
+      </div>
+      <div class="input-card">
+        <span class="tag">Services</span>
+        <p><strong>Service catalog</strong> — the offerings the pitch layer chooses from, e.g. EIA, each with the proof points it's sold on.</p>
+      </div>
+      <div class="input-card">
+        <span class="tag">Writing</span>
+        <p><strong>Writing samples</strong> — real emails or LinkedIn messages you've sent, used as a reference so drafts read like something you'd actually send.</p>
+      </div>
+      <div class="input-card">
+        <span class="tag">Rules</span>
+        <p><strong>Sales rules</strong> — qualification thresholds, no-go lists, cadence limits, compliance constraints. Qualification, Strategy, and Outreach all read from this.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="responsibilities">
+    <span class="eyebrow">03 — Agent responsibilities</span>
+    <div class="section-head">
+      <h2>Who's allowed to decide what</h2>
+      <p>The V2 review's clearest contribution: a hard line around what each stage may produce and what it must never do. Research agents gather evidence — they don't get to make the call.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="spec">
+        <thead>
+          <tr><th>Component</th><th>Must produce</th><th>Must not do</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Research agents</td><td>Source-backed facts, people records, confidence-scored contact data</td><td class="no">Invent conclusions or assume authority without evidence</td></tr>
+          <tr><td>Signal Extraction</td><td>Normalized signal objects with evidence links</td><td class="no">Draft outreach</td></tr>
+          <tr><td>Context Builder</td><td>A versioned Account Context</td><td class="no">Dump all raw research into a prompt</td></tr>
+          <tr><td>Qualification Engine</td><td>Dimension scores + reasons</td><td class="no">Write the sales message</td></tr>
+          <tr><td>Strategy Agent</td><td>A Strategy object + hypotheses</td><td class="no">Bypass qualification</td></tr>
+          <tr><td>Outreach &amp; Sales Prep</td><td>Channel drafts in the approved strategy</td><td class="no">Change strategy silently</td></tr>
+          <tr><td>Evaluation Agent</td><td>Pass/fail + issues + scores</td><td class="no">Override business rules</td></tr>
+          <tr><td>Human Gate</td><td>Decision + structured feedback reason</td><td class="no">Be bypassed by a prompt</td></tr>
+          <tr><td>Execution Adapter</td><td>Send status + engagement events</td><td class="no">Modify approved content</td></tr>
+          <tr><td>Learning Layer</td><td>Validated learning records</td><td class="no">Change production rules without review</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="evidence">
+    <span class="eyebrow">04 — Signal &amp; evidence model</span>
+    <div class="section-head">
+      <h2>Every conclusion traces back to a date and a source</h2>
+      <p>Nothing feeds Qualification or Strategy as a bare claim. A finding becomes a Signal — typed, dated, confidence-scored — and every Signal links back to the Evidence it came from.</p>
+    </div>
+
+    <figure class="chain">
+      <svg viewBox="0 0 900 130" role="img" aria-label="Chain diagram: Source and Date combine into Evidence, Evidence supports a Signal, and a Signal backs a Conclusion — each step carries a confidence score.">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+          </marker>
+        </defs>
+        <rect x="20" y="35" width="170" height="60" rx="10" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <text x="105" y="60" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Source + Date</text>
+        <text x="105" y="78" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="currentColor" opacity="0.6">where and when</text>
+
+        <line x1="190" y1="65" x2="228" y2="65" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+
+        <rect x="230" y="35" width="170" height="60" rx="10" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <text x="315" y="60" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Evidence</text>
+        <text x="315" y="78" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="currentColor" opacity="0.6">stored, not interpreted</text>
+
+        <line x1="400" y1="65" x2="438" y2="65" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+
+        <rect x="440" y="35" width="170" height="60" rx="10" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <text x="525" y="60" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="currentColor">Signal</text>
+        <text x="525" y="78" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="currentColor" opacity="0.6">typed + confidence-scored</text>
+
+        <line x1="610" y1="65" x2="648" y2="65" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
+
+        <rect x="650" y="35" width="230" height="60" rx="10" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.6"/>
+        <text x="765" y="60" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12.5" font-weight="600" fill="var(--accent)">Conclusion</text>
+        <text x="765" y="78" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="var(--accent)" opacity="0.9">what Qualification/Strategy use</text>
+      </svg>
+    </figure>
+    <figcaption style="margin-top:0; border-top:none; padding-top:0;">Reversible in the UI: click any conclusion and walk it back to the exact evidence it rests on.</figcaption>
+
+    <div class="kv-card" style="margin-top:24px;">
+      <div class="kv-row"><span class="k">Example signal</span><span class="v">Meridian Cloud — engineering_scaling</span></div>
+      <div class="kv-row"><span class="k">Strength</span><span class="v">High</span></div>
+      <div class="kv-row"><span class="k">Confidence</span><span class="v accent">91%</span></div>
+      <div class="kv-row"><span class="k">Observed</span><span class="v">2026-08-01</span></div>
+      <div class="kv-row"><span class="k">Business implication</span><span class="v">Potential delivery capacity constraint</span></div>
+      <div class="kv-row"><span class="k">Evidence</span><span class="v"><span class="ev-chip">ev_102</span><span class="ev-chip">ev_118</span></span></div>
+    </div>
+  </section>
+
+  <section id="scoring">
+    <span class="eyebrow">05 — Qualification model</span>
+    <div class="section-head">
+      <h2>Six dimensions, not one score</h2>
+      <p>MAN answers whether someone can say yes. It doesn't say whether this is the right account, right now. V2 keeps MAN as an optional view and promotes a broader model as the default — illustrative, not a real prospect.</p>
+    </div>
+
+    <div class="dash">
+      <div class="dash-head">
+        <div>
+          <h3>Meridian Cloud</h3>
+          <div class="sub">Series B DevOps ISV · 140 employees · Austin, TX</div>
+        </div>
+        <span class="badge good">Priority: High — pursue this week</span>
+      </div>
+      <div class="formula-strip">FIT + INTENT + TIMING + ACCESS = <b>OPPORTUNITY PRIORITY: 87 → High</b></div>
+      <div class="dash-body">
+        <div class="dash-col">
+          <div class="score-row"><span class="score-label">Fit</span><div class="score-track"><div class="score-fill" style="width: 85%"></div></div><span class="score-val">High</span></div>
+          <div class="score-row"><span class="score-label">Opportunity</span><div class="score-track"><div class="score-fill" style="width: 80%"></div></div><span class="score-val">High</span></div>
+          <div class="score-row"><span class="score-label">Buyer</span><div class="score-track"><div class="score-fill" style="width: 55%"></div></div><span class="score-val">Med</span></div>
+          <div class="score-row"><span class="score-label">Commercial</span><div class="score-track"><div class="score-fill" style="width: 78%"></div></div><span class="score-val">High</span></div>
+          <div class="score-row"><span class="score-label">Intent</span><div class="score-track"><div class="score-fill" style="width: 50%"></div></div><span class="score-val">Med</span></div>
+          <div class="score-row"><span class="score-label">Engagement</span><div class="score-track"><div class="score-fill" style="width: 20%"></div></div><span class="score-val">Low</span></div>
+          <ul class="signal-list">
+            <li>Raised $38M Series B, 4 months ago</li>
+            <li>Posted 12 open engineering roles this quarter</li>
+            <li>Contact identified is VP Eng, not final budget owner</li>
+            <li>Buying committee mapped: VP Eng, CTO, CIO, CEO (4 personas)</li>
+            <li>No prior CGVAK contact on record</li>
+          </ul>
+          <div class="legacy-line"><b>MAN — legacy view:</b> Money High · Authority Med · Need High</div>
+        </div>
+        <div class="dash-col">
+          <span class="score-label">Evidence</span>
+          <p style="font-size:0.85rem; margin-top:6px;">4 records support this priority.</p>
+          <div><span class="ev-chip">ev_101</span><span class="ev-chip">ev_102</span><span class="ev-chip">ev_103</span><span class="ev-chip">ev_104</span></div>
+          <div class="play-box" style="margin-top:20px;">
+            <b>Next step</b>
+            Priority clears the threshold — hands off to the Strategy Agent to weigh each committee member and decide which to target. See §06.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="strategy">
+    <span class="eyebrow">06 — Strategy layer</span>
+    <div class="section-head">
+      <h2>A separate decision: how do we pursue it</h2>
+      <p>Qualification answers "is this worth pursuing?" Strategy answers "how should we pursue it?" — a different question, with its own agent and its own object. Outreach and Sales Prep read this object; they don't get to invent one. An account rarely has one buyer, so Strategy doesn't produce one play: it weighs every mapped persona against the service catalog and decides how many threads are worth running at once.</p>
+    </div>
+
+    <div class="quiz-grid">
+      <div class="quiz-chip"><b>Who</b> should we approach first — and who else?</div>
+      <div class="quiz-chip"><b>Why</b> now?</div>
+      <div class="quiz-chip">What <b>problem</b> are we hypothesizing?</div>
+      <div class="quiz-chip">What <b>evidence</b> supports it?</div>
+      <div class="quiz-chip">Which CGVAK <b>capability</b> fits?</div>
+      <div class="quiz-chip">What <b>positioning</b> angle?</div>
+      <div class="quiz-chip">Which <b>channel</b>?</div>
+      <div class="quiz-chip">What's the <b>CTA</b>?</div>
+      <div class="quiz-chip">What should we <b>avoid</b> saying?</div>
+    </div>
+
+    <h3 style="margin-bottom:14px;">Persona × service weighting</h3>
+    <p style="color:var(--text-muted); font-size:0.9rem; margin-top:-8px;">Every mapped persona is scored against each catalog service — not just the one CGVAK happens to lead with. EIA and Service B below are illustrative stand-ins for your real catalog.</p>
+    <div class="table-wrap" style="margin-bottom:28px;">
+      <table class="spec">
+        <thead>
+          <tr><th>Persona</th><th>Best-fit service</th><th>Weight</th><th>Thread status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VP Engineering</td><td>EIA</td><td>92</td><td><span class="badge good">Active — primary</span></td></tr>
+          <tr><td>CTO</td><td>EIA</td><td>88</td><td><span class="badge good">Active — secondary</span></td></tr>
+          <tr><td>CIO</td><td>Service B</td><td>78</td><td><span class="badge warn">Queued — thread cap reached</span></td></tr>
+          <tr><td>CEO</td><td>—</td><td>35</td><td style="color:var(--text-muted);">Not activated — below threshold</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin-top:-14px; margin-bottom:28px;">The sales rules asset sets the threshold and the concurrent-thread cap (here: 2) — a High-priority account might run three threads at once; an early-stage account might hold to one until there's a reply.</p>
+
+    <div class="strategy-threads">
+      <div>
+        <div class="agent-label">Thread 1 — VP Engineering (primary, weight 92)</div>
+        <div class="kv-card">
+          <div class="kv-row"><span class="k">Problem hypothesis</span><span class="v">Engineering delivery bottleneck as hiring accelerates</span></div>
+          <div class="kv-row"><span class="k">Trigger</span><span class="v">12 open eng roles + $38M Series B, 4 months ago</span></div>
+          <div class="kv-row"><span class="k">CGVAK capability</span><span class="v accent">EIA</span></div>
+          <div class="kv-row"><span class="k">Positioning</span><span class="v">Scale delivery without proportional headcount</span></div>
+          <div class="kv-row"><span class="k">Channel</span><span class="v">LinkedIn → Email</span></div>
+          <div class="kv-row"><span class="k">CTA</span><span class="v">15-minute discussion</span></div>
+          <div class="kv-row"><span class="k">Confidence</span><span class="v accent">84%</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="agent-label">Thread 2 — CTO (secondary, weight 88)</div>
+        <div class="kv-card">
+          <div class="kv-row"><span class="k">Problem hypothesis</span><span class="v">Technical debt risk from scaling engineering too fast</span></div>
+          <div class="kv-row"><span class="k">Trigger</span><span class="v">Same hiring surge, read as a delivery-risk signal</span></div>
+          <div class="kv-row"><span class="k">CGVAK capability</span><span class="v accent">EIA</span></div>
+          <div class="kv-row"><span class="k">Positioning</span><span class="v">De-risk the scale-up, not just speed it up</span></div>
+          <div class="kv-row"><span class="k">Channel</span><span class="v">Email → LinkedIn</span></div>
+          <div class="kv-row"><span class="k">CTA</span><span class="v">Share a 1-page technical brief</span></div>
+          <div class="kv-row"><span class="k">Confidence</span><span class="v accent">78%</span></div>
+        </div>
+      </div>
+    </div>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin-top:16px;">Same capability, two different angles — that's the point of weighting personas separately instead of sending one message to everyone on the account.</p>
+  </section>
+
+  <section id="outreach">
+    <span class="eyebrow">07 — Outreach &amp; Sales Prep</span>
+    <div class="section-head">
+      <h2>Execution of the strategy, not invention of one</h2>
+      <p>Both agents consume the same approved Strategy object — one instance per active thread. A default six-touch, fifteen-day cadence mixes LinkedIn and email; the rules asset controls timing and touch count. Once approved at the human gate, each thread's sequence is pushed to <strong>La Growth Machine</strong>, which runs the LinkedIn steps and email sends and reports back opens, replies, and connection status.</p>
+    </div>
+
+    <div class="table-wrap" style="margin-bottom:28px;">
+      <table class="spec">
+        <thead>
+          <tr><th>Thread</th><th>Starts</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VP Engineering (primary)</td><td>LinkedIn, Day 1</td><td><span class="badge good">Active</span></td></tr>
+          <tr><td>CTO (secondary)</td><td>Email, Day 4 — offset to avoid same-day double-touch</td><td><span class="badge good">Active</span></td></tr>
+          <tr><td>CIO</td><td>—</td><td><span class="badge warn">Queued behind thread cap</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin-top:-14px; margin-bottom:28px;">A reply on any thread is visible across all of them — the rep sees one account, not per-persona silos — and pauses the others' next touch until reviewed.</p>
+
+    <div class="agent-label">Outreach Agent — Thread 1 cadence (VP Engineering)</div>
+    <div class="cadence">
+      <div class="touch li"><span class="day">Day 1</span><div class="channel">LinkedIn</div><div class="what">Connect + note referencing the trigger signal</div></div>
+      <div class="touch em"><span class="day">Day 3</span><div class="channel">Email 1</div><div class="what">Personalized hook, no pitch yet</div></div>
+      <div class="touch li"><span class="day">Day 6</span><div class="channel">LinkedIn</div><div class="what">Comment or react on a recent post</div></div>
+      <div class="touch em"><span class="day">Day 8</span><div class="channel">Email 2</div><div class="what">Proof point relevant to their stack</div></div>
+      <div class="touch li"><span class="day">Day 12</span><div class="channel">InMail</div><div class="what">Direct ask for 15 minutes</div></div>
+      <div class="touch em"><span class="day">Day 15</span><div class="channel">Email 3</div><div class="what">Breakup message, leaves door open</div></div>
+    </div>
+
+    <div class="agent-label" style="margin-top:32px;">Sales Prep Agent — if a meeting lands</div>
+    <div class="pitch-grid">
+      <div class="pitch-card">
+        <h3>Elevator pitch</h3>
+        <blockquote>"CGVAK helps engineering teams like yours ship faster without adding headcount — EIA plugs AI-assisted testing and review directly into your existing CI/CD, and teams your size typically see it pay for itself inside two sprints."</blockquote>
+      </div>
+      <div class="pitch-card">
+        <h3>Full pitch structure</h3>
+        <ol>
+          <li><strong>Situation</strong> — fast headcount growth, roadmap names the gap.</li>
+          <li><strong>Complication</strong> — QA and review bottlenecks as they scale.</li>
+          <li><strong>CGVAK's angle</strong> — EIA mapped to their stack.</li>
+          <li><strong>Proof</strong> — a comparable ISV client outcome, with numbers.</li>
+          <li><strong>Ask</strong> — a scoped next step.</li>
+        </ol>
+      </div>
+      <div class="pitch-card">
+        <h3>Call prep &amp; discovery</h3>
+        <ul>
+          <li>Opening question tied to the hiring-surge trigger</li>
+          <li>Discovery: how review bottlenecks show up today</li>
+          <li>Objection to pre-empt: "we already use Copilot"</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="evaluation">
+    <span class="eyebrow">08 — Evaluation framework</span>
+    <div class="section-head">
+      <h2>Checked at every handoff, not just before sending</h2>
+      <p>Deterministic checks for rules, schema, and policy; LLM evaluation for semantic quality. Human review stays the final outbound control regardless of what passes upstream.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="spec">
+        <thead>
+          <tr><th>Stage</th><th>Checked for</th><th>Method</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Research</td><td>Factual accuracy, source quality, completeness, freshness, duplicate handling</td><td>LLM + rules</td></tr>
+          <tr><td>Signals</td><td>Correct classification, evidence linkage, confidence, temporal validity</td><td>Rules</td></tr>
+          <tr><td>Qualification</td><td>Consistency, explainability, alignment with scoring config</td><td>Rules</td></tr>
+          <tr><td>Strategy</td><td>Evidence-backed reasoning, correct persona, relevant problem, appropriate capability</td><td>LLM</td></tr>
+          <tr><td>Outreach</td><td>Factual support, personalization, tone, CTA, compliance, strategic alignment</td><td>LLM + rules</td></tr>
+          <tr><td>Execution</td><td>Approval state, contact verification, rate limits, delivery status</td><td>Rules</td></tr>
+          <tr><td>Outcome</td><td>Reply, meeting, opportunity, win/loss, rep feedback</td><td>Rules</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="approval">
+    <span class="eyebrow">09 — Human approval UX</span>
+    <div class="section-head">
+      <h2>What the rep sees before anything sends</h2>
+    </div>
+    <div class="dash">
+      <div class="dash-head">
+        <div>
+          <h3>Meridian Cloud — review</h3>
+          <div class="sub">Draft from Outreach Agent · Strategy confidence 84%</div>
+        </div>
+        <span class="badge good">Priority: High</span>
+      </div>
+      <div class="dash-col" style="padding-bottom:4px;">
+        <ul class="signal-list">
+          <li>Account priority and score</li>
+          <li>Top evidence-backed signals</li>
+          <li>Recommended persona and strategy rationale</li>
+          <li>Proposed CGVAK capability</li>
+          <li>Draft message</li>
+          <li>Source / evidence links</li>
+        </ul>
+      </div>
+      <div class="btn-row">
+        <span class="fake-btn primary">Approve</span>
+        <span class="fake-btn">Edit</span>
+        <span class="fake-btn">Regenerate</span>
+        <span class="fake-btn danger">Reject</span>
+      </div>
+      <div class="reject-wrap">
+        <span class="reject-label">If rejected, reason required</span>
+        <div class="reject-chips">
+          <span class="reject-chip">Wrong Persona</span>
+          <span class="reject-chip">Wrong Signal</span>
+          <span class="reject-chip">Wrong Problem</span>
+          <span class="reject-chip">Wrong Solution</span>
+          <span class="reject-chip">Poor Message</span>
+          <span class="reject-chip">Other</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="guardrails">
+    <span class="eyebrow">10 — Guardrails</span>
+    <div class="section-head">
+      <h2>What runs on every account, and what to watch</h2>
+    </div>
+    <div class="table-wrap">
+      <table class="spec">
+        <thead>
+          <tr><th>Concern</th><th>How it's handled</th><th>Risk if skipped</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Sending without review</td><td>Every draft stops at the human gate; the La Growth Machine send tool is only reachable after a rep confirms.</td><td class="risk">Off-brand or wrong-target message goes out</td></tr>
+          <tr><td>Least-privilege tools</td><td>Research and Strategy agents have no send permission; only the Execution Adapter can reach La Growth Machine, and only post-approval.</td><td class="risk">An upstream agent bypasses governance entirely</td></tr>
+          <tr><td>Contact verification</td><td>Enriched emails and phone numbers are checked before use; anything unverified is flagged, not sent to or dialed.</td><td class="risk">Bounce rate and wrong-number calls damage sender reputation</td></tr>
+          <tr><td>LinkedIn scraping</td><td>Decision-maker enrichment uses official APIs / Sales Navigator exports; actual LinkedIn actions run through La Growth Machine's own compliant automation.</td><td class="risk">Account restriction, ToS violation</td></tr>
+          <tr><td>Contact data sourcing</td><td>Email, phone, and LinkedIn enrichment comes from a licensed provider (Apollo.io, ContactOut), not open scraping.</td><td class="risk">Privacy complaint, provider terms violation</td></tr>
+          <tr><td>Stale signals</td><td>Every signal carries an expiration policy; signals move DISCOVERED → VALIDATED → ACTIVE → STALE → EXPIRED and can't silently drive a new campaign once stale.</td><td class="risk">Outreach built on a trigger that no longer applies</td></tr>
+          <tr><td>Hypothesis vs. fact</td><td>Generated hypotheses (problem guesses, persona fit) are tagged distinctly from verified facts, in storage and in the rep's UI.</td><td class="risk">A guess gets treated and repeated as confirmed fact</td></tr>
+          <tr><td>Outreach rate limits</td><td>Cadence timing comes from the sales rules asset; La Growth Machine enforces the actual per-day send/connect caps.</td><td class="risk">Spam flags, deliverability drop</td></tr>
+          <tr><td>CRM write conflicts</td><td>Sync writes are additive and versioned — never overwriting existing rep notes.</td><td class="risk">Loses a rep's manual context</td></tr>
+          <tr><td>Multi-thread coordination</td><td>A reply on any persona thread is visible across the account and pauses the others' next touch pending review; the thread cap is a sales rule, not a per-agent decision.</td><td class="risk">Contacts compare notes and the account feels spammed</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="memory">
+    <span class="eyebrow">11 — Memory architecture</span>
+    <div class="section-head">
+      <h2>Three stores, kept separate on purpose</h2>
+      <p>Mixing these makes the system unable to tell "true for CGVAK" from "true for this one account" from "true across many deals" — which is exactly the distinction Strategy and Qualification depend on.</p>
+    </div>
+    <div class="input-grid">
+      <div class="input-card">
+        <span class="tag">Enterprise Memory</span>
+        <p><strong>CGVAK's own facts</strong> — services, capabilities, ICP, industries, case studies, proof points, sales methodology, approved messaging.</p>
+      </div>
+      <div class="input-card">
+        <span class="tag">Account Memory</span>
+        <p><strong>Per-account history</strong> — company facts, people, conversations, previous outreach, objections, responses, opportunities, historical signals.</p>
+      </div>
+      <div class="input-card">
+        <span class="tag">Sales Learning</span>
+        <p><strong>Cross-account patterns</strong> — which signals predict meetings, personas that respond, angles that convert, false-positive signals, service-line performance.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="phases">
+    <span class="eyebrow">12 — Build sequence</span>
+    <div class="section-head">
+      <h2>Five gates, not one big build</h2>
+      <p>Each gate is a question a senior BDE could answer honestly about the system — not a ship date.</p>
+    </div>
+    <div class="phases">
+      <div class="phase" data-n="1">
+        <h3>Intelligence</h3>
+        <p class="what">Account resolution, parallel research, signal extraction, and the evidence model.</p>
+        <span class="gate">gate: can the system reliably understand an account?</span>
+      </div>
+      <div class="phase" data-n="2">
+        <h3>Qualification</h3>
+        <p class="what">Context builder plus Fit, Intent, Timing, Buyer, Commercial, and Engagement scoring.</p>
+        <span class="gate">gate: does it identify worthwhile prospects against a human baseline?</span>
+      </div>
+      <div class="phase" data-n="3">
+        <h3>Strategy</h3>
+        <p class="what">Persona, problem hypothesis, trigger, CGVAK capability, positioning, and CTA.</p>
+        <span class="gate">gate: would a senior BDE agree with the recommended play?</span>
+      </div>
+      <div class="phase" data-n="4">
+        <h3>Content</h3>
+        <p class="what">LinkedIn, email, call prep, and pitch generation, all from the strategy object.</p>
+        <span class="gate">gate: would the BDE actually use the output?</span>
+      </div>
+      <div class="phase" data-n="5">
+        <h3>Closed loop</h3>
+        <p class="what">Execution events, replies, meetings, opportunities, wins/losses, and learning.</p>
+        <span class="gate">gate: does the system improve targeting and strategy over time?</span>
+      </div>
+    </div>
+
+    <div class="avoid-wrap">
+      <span class="avoid-head" style="width:100%;">Not in scope for the first build</span>
+      <span class="avoid-chip">Fully autonomous outbound</span>
+      <span class="avoid-chip">Autonomous LinkedIn interaction beyond approved execution</span>
+      <span class="avoid-chip">Automatic strategy changes from small samples</span>
+      <span class="avoid-chip">Fine-tuning before sufficient evaluation data</span>
+      <span class="avoid-chip">Reinforcement-learning infrastructure</span>
+      <span class="avoid-chip">Large numbers of independent micro-agents</span>
+      <span class="avoid-chip">Automatic destructive CRM updates</span>
+    </div>
+  </section>
+
+  <section id="stack">
+    <span class="eyebrow">13 — Technical pattern</span>
+    <div class="section-head">
+      <h2>Claude reasons; the application governs</h2>
+      <p>Agent SDK for orchestration and reasoning — but business-critical state and rules live outside the model. Agent outputs are schema-constrained; the application owns workflow state, permissions, approval state, scoring config, evidence records, audit logs, and execution authorization.</p>
+    </div>
+    <div class="stack-grid">
+      <div class="stack-row">
+        <span class="stage">Research fan-out</span>
+        <span class="impl">Parallel Agent SDK sub-agents, one per research domain, each scoped to its own tool set (<code>web_search</code>, <code>fetch</code>); an orchestrator merges and dedupes.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Decision-maker enrichment</span>
+        <span class="impl">Sub-agent calls a contact-data provider as a tool — Apollo.io or ContactOut — resolving each contact to verified email, phone, and LinkedIn profile.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Evidence store</span>
+        <span class="impl">Source-backed facts and signal provenance, persisted outside the model — separate from any generated interpretation.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Context builder</span>
+        <span class="impl">Retrieval + compression service that assembles the versioned Account Context per run, rather than handing every agent the full research corpus.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Rules / scoring service</span>
+        <span class="impl">Deterministic qualification math and policy enforcement, outside the model — a config file, not a prompt, so it's auditable and swappable.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Service / proof repository</span>
+        <span class="impl">The Services input as a real repository — CGVAK capabilities, case studies, and approved claims the Strategy and Pitch layers select from.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Evaluation store</span>
+        <span class="impl">Agent scores, failures, human edits, and rejection reasons — the record the Evaluation Agent and Learning Layer both draw on.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Human gate</span>
+        <span class="impl">Application-level approval, not a prompt instruction — the La Growth Machine send tool is unreachable until a rep confirms.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Execution adapter</span>
+        <span class="impl">Approved cadence pushed to La Growth Machine via its API; isolated send capability, available only post-approval, with its own rate limits and reply tracking.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">CRM integration</span>
+        <span class="impl">MCP connector (HubSpot / Salesforce) as a tool call, writing structured records — additive and versioned, never overwriting rep notes.</span>
+      </div>
+      <div class="stack-row">
+        <span class="stage">Learning store</span>
+        <span class="impl">Validated cross-account patterns only — nothing here changes production scoring or strategy without a review pass.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="skills">
+    <span class="eyebrow">14 — Ready-made skills to plug in</span>
+    <div class="section-head">
+      <h2>Don't build formatting logic from scratch</h2>
+      <p>These ship as pre-built Agent Skills — the same packaged-instructions format Claude Code and the Claude apps already use. Drop them into the build directly rather than hand-rolling document generation; write a custom one later (a "CGVAK brand" skill encoding letterhead and voice) using the same mechanism.</p>
+    </div>
+    <div class="table-wrap">
+      <table class="spec">
+        <thead>
+          <tr><th>Skill</th><th>Plugs into</th><th>What it adds</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>pptx</code></td><td>Sales Prep — pitch</td><td>Renders the full pitch as an actual branded slide deck, not a copy block the rep has to build themselves.</td></tr>
+          <tr><td><code>docx</code></td><td>Sales Prep — call brief</td><td>Formats the call brief and discovery questions as a polished one-pager instead of raw text.</td></tr>
+          <tr><td><code>xlsx</code></td><td>Outcome &amp; Learning — pipeline report</td><td>Delivers the pipeline report as a workbook the team can filter and sort, not a static summary.</td></tr>
+          <tr><td><code>pdf</code></td><td>Sales Prep — pitch</td><td>Exports the deck or brief as a PDF for whenever it needs to leave CGVAK's systems entirely.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="doc">
+    Prospect Engine V2 — architecture &amp; approach, drafted for CGVAK outbound, incorporating the internal V2 Sales Intelligence &amp; Strategy Agent review. Framework and service-line names are placeholders for your own config.
+  </footer>
+
+</div>
+
+</head>
+</html>

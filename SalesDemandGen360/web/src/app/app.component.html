@@ -1,0 +1,72 @@
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-title">Sales Demand Gen360</div>
+      <div class="brand-sub">Prospect Engine</div>
+    </div>
+
+    <!-- A demo installation is unlocked deliberately. Said out loud, because
+         an unlocked menu looks identical in both modes and nobody should have
+         to guess whether what they are seeing is real. -->
+    <a class="demo-badge" *ngIf="demoMode" routerLink="/settings/setup"
+       title="Stubs stand in for the mandatory connections. Nothing contacts an external service.">
+      <strong>Demo installation</strong>
+      <span>Stubs only — nothing is called or sent</span>
+    </a>
+
+    <!-- Says what is missing, not just that something is. A bare "setup
+         incomplete" sends someone hunting; naming the count and linking
+         straight to it does not.
+
+         Stays visible while browsing, because the pipeline is still refused —
+         hiding it would make an unlocked menu read as a working system. -->
+    <div class="lock" *ngIf="setupIncomplete" [class.browsing]="browseAnyway()">
+      <a routerLink="/settings/setup" [title]="lockReason()">
+        <strong>Setup incomplete</strong>
+        <span>{{ blockedCount() }} connection{{ blockedCount() === 1 ? '' : 's' }} to finish</span>
+      </a>
+      <button type="button" (click)="toggleBrowse()"
+              [title]="browseAnyway()
+                ? 'Re-lock the menu until setup is finished'
+                : 'Unlock the menu only. Import, promote and execute stay refused.'">
+        {{ browseAnyway() ? 'Re-lock menu' : 'Browse anyway' }}
+      </button>
+      <span class="note" *ngIf="browseAnyway()">
+        Menu unlocked. Import, promote and execute are still refused by the server.
+      </span>
+    </div>
+
+    <nav class="nav">
+      <ng-container *ngFor="let n of nav">
+        <a class="nav-item" *ngIf="n.path && !disabled(n)" [routerLink]="n.path"
+           routerLinkActive="on">{{ n.label }}</a>
+        <span class="nav-item disabled" *ngIf="n.path && disabled(n)"
+              [title]="lockReason()">{{ n.label }}</span>
+        <span class="nav-item disabled" *ngIf="!n.path" title="Not built yet">{{ n.label }}</span>
+      </ng-container>
+    </nav>
+
+    <div class="nav-label">Configure</div>
+    <nav class="nav">
+      <ng-container *ngFor="let n of settingsNav">
+        <a class="nav-item" *ngIf="!disabled(n)" [routerLink]="n.path"
+           routerLinkActive="on">{{ n.label }}</a>
+        <span class="nav-item disabled" *ngIf="disabled(n)"
+              [title]="lockReason()">{{ n.label }}</span>
+      </ng-container>
+    </nav>
+
+    <div class="side-foot">
+      <div class="phase">Phase 2 · accounts &amp; lists</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- Every outcome, kept: notices clear, this does not. -->
+    <app-activity-bar />
+    <router-outlet></router-outlet>
+  </main>
+</div>
+
+<app-confirm-host />
+<app-toast-host />

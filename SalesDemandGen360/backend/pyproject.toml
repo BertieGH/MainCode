@@ -1,0 +1,52 @@
+[project]
+name = "sdg360-backend"
+version = "0.1.0"
+description = "Sales Demand Gen360 — Prospect Engine backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]>=2.0",
+    "psycopg[binary]",
+    "alembic",
+    "pydantic-settings",
+    "cryptography",
+    "python-multipart",  # required for the CSV upload endpoints
+    "xlrd>=2.0",  # old binary .xls uploads; .xlsx is read with the standard library
+    "anthropic>=1.4",  # structured outputs (`messages.parse`) and the tool runner
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "httpx", "ruff", "mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Every async test gets a fresh loop; a shared one leaks state between tests
+# once real database sessions appear in Phase 1.
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers -m 'not llm'"
+markers = [
+    "db: requires a live PostgreSQL database",
+    # Bills real tokens. Excluded from the default run so a full suite is
+    # never a surprise on the invoice; opt in with `-m llm`.
+    "llm: calls the Anthropic API and costs money",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "BLE"]
+ignore = ["B008"]  # FastAPI's Depends() in defaults is the documented pattern
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+disallow_untyped_defs = false
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true

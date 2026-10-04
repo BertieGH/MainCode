@@ -1,0 +1,311 @@
+/* Design tokens — lifted from the approved walkthrough so the built app and the
+   mockup stay one visual system rather than drifting apart. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #eef1f2;
+  --surface: #ffffff;
+  --surface-2: #f5f7f7;
+  --sidebar: #161b20;
+  --sidebar-text: #c7cdd1;
+  --sidebar-dim: #7f8890;
+  --sidebar-active: #20272d;
+  --text: #171b21;
+  --muted: #5c6672;
+  --faint: #8b949c;
+  --border: #d7dcdc;
+  --border-strong: #c3caca;
+  --accent: #1f6f64;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3efec;
+  --gate: #a86a1e;
+  --gate-soft: #f7ecd9;
+  --good: #2f7a54;
+  --good-soft: #e5f1e9;
+  --warn: #b8801f;
+  --warn-soft: #f7ecd9;
+  --critical: #b34a3f;
+  --critical-soft: #f8e8e6;
+  --mono-bg: #e7ebea;
+  --shadow: 0 1px 2px rgba(23, 27, 33, .06), 0 6px 20px rgba(23, 27, 33, .06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151a;
+    --surface: #1a1f25;
+    --surface-2: #20262d;
+    --sidebar: #0d1013;
+    --sidebar-text: #aab2b8;
+    --sidebar-dim: #5c656c;
+    --sidebar-active: #181e23;
+    --text: #eef1f0;
+    --muted: #9aa5a8;
+    --faint: #6b7680;
+    --border: #2b3238;
+    --border-strong: #3a434a;
+    --accent: #5fc0af;
+    --accent-ink: #0b1613;
+    --accent-soft: #193028;
+    --gate: #e0a862;
+    --gate-soft: #2e2416;
+    --good: #5cae83;
+    --good-soft: #1c2c22;
+    --warn: #e0a862;
+    --warn-soft: #2e2416;
+    --critical: #e0897c;
+    --critical-soft: #2f1e1c;
+    --mono-bg: #242b31;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -.01em;
+}
+
+code, .mono { font-family: 'IBM Plex Mono', monospace; }
+
+/* ---------- shared components ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+  font-size: .82rem;
+  font-weight: 500;
+  padding: 8px 15px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--border-strong); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+.field {
+  font-family: inherit;
+  font-size: .83rem;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+.field:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .68rem;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge-good { background: var(--good-soft); color: var(--good); }
+.badge-warn { background: var(--warn-soft); color: var(--warn); }
+.badge-critical { background: var(--critical-soft); color: var(--critical); }
+.badge-accent { background: var(--accent-soft); color: var(--accent); }
+.badge-neutral { background: var(--mono-bg); color: var(--muted); }
+
+.muted { color: var(--muted); }
+.row-sub { font-size: .78rem; color: var(--muted); }
+
+table.data { width: 100%; border-collapse: collapse; font-size: .84rem; }
+table.data th {
+  text-align: left;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .66rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 500;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+table.data td { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+table.data tbody tr:last-child td { border-bottom: none; }
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* ---------- sortable headers (shared) ---------- */
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--text); }
+th.sortable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+th.sortable .arrow { display: inline-block; margin-left: 5px; opacity: .3; font-size: .7rem; }
+th.sortable .arrow::after { content: "\2195"; }
+th.sortable.sort-asc .arrow, th.sortable.sort-desc .arrow { opacity: 1; color: var(--accent); }
+th.sortable.sort-asc .arrow::after { content: "\2191"; }
+th.sortable.sort-desc .arrow::after { content: "\2193"; }
+
+/* ---------- icons in buttons ---------- */
+.btn app-icon { flex: 0 0 auto; }
+
+/* ---------- icon-only action buttons (table Actions column) ---------- */
+.actcol { white-space: nowrap; text-align: right; }
+.act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.act-btn + .act-btn { margin-left: 6px; }
+.act-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.act-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Destructive actions read as destructive before they are clicked, not after. */
+.act-btn.danger { color: var(--critical); }
+.act-btn.danger:hover {
+  background: var(--critical-soft);
+  border-color: color-mix(in srgb, var(--critical) 35%, var(--border));
+}
+
+/* `hidden` must always win.
+ *
+ * The browser hides [hidden] with a user-agent rule, and any author rule that
+ * sets `display` beats it. Components do that constantly — a panel is
+ * `display:flex` — so `[hidden]="!open"` was being set correctly and ignored:
+ * Refine view never collapsed, and the selection bar sat on screen with
+ * nothing selected. One global rule fixes every component at once.
+ */
+[hidden] { display: none !important; }
+
+/* A button whose request is in flight.
+ *
+ * The request is the thing that can fail or take seconds, so the button says
+ * so: a spinner, no second click, and `aria-busy` for a screen reader. Bind
+ * `[class.busy]` and `[disabled]` together — the class is the signal, the
+ * disabled state is the guard against a double submit.
+ */
+.btn.busy { position: relative; pointer-events: none; opacity: .78; }
+.btn.busy::before {
+  content: ''; display: inline-block; width: .8em; height: .8em; margin-right: 6px;
+  vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: btn-spin .7s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn.busy::before { animation-duration: 2.4s; } }
+
+/* The list screen's company-check and suggested-contacts panels. Global because
+   list-detail's component styles are at their size budget. */
+.fpanel { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.fpanel-h, .fpanel-f { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.fpanel-f { margin-top: 8px; align-items: center; }
+.fpanel .spacer { flex: 1; }
+.fpanel .conf-row { padding: 7px 0 3px; border-top: 1px dashed var(--line); margin-top: 6px; }
+.fpanel .conf-item { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-top: 4px; }
+.fpanel .conf-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.sugg-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; }
+.sugg-bar p { margin: 0; max-width: 70ch; }
+.sugg-bar .spacer { flex: 1; }
+
+
+/* The outreach person panel. Global because the campaign page's component
+   styles are at their size budget. */
+.pd-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .18); z-index: 45; }
+.pd { position: fixed; top: 0; right: 0; bottom: 0; width: min(680px, 94vw); z-index: 46;
+      background: var(--surface); border-left: 1px solid var(--line); overflow-y: auto;
+      box-shadow: -8px 0 24px rgba(0, 0, 0, .14); padding: 20px 22px 40px; }
+.pd-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.pd-head h3 { font-size: 1.02rem; margin: 0 0 2px; }
+.pd-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 12px 0 14px; }
+.pd-tabs button { background: none; border: 0; padding: 8px 12px; cursor: pointer; font-size: .84rem;
+                  color: var(--text-dim); border-bottom: 2px solid transparent; }
+.pd-tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
+.pd h4 { font-size: .84rem; margin: 14px 0 4px; }
+.pd section p { margin: 4px 0; }
+.pd-err { color: var(--critical); }
+.pd-score { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.pd-score strong { font-size: 1.5rem; }
+.pd-dim { border-top: 1px solid var(--line); padding: 8px 0; }
+.pd-dim-h { display: flex; justify-content: space-between; }
+.pd-flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.pd-signals { margin: 4px 0; padding-left: 18px; }
+.pd-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.pd .spacer { flex: 1; }
+.pd-touch { border-top: 1px solid var(--line); padding: 12px 0; }
+.pd-touch-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pd-subject { display: block; margin-top: 4px; }
+.pd-body { white-space: pre-wrap; margin: 4px 0 0; font-size: .86rem; }
+
+/* Which LGM attribute a piece of drafted content is written into. Sits above
+   the content it names, so the binding reads as a label on the words rather
+   than as metadata elsewhere on the screen. */
+.slot { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
+.slot-id { font-family: 'IBM Plex Mono', monospace; font-size: .68rem;
+           padding: 2px 8px; border-radius: 4px; white-space: nowrap;
+           background: var(--accent-soft); color: var(--accent); }
+.slot-id.none { background: var(--mono-bg); color: var(--muted); }
+.slot-name { font-size: .7rem; color: var(--faint); }
+/* Copy that is on the draft but has nowhere to send. */
+.dead { text-decoration: line-through; color: var(--muted); }
+.pd-edit { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.pd-edit textarea { width: 100%; resize: vertical; font: inherit; line-height: 1.45; }
+.pd-edit-f { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pd-versions { margin-top: 8px; padding: 6px 10px; background: var(--mono-bg); border-radius: 6px; }
+.pd-version { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.pd-version:last-child { border-bottom: 0; }
+.btn.btn-sm { padding: 3px 9px; font-size: .76rem; }
+
+/* The decision bar inside the arc drawer. Global rather than component-scoped
+   so the drawer's own stylesheet stays inside its budget. */
+.drawer-decide { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+                 padding: 10px 0 14px; border-bottom: 1px solid var(--line);
+                 margin-bottom: 14px; }
+.drawer-decide .field { width: 150px; }
+.drawer-decide .row-sub { flex-basis: 100%; }
+
+/* The people behind a blocked pre-flight check, each a way into the fix. */
+.whom { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.whom .chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+              border: 1px solid var(--line); background: var(--surface); color: var(--text);
+              border-radius: 999px; padding: 3px 10px; font-size: .76rem; }
+.whom .chip:hover { border-color: var(--accent); color: var(--accent); }
+.whom .chip .go { color: var(--muted); }
+.whom .chip:hover .go { color: var(--accent); }
+
+/* A withdrawn thread: still listed, so a campaign cannot quietly lose a
+   person, but plainly out of it. */
+tr.withdrawn td { opacity: .55; }
+tr.withdrawn strong { font-weight: 400; }

@@ -1,0 +1,769 @@
+<title>Account list — table workflow</title>
+<style>
+  :root{
+    --bg:#eef1f2; --surface:#ffffff; --surface-2:#f5f7f7;
+    --text:#171b21; --text-muted:#5c6672; --text-faint:#8b949c;
+    --border:#d7dcdc; --border-strong:#c3caca;
+    --accent:#1f6f64; --accent-ink:#fff; --accent-soft:#e3efec;
+    --good:#2f7a54; --good-soft:#e5f1e9;
+    --warn:#b8801f; --warn-soft:#f7ecd9;
+    --critical:#b34a3f; --critical-soft:#f8e8e6;
+    --mono-bg:#e7ebea;
+    --shadow:0 1px 2px rgba(23,27,33,.06),0 6px 20px rgba(23,27,33,.06);
+    --shadow-lg:0 4px 8px rgba(23,27,33,.08),0 16px 40px rgba(23,27,33,.12);
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#12151a; --surface:#1a1f25; --surface-2:#20262d;
+      --text:#e6eaee; --text-muted:#9aa4ae; --text-faint:#727c86;
+      --border:#2b3239; --border-strong:#3a424a; --mono-bg:#232a31;
+      --accent:#3f9b8c; --accent-soft:#1d2f2c;
+      --good-soft:#1c2b22; --warn-soft:#2e2519; --critical-soft:#31201e;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 22px 60px}
+  .note{background:var(--accent-soft);border:1px solid var(--border);border-radius:8px;
+        padding:12px 15px;margin-bottom:22px;font-size:.83rem;color:var(--text-muted)}
+  .note strong{color:var(--text)}
+  h1{font-size:1.3rem;margin:0 0 3px}
+  .titlerow{display:flex;align-items:center;gap:12px;margin-bottom:3px}
+  .listpick{font:inherit;font-size:.82rem;padding:4px 9px;border-radius:6px;
+            border:1px solid var(--border-strong);background:var(--surface);
+            color:var(--text);cursor:pointer}
+  .warnnote{background:var(--warn-soft);border-color:var(--border-strong)}
+  .chip{display:inline-block;background:var(--mono-bg);border-radius:9px;
+        padding:0 7px;font-size:.7rem;margin-right:3px}
+  h2{font-size:1rem;margin:34px 0 10px}
+  .sub{color:var(--text-muted);font-size:.83rem;margin:0 0 18px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+        box-shadow:var(--shadow)}
+
+  /* ---------------- accordion bar ---------------- */
+  .bar{display:flex;align-items:center;gap:10px;padding:9px 13px;flex-wrap:wrap}
+  .bar.open{border-bottom:1px solid var(--border)}
+  .chev{display:inline-block;transition:transform .15s;font-size:.8rem;color:var(--text-faint)}
+  .open .chev{transform:rotate(90deg)}
+  .disc{display:flex;align-items:center;gap:7px;background:none;border:none;cursor:pointer;
+        font:inherit;color:var(--text);padding:2px 0}
+  .disc strong{font-size:.86rem}
+  .summary{color:var(--text-muted);font-size:.79rem}
+  .pill{background:var(--mono-bg);border-radius:9px;padding:1px 7px;
+        font-family:var(--mono);font-size:.72rem;margin-left:4px}
+  .pill.scope{background:var(--accent-soft);color:var(--accent);margin-left:0}
+  .spacer{flex:1}
+  .count{color:var(--text-muted);font-size:.79rem}
+
+  button.btn{font:inherit;font-size:.78rem;padding:5px 11px;border-radius:6px;
+             border:1px solid var(--border-strong);background:var(--surface);
+             color:var(--text);cursor:pointer;white-space:nowrap}
+  button.btn:hover{background:var(--surface-2)}
+  button.btn:disabled{opacity:.45;cursor:default}
+  button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  button.btn.ghost{border-color:transparent;color:var(--text-muted)}
+  button.btn.danger{color:var(--critical);border-color:var(--critical)}
+
+  /* ---------------- the panel ---------------- */
+  .panel{padding:11px 13px;background:var(--surface-2);border-bottom:1px solid var(--border);
+         display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .panel[hidden]{display:none}
+  .search{position:relative}
+  .search input{font:inherit;font-size:.79rem;padding:5px 9px 5px 26px;width:230px;
+                border:1px solid var(--border-strong);border-radius:6px;
+                background:var(--surface);color:var(--text)}
+  .search .ico{position:absolute;left:8px;top:50%;transform:translateY(-50%);
+               color:var(--text-faint);font-size:.8rem}
+  .vr{width:1px;height:22px;background:var(--border)}
+  .fieldlab{display:flex;align-items:center;gap:6px;font-size:.75rem;
+            text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+
+  /* ---------------- column dropdown ---------------- */
+  .dd{position:relative}
+  .menu{position:absolute;z-index:30;top:calc(100% + 5px);left:0;min-width:225px;
+        max-height:290px;overflow:auto;background:var(--surface);
+        border:1px solid var(--border-strong);border-radius:8px;
+        box-shadow:var(--shadow-lg);padding:7px}
+  .menu[hidden]{display:none}
+  .menu .mhead{display:flex;gap:6px;padding:3px 5px 7px;border-bottom:1px solid var(--border);
+               margin-bottom:5px}
+  .menu .mhead button{font-size:.72rem;padding:2px 7px}
+  .pick{display:flex;align-items:center;gap:7px;font-size:.79rem;cursor:pointer;
+        padding:4px 6px;border-radius:5px}
+  .pick:hover{background:var(--surface-2)}
+  .pick .grp{margin-left:auto;font-size:.68rem;color:var(--text-faint);
+             text-transform:uppercase;letter-spacing:.04em}
+
+  /* ---------------- selection bar ---------------- */
+  .selbar{display:flex;align-items:center;gap:9px;padding:8px 13px;flex-wrap:wrap;
+          background:var(--accent-soft);border-bottom:1px solid var(--border)}
+  .selbar[hidden]{display:none}
+  .selbar .n{font-size:.81rem;font-weight:600}
+  .selbar.result{background:var(--surface-2)}
+  .bulkbtns{display:flex;gap:7px;flex-wrap:wrap}
+  .btn .sub{opacity:.7;font-size:.72rem;margin-left:3px}
+  .skipnote{font-size:.73rem;color:var(--warn);margin-left:2px}
+
+  /* ---------------- table ---------------- */
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:.83rem}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  thead th{background:var(--surface-2);position:relative;font-size:.72rem;
+           text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);
+           font-weight:600;user-select:none}
+  thead th .lbl{cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+  thead th .arrow{font-size:.65rem;color:var(--text-faint)}
+  thead th.sorted .arrow{color:var(--accent)}
+  .grip{position:absolute;right:0;top:0;height:100%;width:7px;cursor:col-resize}
+  .grip:hover,.grip.active{background:var(--accent)}
+  th.selcol,td.selcol{width:38px;padding-left:12px;padding-right:4px;text-align:center}
+  /* Pinned right and never hidden: row actions are the one column that must
+     not be turned off, or the operations become unreachable per row. */
+  th.actcol,td.actcol{width:86px;text-align:right;padding-right:12px;
+                      position:sticky;right:0;background:var(--surface)}
+  thead th.actcol{background:var(--surface-2)}
+  tbody tr:hover td.actcol{background:var(--surface-2)}
+  tbody tr.picked td.actcol{background:var(--accent-soft)}
+  .iconbtn{border:1px solid transparent;background:none;cursor:pointer;
+           border-radius:5px;padding:2px 6px;font-size:.85rem;color:var(--text-muted)}
+  .iconbtn:hover{background:var(--mono-bg);color:var(--text)}
+  .rowmenu{position:fixed;z-index:60;min-width:190px;background:var(--surface);
+           border:1px solid var(--border-strong);border-radius:8px;
+           box-shadow:var(--shadow-lg);padding:5px}
+  .rowmenu[hidden]{display:none}
+  .rowmenu button{display:block;width:100%;text-align:left;border:none;
+                  background:none;font:inherit;font-size:.79rem;padding:6px 9px;
+                  border-radius:5px;cursor:pointer;color:var(--text)}
+  .rowmenu button:hover{background:var(--surface-2)}
+  .rowmenu button.danger{color:var(--critical)}
+  .rowmenu button:disabled{color:var(--text-faint);cursor:default}
+  .rowmenu button:disabled:hover{background:none}
+  .rowmenu .sep{height:1px;background:var(--border);margin:4px 0}
+  tr.filters th{padding-top:0;padding-bottom:7px;text-transform:none;letter-spacing:0;
+                font-weight:400}
+  .fin{width:100%;font:inherit;font-size:.75rem;padding:3px 6px;
+       border:1px solid var(--border-strong);border-radius:5px;
+       background:var(--surface);color:var(--text)}
+  tbody tr:hover{background:var(--surface-2)}
+  tbody tr.picked{background:var(--accent-soft)}
+  td.mono{font-family:var(--mono);font-size:.78rem}
+  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.71rem}
+  .b-good{background:var(--good-soft);color:var(--good)}
+  .b-warn{background:var(--warn-soft);color:var(--warn)}
+  .b-crit{background:var(--critical-soft);color:var(--critical)}
+  .b-neut{background:var(--mono-bg);color:var(--text-muted)}
+  .none{color:var(--text-faint)}
+  .empty{text-align:center;padding:30px;color:var(--text-muted);font-size:.82rem}
+  .link{color:var(--accent);text-decoration:none}
+  .legend{margin-top:26px;font-size:.8rem;color:var(--text-muted)}
+  .legend li{margin-bottom:7px}
+  .legend code{background:var(--mono-bg);padding:1px 5px;border-radius:4px;
+               font-family:var(--mono);font-size:.75rem}
+</style>
+
+<div class="wrap">
+  <div class="note">
+    <strong>Workflow mockup — not the app.</strong> Clickable throughout. Open
+    <em>Refine view</em> to pick a list, search, choose columns and clear
+    filters; tick rows for a bulk action; drag a column edge; sort and filter in
+    the header. Nothing here is Angular yet.
+  </div>
+
+  <h1>Accounts</h1>
+  <p class="sub" id="scope"></p>
+
+  <!-- Only when scoped to the orphans. They are alive, they still hold the
+       domain uniqueness index, and without this screen nothing shows them. -->
+  <div class="note warnnote" id="orphannote" hidden>
+    <strong>These belong to no list.</strong> Removing an account from a list
+    keeps the account — a list is a selection, not an owner. They stay here, and
+    a re-import of the same company will match them rather than creating a
+    duplicate. This screen is the only place they appear.
+  </div>
+
+  <div class="card">
+    <div class="bar" id="bar">
+      <button class="disc" id="disc" aria-expanded="false" aria-controls="panel">
+        <span class="chev">›</span><strong>Refine view</strong>
+      </button>
+      <span class="summary" id="summary"></span>
+      <span class="spacer"></span>
+      <span class="count" id="count"></span>
+    </div>
+
+    <!-- One row, because it collapses. A dropdown instead of a checkbox grid
+         keeps it to one line even with twenty columns to offer. -->
+    <div class="panel" id="panel" hidden>
+      <!-- Scope first: which accounts are in play at all, before any narrowing
+           of them. It reads left to right as the question it answers. -->
+      <label class="fieldlab">
+        List
+        <select id="listpick" class="listpick" aria-label="Which list to show">
+          <option value="*">All lists</option>
+          <option value="q3">Q3 DevOps ISVs — US</option>
+          <option value="eia">EIA saas</option>
+          <option value="none">On no list</option>
+        </select>
+      </label>
+
+      <span class="vr"></span>
+
+      <div class="search">
+        <span class="ico">⌕</span>
+        <input id="q" placeholder="Search this list" autocomplete="off">
+      </div>
+
+      <div class="dd">
+        <button class="btn" id="colbtn" aria-expanded="false">Columns <span id="colcount"></span> ▾</button>
+        <div class="menu" id="colmenu" hidden>
+          <div class="mhead">
+            <button class="btn ghost" id="allcols">All</button>
+            <button class="btn ghost" id="fewcols">Essentials</button>
+          </div>
+          <div id="picker"></div>
+        </div>
+      </div>
+
+      <span class="vr"></span>
+      <button class="btn" id="clearf">Clear filters</button>
+      <button class="btn">Export CSV</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="reset">Reset layout</button>
+    </div>
+
+    <!-- Appears only with a selection. Actions live where the selection is,
+         not in a toolbar that is present whether or not it can do anything. -->
+    <div class="selbar" id="selbar" hidden>
+      <span class="n" id="selcount"></span>
+      <span id="bulkbtns" class="bulkbtns"></span>
+      <span class="spacer"></span>
+      <button class="btn danger" id="bulkremove"></button>
+      <button class="btn ghost" id="selclear">Clear</button>
+    </div>
+    <!-- What the last action did, including what it declined to do. -->
+    <div class="selbar result" id="resultbar" hidden>
+      <span id="resulttext"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="resultclose">Dismiss</button>
+    </div>
+
+    <div class="scroll">
+      <table id="tbl">
+        <thead>
+          <tr id="head"></tr>
+          <tr class="filters" id="filterrow"></tr>
+        </thead>
+        <tbody id="body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- One menu, repositioned per row. Rendering one inside every row would
+       be clipped by the table's own horizontal scroll. -->
+  <div class="rowmenu" id="rowmenu" hidden>
+    <button data-act="resolve">Resolve identity</button>
+    <button data-act="enrich">Enrich contacts</button>
+    <button data-act="research">Run research</button>
+    <div class="sep"></div>
+    <button data-act="queue">Add to queue</button>
+    <div class="sep"></div>
+    <button class="danger" data-act="remove" id="rowremove">Remove from list</button>
+  </div>
+
+  <h2>What to check</h2>
+  <ul class="legend">
+    <li><strong>Columns are a dropdown.</strong> One line whether there are six
+      choices or twenty, with <code>All</code> / <code>Essentials</code> so a
+      wrecked layout is one click from usable.</li>
+    <li><strong>Refine view is one row and collapses.</strong> List, search,
+      columns, filter-clearing and export — expand, apply, close, and the table
+      has the height back.</li>
+    <li><strong>The collapsed bar still names the list.</strong> Scope moved
+      inside the panel, so it leads the summary — you can always see which
+      accounts you are looking at without opening anything.</li>
+    <li><strong>Selection is leftmost.</strong> The header box selects
+      <em>what you can see</em>: filter to 6 of 10, tick the header, and you have
+      6 — not a silent 10.</li>
+    <li><strong>The action bar only appears with a selection</strong>, so a
+      button is never present unless it can do something.</li>
+    <li><strong>Search and filters are different tools.</strong> Search sweeps
+      every visible column; a column filter narrows one. The summary counts them
+      separately.</li>
+    <li><strong>A bulk action runs on what it can.</strong> Select ten with one
+      contactless account and Enrich still runs on nine, then reports
+      <em>1 skipped — no contacts</em>. Disabling the button because one row is
+      ineligible would make you deselect rows to hunt for the offender.</li>
+    <li><strong>Ineligible row actions are greyed with the reason</strong>, not
+      hidden — a missing item reads as a feature that does not exist.</li>
+    <li><strong>Row actions are pinned right and cannot be hidden.</strong>
+      One click to open, one for everything else — the same verbs as the bulk
+      bar, so acting on one row and on twenty reads the same. They stay put
+      while the table scrolls sideways.</li>
+    <li><strong>Remove takes them off this list only.</strong> The accounts are
+      kept — a list is a selection, not an owner, and the same company
+      legitimately sits on several. That differs from deleting the whole list,
+      which does remove accounts left on no other list.</li>
+  </ul>
+</div>
+
+<script>
+// ------------------------------------------------------------------ data --
+const ROWS = [
+  {id:1, contacts:0, lists:['q3'], name:'Northwind Logistics', domain:'northwind.example', identity:'confirmed', conf:1.00, by:'rep',
+   industry:'Logistics', size:'mid', employees:340, icp:72, research:'complete', enrich:'complete', status:'qualified'},
+  {id:2, contacts:4, lists:['q3'], name:'Ridgeline Commerce', domain:'ridgelinecommerce.io', identity:'confirmed', conf:1.00, by:'apollo_org',
+   industry:'E-commerce', size:'small', employees:44, icp:58, research:'complete', enrich:'partial', status:'new'},
+  {id:3, contacts:2, lists:['q3','eia'], name:'Thornbury Health Cloud', domain:'thornburyhealth.io', identity:'check this', conf:0.62, by:'llm_web',
+   industry:'Healthcare', size:'mid', employees:210, icp:64, research:'not_started', enrich:'not_started', status:'new'},
+  {id:4, contacts:0, lists:['eia'], name:'Loomwright Analytics', domain:'loomwright.io', identity:'confirmed', conf:0.95, by:'apollo_org',
+   industry:'SaaS', size:'small', employees:38, icp:81, research:'complete', enrich:'complete', status:'qualified'},
+  {id:5, contacts:3, lists:['q3'], name:'Palisade Identity', domain:'palisade.id', identity:'not identified', conf:null, by:null,
+   industry:null, size:'unknown', employees:null, icp:null, research:'not_started', enrich:'not_started', status:'new'},
+  {id:6, contacts:0, lists:['eia'], name:'Quillon Insurance Tech', domain:'quillon.co', identity:'confirmed', conf:1.00, by:'apollo_org',
+   industry:'Insurance', size:'large', employees:1400, icp:69, research:'partial', enrich:'complete', status:'researching'},
+  {id:7, contacts:1, lists:['q3'], name:'Selkirk Data Systems', domain:'selkirkdata.com', identity:'check this', conf:0.55, by:'llm_web',
+   industry:'SaaS', size:'mid', employees:260, icp:47, research:'not_started', enrich:'not_started', status:'new'},
+  {id:8, contacts:5, lists:['q3','eia'], name:'Vellum Ops', domain:'vellumops.com', identity:'confirmed', conf:1.00, by:'rep',
+   industry:'Logistics', size:'small', employees:22, icp:53, research:'complete', enrich:'partial', status:'disqualified'},
+  {id:9, contacts:0, lists:['eia'], name:'Marlowe Field Service', domain:'marlowefs.com', identity:'confirmed', conf:0.88, by:'apollo_org',
+   industry:'Field service', size:'mid', employees:180, icp:61, research:'failed', enrich:'complete', status:'researching'},
+  {id:10, contacts:2, lists:['q3'], name:'Harrowgate Logistics Cloud', domain:'harrowgatecloud.com', identity:'rejected', conf:null, by:'rep',
+   industry:null, size:'unknown', employees:null, icp:null, research:'not_started', enrich:'not_started', status:'disqualified'},
+  // Removed from a list and kept, which is what "remove membership only"
+  // produces. Reachable here and nowhere else.
+  {id:11, contacts:0, lists:[], name:'Ashcombe HR Platform', domain:'ashcombehr.io', identity:'check this', conf:0.50, by:'llm_web',
+   industry:null, size:'unknown', employees:null, icp:null, research:'not_started', enrich:'not_started', status:'new'},
+  {id:12, contacts:1, lists:[], name:'Bramblewick Retail Cloud', domain:'bramblewick.com', identity:'confirmed', conf:1.00, by:'rep',
+   industry:'Retail', size:'small', employees:60, icp:44, research:'complete', enrich:'partial', status:'disqualified'},
+];
+
+//: Display names for the picker and the Lists column.
+const LIST_NAMES = {q3:'Q3 DevOps ISVs', eia:'EIA saas'};
+let scope = '*';
+
+// `on` is the first-visit default; `grp` groups the dropdown so twenty
+// entries stay scannable.
+const COLS = [
+  {k:'name',      t:'Company',     w:210, on:true,  f:'text', grp:'identity'},
+  {k:'lists',     t:'On lists',    w:150, on:false, f:'enum', grp:'identity'},
+  {k:'domain',    t:'Domain',      w:190, on:true,  f:'text', grp:'identity', mono:true},
+  {k:'identity',  t:'Identity',    w:130, on:true,  f:'enum', grp:'identity'},
+  {k:'conf',      t:'Confidence',  w:105, on:false, f:'none', grp:'identity', mono:true, num:true},
+  {k:'by',        t:'Resolved by', w:120, on:false, f:'enum', grp:'identity'},
+  {k:'industry',  t:'Industry',    w:140, on:true,  f:'enum', grp:'firmographics'},
+  {k:'size',      t:'Size',        w:90,  on:false, f:'enum', grp:'firmographics'},
+  {k:'employees', t:'Employees',   w:100, on:false, f:'none', grp:'firmographics', mono:true, num:true},
+  {k:'contacts',  t:'Contacts',    w:95,  on:true,  f:'none', grp:'pipeline', mono:true, num:true},
+  {k:'icp',       t:'ICP fit',     w:90,  on:true,  f:'none', grp:'scoring', mono:true, num:true},
+  {k:'research',  t:'Research',    w:120, on:false, f:'enum', grp:'pipeline'},
+  {k:'enrich',    t:'Enrichment',  w:120, on:false, f:'enum', grp:'pipeline'},
+  {k:'status',    t:'Status',      w:110, on:true,  f:'enum', grp:'pipeline'},
+];
+
+const KEY = 'mock.view.accounts';        // keyed per entity
+let view = load();
+let sort = {k:null, dir:'asc'};
+let query = '';
+let picked = new Set();
+
+function load(){
+  try{
+    const p = JSON.parse(localStorage.getItem(KEY) || '{}');
+    return {hidden:p.hidden||[], shown:p.shown||[], widths:p.widths||{}, filters:p.filters||{}};
+  }catch{ return {hidden:[], shown:[], widths:{}, filters:{}}; }
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(view)); }catch{} }
+
+// Both directions stored: only-exclusions cannot express "show a column that
+// is off by default"; only-inclusions hides any column added later.
+function isOn(c){
+  if(view.shown.includes(c.k)) return true;
+  if(view.hidden.includes(c.k)) return false;
+  return c.on;
+}
+function setOn(c,on){
+  view.hidden = on ? view.hidden.filter(k=>k!==c.k) : [...new Set([...view.hidden,c.k])];
+  view.shown  = on ? [...new Set([...view.shown,c.k])] : view.shown.filter(k=>k!==c.k);
+  save(); render();
+}
+const shown = () => COLS.filter(isOn);
+const widthOf = c => view.widths[c.k] ?? c.w;
+
+// --------------------------------------------------------------- filters --
+function inScope(r){
+  if(scope==='*') return true;
+  if(scope==='none') return r.lists.length===0;
+  return r.lists.includes(scope);
+}
+
+function passes(r){
+  for(const c of shown()){
+    const q=(view.filters[c.k]||'').trim();
+    if(!q) continue;
+    const v = c.k==='lists'
+      ? (r.lists.length ? r.lists.map(l=>LIST_NAMES[l]||l).join(' ') : 'none')
+      : r[c.k];
+    const s=(v===null||v===undefined)?'':String(v);
+    if(c.k==='lists'){ if(!s.includes(q)) return false; }
+    else if(c.f==='enum'){ if(s!==q) return false; }
+    else if(!s.toLowerCase().includes(q.toLowerCase())) return false;
+  }
+  if(query.trim()){
+    // Search sweeps every *visible* column — searching a hidden one would
+    // hide rows for a reason nothing on screen explains.
+    const hay = shown().map(c => c.k==='lists'
+        ? r.lists.map(l=>LIST_NAMES[l]||l).join(' ')
+        : r[c.k])
+      .filter(v=>v!==null&&v!==undefined).join(' ').toLowerCase();
+    if(!hay.includes(query.trim().toLowerCase())) return false;
+  }
+  return true;
+}
+const options = c => c.k==='lists'
+  ? [...Object.values(LIST_NAMES), 'none'].sort()
+  : [...new Set(ROWS.map(r=>r[c.k]).filter(v=>v!==null&&v!==undefined&&v!==''))].map(String).sort();
+const activeFilters = () => Object.values(view.filters).filter(v=>(v||'').trim()).length;
+
+function rows(){
+  let out = ROWS.filter(r => inScope(r) && passes(r));
+  if(sort.k){
+    const c=COLS.find(x=>x.k===sort.k), m=sort.dir==='asc'?1:-1;
+    out=[...out].sort((a,b)=>{
+      const x=a[sort.k], y=b[sort.k];
+      if(x===null||x===undefined||x==='') return 1;   // blanks last, both ways
+      if(y===null||y===undefined||y==='') return -1;
+      return (c.num ? x-y : String(x).localeCompare(String(y))) * m;
+    });
+  }
+  return out;
+}
+
+// ----------------------------------------------------------- eligibility --
+// What each action needs, and what to say when a row does not have it.
+//
+// Written as data rather than as `disabled` flags because the same rules drive
+// three things: whether a row's menu item is live, how many of a selection an
+// action can run on, and what the report says about the rest.
+const ACTIONS = {
+  resolve: {
+    label: 'Resolve identity',
+    can: r => r.identity==='check this' || r.identity==='not identified',
+    why: 'already settled',
+  },
+  enrich: {
+    label: 'Enrich contacts',
+    can: r => r.contacts > 0,
+    why: 'no contacts to enrich',
+  },
+  research: {
+    label: 'Run research',
+    can: r => r.identity==='confirmed',
+    why: 'identity not confirmed',
+  },
+  queue: {
+    label: 'Add to queue',
+    can: r => r.identity==='confirmed' && r.status!=='disqualified',
+    why: 'not confirmed, or disqualified',
+  },
+  remove: { label: 'Remove', can: () => true, why: '' },
+};
+
+const selectedRows = () => ROWS.filter(r => picked.has(r.id));
+
+/** How a bulk action stands against the current selection. */
+function tally(key){
+  const a = ACTIONS[key], sel = selectedRows();
+  const ok = sel.filter(a.can), no = sel.filter(r => !a.can(r));
+  return {ok: ok.length, blocked: no.length, why: a.why, label: a.label};
+}
+
+// ------------------------------------------------------------------ cell --
+function cell(r,c){
+  if(c.k==='lists'){
+    return r.lists.length
+      ? r.lists.map(l=>`<span class="chip">${LIST_NAMES[l]||l}</span>`).join('')
+      : '<span class="none">none</span>';
+  }
+  const v=r[c.k];
+  if(v===null||v===undefined||v==='') return '<span class="none">—</span>';
+  if(c.k==='identity'){
+    const cls={'confirmed':'b-good','check this':'b-warn','not identified':'b-neut','rejected':'b-crit'}[v]||'b-neut';
+    return `<span class="badge ${cls}">${v}</span>`;
+  }
+  if(c.k==='research'||c.k==='enrich'){
+    const cls={complete:'b-good',partial:'b-warn',failed:'b-crit'}[v]||'b-neut';
+    return `<span class="badge ${cls}">${v}</span>`;
+  }
+  if(c.k==='status'){
+    const cls={qualified:'b-good',disqualified:'b-crit',researching:'b-warn'}[v]||'b-neut';
+    return `<span class="badge ${cls}">${v}</span>`;
+  }
+  if(c.k==='name') return `<a class="link" href="#">${v}</a>`;
+  if(c.k==='conf') return Number(v).toFixed(2);
+  return String(v);
+}
+
+// ---------------------------------------------------------------- render --
+function render(){
+  const cols=shown(), rs=rows(), ids=rs.map(r=>r.id);
+
+  // Column dropdown, grouped.
+  let last=null;
+  document.getElementById('picker').innerHTML = COLS.map(c=>{
+    const head = c.grp!==last ? (last=c.grp, `<div class="pick" style="pointer-events:none">
+      <span class="grp" style="margin:0">${c.grp}</span></div>`) : '';
+    return head + `<label class="pick"><input type="checkbox" data-col="${c.k}"
+      ${isOn(c)?'checked':''}> ${c.t}</label>`;
+  }).join('');
+  document.getElementById('colcount').textContent = `${cols.length}/${COLS.length}`;
+
+  // Header. The select-all box reflects what is *visible*.
+  const allOn = ids.length>0 && ids.every(i=>picked.has(i));
+  const someOn = ids.some(i=>picked.has(i)) && !allOn;
+  document.getElementById('head').innerHTML =
+    `<th class="selcol"><input type="checkbox" id="selall" ${allOn?'checked':''}></th>` +
+    cols.map(c=>`<th style="width:${widthOf(c)}px" class="${sort.k===c.k?'sorted':''}">
+      <span class="lbl" data-sort="${c.k}">${c.t}
+        <span class="arrow">${sort.k===c.k?(sort.dir==='asc'?'▲':'▼'):'↕'}</span></span>
+      <span class="grip" data-grip="${c.k}"></span></th>`).join('') +
+    `<th class="actcol">Actions</th>`;
+  const sa=document.getElementById('selall'); if(sa) sa.indeterminate=someOn;
+
+  document.getElementById('filterrow').innerHTML = '<th class="selcol"></th>' +
+    cols.map(c=>{
+      if(c.f==='none') return '<th></th>';
+      if(c.f==='enum') return `<th><select class="fin" data-f="${c.k}"><option value="">any</option>
+        ${options(c).map(o=>`<option ${view.filters[c.k]===o?'selected':''}>${o}</option>`).join('')}</select></th>`;
+      return `<th><input class="fin" data-f="${c.k}" placeholder="filter" value="${view.filters[c.k]||''}"></th>`;
+    }).join('') + '<th class="actcol"></th>';
+
+  document.getElementById('body').innerHTML = rs.length
+    ? rs.map(r=>`<tr class="${picked.has(r.id)?'picked':''}">
+        <td class="selcol"><input type="checkbox" data-row="${r.id}" ${picked.has(r.id)?'checked':''}></td>
+        ${cols.map(c=>`<td class="${c.mono?'mono':''}">${cell(r,c)}</td>`).join('')}
+        <td class="actcol">
+          <button class="iconbtn" title="Open ${r.name}" data-open="${r.id}">↗</button>
+          <button class="iconbtn" title="More actions" data-more="${r.id}">⋯</button>
+        </td></tr>`).join('')
+    : `<tr><td class="empty" colspan="${cols.length+2}">Nothing matches that.</td></tr>`;
+
+  // The scope line, so what you are looking at is stated rather than implied
+  // by a dropdown somebody set ten minutes ago.
+  const total = ROWS.filter(inScope).length;
+  document.getElementById('scope').textContent =
+    scope==='*'   ? `${total} accounts across every list · every column sorts`
+  : scope==='none'? `${total} accounts on no list · every column sorts`
+  :                 `${total} accounts on ${LIST_NAMES[scope]} · every column sorts`;
+  document.getElementById('orphannote').hidden = scope!=='none';
+
+  // Scope leads the summary. Moving the picker inside a collapsed panel
+  // would otherwise hide *which accounts these are* — the one thing you
+  // cannot infer from the rows in front of you.
+  const scopeLabel = scope==='*' ? 'All lists'
+                   : scope==='none' ? 'On no list'
+                   : LIST_NAMES[scope];
+  const nf=activeFilters(), bits=[
+    `<span class="pill scope">${scopeLabel}</span>`,
+    `${cols.length} of ${COLS.length} columns`,
+  ];
+  if(nf) bits.push(`<span class="pill">${nf} filter${nf===1?'':'s'}</span>`);
+  if(query.trim()) bits.push(`<span class="pill">search</span>`);
+  document.getElementById('summary').innerHTML = bits.join(' · ');
+  document.getElementById('count').textContent =
+    rs.length===total ? `${total} accounts` : `${rs.length} of ${total} accounts`;
+
+  const rl=document.getElementById('removelbl');
+  if(rl) rl.textContent = scope==='*'||scope==='none'
+    ? 'Remove from every list' : `Remove from ${LIST_NAMES[scope]}`;
+
+  const sel=document.getElementById('selbar');
+  sel.hidden = picked.size===0;
+  document.getElementById('selcount').textContent = `${picked.size} selected`;
+
+  // A button is live when *any* selected row can take it, and says how many.
+  // Disabling the lot because one row is ineligible would make a rep deselect
+  // rows to find the offender — the work the report should be doing for them.
+  document.getElementById('bulkbtns').innerHTML =
+    ['resolve','enrich','research','queue'].map(k=>{
+      const t=tally(k);
+      return `<button class="btn" data-bulk="${k}" ${t.ok?'':'disabled'}
+        title="${t.ok ? `Runs on ${t.ok} of ${picked.size}` + (t.blocked?` · ${t.blocked} skipped: ${t.why}`:'')
+                      : `None of the selection can: ${t.why}`}">
+        ${t.label}<span class="sub">${t.ok}</span></button>`;
+    }).join('');
+
+  const rb=document.getElementById('bulkremove');
+  rb.textContent = scope==='*'||scope==='none'
+    ? 'Remove from every list' : `Remove from ${LIST_NAMES[scope]}`;
+
+  wire();
+}
+
+function wire(){
+  document.querySelectorAll('#picker input').forEach(i=>{
+    i.onchange = () => setOn(COLS.find(c=>c.k===i.dataset.col), i.checked);
+  });
+  document.querySelectorAll('[data-sort]').forEach(el=>{
+    el.onclick = () => {
+      const k=el.dataset.sort;
+      sort = sort.k===k ? {k,dir:sort.dir==='asc'?'desc':'asc'} : {k,dir:'asc'};
+      render();
+    };
+  });
+  document.querySelectorAll('[data-f]').forEach(el=>{
+    const ev = el.tagName==='SELECT' ? 'change' : 'input';
+    el.addEventListener(ev, () => {
+      view.filters[el.dataset.f]=el.value; save();
+      const at=el.selectionStart; render();
+      const again=document.querySelector(`[data-f="${el.dataset.f}"]`);
+      if(again&&again.tagName==='INPUT'){ again.focus(); again.setSelectionRange(at,at); }
+    });
+  });
+  const sa=document.getElementById('selall');
+  if(sa) sa.onchange = () => {
+    // Only what is on screen. Ticking the header after filtering to six must
+    // not quietly select all ten.
+    const ids=rows().map(r=>r.id);
+    if(sa.checked) ids.forEach(i=>picked.add(i)); else ids.forEach(i=>picked.delete(i));
+    render();
+  };
+  document.querySelectorAll('[data-row]').forEach(cb=>{
+    cb.onchange = () => {
+      const id=Number(cb.dataset.row);
+      cb.checked ? picked.add(id) : picked.delete(id);
+      render();
+    };
+  });
+  document.querySelectorAll('[data-bulk]').forEach(b=>{
+    b.onclick = () => runBulk(b.dataset.bulk);
+  });
+  document.querySelectorAll('[data-open]').forEach(b=>{
+    b.onclick = () => alert('Would open the account page for #' + b.dataset.open);
+  });
+  document.querySelectorAll('[data-more]').forEach(b=>{
+    b.onclick = e => {
+      e.stopPropagation();
+      const m = document.getElementById('rowmenu');
+      const r = b.getBoundingClientRect();
+      // Fixed positioning, flipped up near the bottom of the window so the
+      // last row's menu is never off-screen.
+      const below = window.innerHeight - r.bottom > 220;
+      m.style.left = Math.max(8, r.right - 190) + 'px';
+      m.style.top  = (below ? r.bottom + 4 : r.top - 4) + 'px';
+      m.style.transform = below ? 'none' : 'translateY(-100%)';
+      m.dataset.row = b.dataset.more;
+      const row = ROWS.find(x=>String(x.id)===b.dataset.more);
+      // Greyed with the reason rather than hidden: a missing item reads as a
+      // feature that does not exist, where a disabled one says "not for this
+      // account, and here is why".
+      m.querySelectorAll('[data-act]').forEach(item=>{
+        const a = ACTIONS[item.dataset.act];
+        if(!a || item.dataset.act==='remove') return;
+        const ok = a.can(row);
+        item.disabled = !ok;
+        item.title = ok ? '' : a.why;
+        item.innerHTML = ok ? a.label
+          : `${a.label} <span class="skipnote">— ${a.why}</span>`;
+      });
+      document.getElementById('rowremove').textContent =
+        scope==='*'||scope==='none' ? 'Remove from every list'
+                                    : `Remove from ${LIST_NAMES[scope]}`;
+      m.hidden = false;
+    };
+  });
+  document.querySelectorAll('[data-grip]').forEach(g=>{
+    g.onmousedown = e => {
+      e.preventDefault(); g.classList.add('active');
+      const k=g.dataset.grip, th=g.parentElement;
+      const x0=e.clientX, w0=th.getBoundingClientRect().width;
+      const move=ev=>{ view.widths[k]=Math.min(900,Math.max(60,w0+ev.clientX-x0));
+                       th.style.width=view.widths[k]+'px'; };
+      const up=()=>{ window.removeEventListener('mousemove',move);
+                     window.removeEventListener('mouseup',up);
+                     g.classList.remove('active'); save(); };
+      window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+    };
+  });
+}
+
+// ------------------------------------------------------------- behaviour --
+document.getElementById('disc').onclick = () => {
+  const p=document.getElementById('panel'), b=document.getElementById('bar');
+  const open=p.hidden; p.hidden=!open;
+  b.classList.toggle('open',open);
+  document.getElementById('disc').setAttribute('aria-expanded',String(open));
+  if(!open) document.getElementById('colmenu').hidden = true;
+};
+document.getElementById('colbtn').onclick = e => {
+  e.stopPropagation();
+  const m=document.getElementById('colmenu');
+  m.hidden=!m.hidden;
+  document.getElementById('colbtn').setAttribute('aria-expanded',String(!m.hidden));
+};
+document.addEventListener('click', e => {
+  const m=document.getElementById('colmenu');
+  if(!m.hidden && !m.contains(e.target) && e.target.id!=='colbtn') m.hidden=true;
+  const rm=document.getElementById('rowmenu');
+  if(!rm.hidden && !rm.contains(e.target)) rm.hidden=true;
+});
+document.querySelectorAll('#rowmenu [data-act]').forEach(b=>{
+  b.onclick = () => {
+    const m=document.getElementById('rowmenu');
+    const row=ROWS.find(r=>String(r.id)===m.dataset.row);
+    m.hidden=true;
+    alert(`Would ${b.dataset.act} — ${row.name}`);
+  };
+});
+// A menu anchored to a row would drift if the page moved underneath it.
+window.addEventListener('scroll', () => {
+  document.getElementById('rowmenu').hidden = true;
+}, true);
+document.getElementById('allcols').onclick = () => {
+  view.hidden=[]; view.shown=COLS.map(c=>c.k); save(); render();
+};
+document.getElementById('fewcols').onclick = () => {
+  view.shown=COLS.filter(c=>c.on).map(c=>c.k);
+  view.hidden=COLS.filter(c=>!c.on).map(c=>c.k);
+  save(); render();
+};
+document.getElementById('q').oninput = e => { query=e.target.value; render();
+  const el=document.getElementById('q'); el.focus();
+  el.setSelectionRange(el.value.length, el.value.length); };
+document.getElementById('clearf').onclick = () => {
+  view.filters={}; query=''; document.getElementById('q').value=''; save(); render();
+};
+document.getElementById('listpick').onchange = e => {
+  scope = e.target.value;
+  // Selection is cleared on scope change: acting on rows you can no longer see
+  // is the bulk-action mistake worth designing out.
+  picked.clear();
+  render();
+};
+function runBulk(key){
+  const t=tally(key), a=ACTIONS[key];
+  const done = t.ok===1 ? '1 account' : `${t.ok} accounts`;
+  document.getElementById('resulttext').innerHTML = t.blocked
+    ? `<strong>${a.label}:</strong> ran on ${done} · ` +
+      `<span class="skipnote">${t.blocked} skipped — ${t.why}</span>`
+    : `<strong>${a.label}:</strong> ran on ${done}.`;
+  document.getElementById('resultbar').hidden = false;
+}
+document.getElementById('resultclose').onclick = () =>
+  document.getElementById('resultbar').hidden = true;
+
+document.getElementById('selclear').onclick = () => {
+  picked.clear();
+  document.getElementById('resultbar').hidden = true;
+  render();
+};
+document.getElementById('reset').onclick = () => {
+  view={hidden:[],shown:[],widths:{},filters:{}};
+  sort={k:null,dir:'asc'}; query=''; picked.clear();
+  document.getElementById('q').value=''; save(); render();
+};
+
+render();
+</script>

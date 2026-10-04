@@ -1,0 +1,1052 @@
+import { CommonModule } from '@angular/common';
+import {
+  Component, EventEmitter, Input, OnInit, Output, inject, signal,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
+
+import { ConfigService, ResearchSource, SignalType } from '../core/config.service';
+import { IconComponent } from '../shared/icon.component';
+
+/**
+ * The ICP, as factors rather than as JSON.
+ *
+ * It was a JSON textarea, which asked somebody defining a sales territory to
+ * also balance brackets. Worse, it made the *vocabulary* invisible: nothing on
+ * screen said that `industries` was a thing you could set, so the only way to
+ * discover a factor was to already know it.
+ *
+ * The design problem is that `org_profile.icp` is deliberately free-form —
+ * "keys are free-form; they are read as facts about who to target" — and a
+ * form over free-form data destroys whatever it does not understand. So the
+ * editor is built around **preservation** rather than a schema:
+ *
+ * * factors it knows get a proper control, with suggestions, so the common
+ *   ones are discoverable and spelled consistently;
+ * * a key it does not know, or a value whose *shape* it cannot represent — a
+ *   nested object, a number — is carried through untouched and listed as
+ *   read-only, so nothing silently disappears from a prompt;
+ * * the raw JSON stays available behind a toggle, so nothing becomes
+ *   uneditable and the escape hatch is never a rewrite of this component.
+ *
+ * The preservation rule is not a nicety. This block is the first cached
+ * section of every prompt the system sends, and a key quietly dropped on save
+ * changes what every stage is told without appearing in any diff a person
+ * reads.
+ */
+
+type FactorKind = 'chips' | 'range' | 'text' | 'personas' | 'sources';
+
+/**
+ * The buying roles a persona can carry. The same closed set as
+ * `contact.buying_role_valid` — the ICP uses it rather than inventing a
+ * parallel one (`docs/11`).
+ */
+export const BUYING_ROLES: { key: string; label: string }[] = [
+  { key: 'economic_buyer', label: 'Economic buyer' },
+  { key: 'technical_buyer', label: 'Technical buyer' },
+  { key: 'champion', label: 'Champion' },
+  { key: 'influencer', label: 'Influencer' },
+  { key: 'blocker', label: 'Blocker' },
+];
+
+/** A buying role plus the titles that fill it. */
+export interface Persona {
+  buying_role: string;
+  titles: string[];
+}
+
+/** The two signal scopes, as they are set on the Signal types screen. */
+const SCOPES: { key: 'company' | 'contact'; label: string; hint: string }[] = [
+  {
+    key: 'company',
+    label: 'Company signals',
+    hint: 'About the organisation — found once and shared by every list that works the account.',
+  },
+  {
+    key: 'contact',
+    label: 'Contact signals',
+    hint: "About a person — researched only for this ICP's buyer personas.",
+  },
+];
+
+/** One selectable headcount band. `max: null` is the open-ended top band. */
+interface Band {
+  label: string;
+  min: number;
+  max: number | null;
+}
+
+interface Factor {
+  key: string;
+  label: string;
+  kind: FactorKind;
+  hint: string;
+  /** Offered as a datalist. Never a closed set — typing anything is allowed. */
+  suggestions?: string[];
+  /**
+   * Draw the options from configuration instead, and accept nothing else.
+   *
+   * The exception to this editor's free-text rule, and it earns the exception:
+   * a value here that is not a registered signal type cannot ever become a
+   * signal. `extraction._reject_reason` drops anything whose type is unknown or
+   * inactive, so a hand-typed trigger is not an instruction to look harder — it
+   * is research the system pays for and then discards, with only a log line to
+   * show for it. Typing freely here can only express a wish.
+   */
+  optionsFrom?: 'signal-types';
+}
+
+/**
+ * The factors worth naming on screen.
+ *
+ * Suggestions, not a schema: the list exists so the common vocabulary is
+ * discoverable and spelled the same way twice, which matters when a model is
+ * reading it. Anything else can still be added through the JSON view.
+ */
+const FACTORS: Factor[] = [
+  {
+    key: 'industries',
+    label: 'Industries',
+    kind: 'chips',
+    hint: 'Sectors worth approaching. Leave empty for no industry constraint.',
+    suggestions: [
+      'SaaS', 'Fintech', 'Logistics', 'Healthcare', 'E-commerce',
+      'Manufacturing', 'EdTech', 'Insurance', 'Real estate', 'Media',
+      'Travel', 'Gaming', 'Telecom', 'Energy',
+    ],
+  },
+  {
+    key: 'regions',
+    label: 'Regions',
+    kind: 'chips',
+    hint: 'Where the company is, not where its customers are.',
+    suggestions: ['US', 'UK', 'EU', 'IN', 'APAC', 'MENA', 'LATAM', 'Canada', 'Australia'],
+  },
+  {
+    key: 'employees',
+    label: 'Company size',
+    kind: 'range',
+    hint:
+      'Headcount. Pick a band, or several adjoining ones to widen the span — ' +
+      'click an end to trim it. Stored as a single range, because that is how ' +
+      'it is read.',
+  },
+  {
+    key: 'personas',
+    label: 'Buyer personas',
+    kind: 'personas',
+    hint:
+      'Who to reach: a buying role, and the titles that fill it. Titles are what ' +
+      'imports and enrichment match on; the role is what strategy reasons with. ' +
+      'Enrichment and research refuse an ICP that names nobody.',
+  },
+  {
+    key: 'signals_that_matter',
+    label: 'Signals that matter',
+    kind: 'chips',
+    hint:
+      'Which triggers make an account worth approaching now, split the way the ' +
+      'Signal types screen scopes them. A trigger with no type behind it can never ' +
+      'be recorded, so define the type first and it appears here.',
+    optionsFrom: 'signal-types',
+  },
+  {
+    key: 'sources',
+    label: 'Where to look',
+    kind: 'sources',
+    hint:
+      'The places research reads for every account on this ICP\'s lists. The same ' +
+      'set for all of them, which is what makes two accounts comparable: "nothing ' +
+      'found at Apex" is then a fact about Apex rather than about what somebody ' +
+      'decided to look for that day. Everything a source returns is read against ' +
+      'every signal above, so this decides what gets opened, not what gets found.',
+  },
+  {
+    key: 'business_model',
+    label: 'Business model',
+    kind: 'chips',
+    hint: 'How they make money — it changes who feels the problem.',
+    suggestions: [
+      'B2B SaaS', 'B2C', 'Marketplace', 'Enterprise software',
+      'Services', 'Hardware', 'Platform',
+    ],
+  },
+  {
+    key: 'tech_stack',
+    label: 'Tech stack',
+    kind: 'chips',
+    hint: 'Only where it changes the pitch. A long list here narrows nothing.',
+    suggestions: [
+      'AWS', 'Azure', 'GCP', 'Kubernetes', 'React', 'Angular',
+      '.NET', 'Java', 'Python', 'Node.js', 'Salesforce', 'Snowflake',
+    ],
+  },
+  {
+    key: 'exclusions',
+    label: 'Do not target',
+    kind: 'chips',
+    hint: 'Sectors or situations to stay out of. Read as a hard constraint.',
+    suggestions: ['Government', 'Defence', 'Gambling', 'Tobacco', 'Existing customers'],
+  },
+  {
+    key: 'notes',
+    label: 'Anything else',
+    kind: 'text',
+    hint: 'One or two lines a model should know about who to target.',
+  },
+];
+
+const KNOWN = new Set(FACTORS.map((f) => f.key));
+
+@Component({
+  selector: 'app-icp-editor',
+  standalone: true,
+  imports: [CommonModule, FormsModule, IconComponent],
+  template: `
+    <div class="icp">
+      <div class="fac" *ngFor="let f of factors">
+        <div class="lbl">
+          <strong>{{ f.label }}</strong>
+          <span class="row-sub">{{ f.hint }}</span>
+        </div>
+
+        <!-- buyer personas: a role, and the titles that fill it -->
+        <div *ngIf="f.kind === 'personas'" class="personas">
+          <div class="persona" *ngFor="let p of personas; let i = index">
+            <select class="field role" [ngModel]="p.buying_role"
+                    (ngModelChange)="setPersonaRole(i, $event)"
+                    [attr.aria-label]="'Buying role for persona ' + (i + 1)">
+              <option *ngFor="let r of buyingRoles" [value]="r.key">{{ r.label }}</option>
+            </select>
+            <div class="chips">
+              <span class="chip" *ngFor="let t of p.titles">
+                {{ t }}
+                <button type="button" class="x" (click)="removePersonaTitle(i, t)"
+                        [attr.aria-label]="'Remove ' + t">×</button>
+              </span>
+              <input class="field title-in" [(ngModel)]="personaEntry[i]"
+                     (keydown.enter)="addPersonaTitle(i); $event.preventDefault()"
+                     [attr.aria-label]="'Add a title to persona ' + (i + 1)"
+                     placeholder="add a title, press Enter">
+            </div>
+            <button type="button" class="act-btn" (click)="removePersona(i)"
+                    [attr.aria-label]="'Remove persona ' + (i + 1)" title="Remove this persona">×</button>
+          </div>
+          <p class="row-sub none" *ngIf="!personas.length">
+            None yet — nobody would be enriched or researched for this ICP.
+          </p>
+          <div>
+            <button type="button" class="btn" (click)="addPersona()">+ Add buyer persona</button>
+            <span class="row-sub" *ngIf="personas.length" style="margin-left:8px;">
+              A persona with no titles is not saved.
+            </span>
+          </div>
+        </div>
+
+        <!-- signals that matter: two groups, by the scope each type carries on
+             the Signal types screen. Stored as one list, because scope belongs
+             to the type — a second copy here could only ever disagree with it. -->
+        <div *ngIf="f.kind === 'chips' && f.optionsFrom" class="chips-wrap">
+          <div class="scope-group" *ngFor="let g of scopes">
+            <div class="scope-h"><strong>{{ g.label }}</strong>
+              <span class="row-sub">{{ g.hint }}</span></div>
+            <div class="chips">
+              <span class="chip" *ngFor="let v of chipsInScope(f, g.key)">
+                {{ v }}
+                <button type="button" class="x" (click)="removeChip(f.key, v)"
+                        [attr.aria-label]="'Remove ' + v">×</button>
+              </span>
+              <span class="row-sub none" *ngIf="!chipsInScope(f, g.key).length">none</span>
+            </div>
+            <div class="addrow">
+              <select class="field" [(ngModel)]="scopeEntry[g.key]"
+                      [attr.aria-label]="'Add a ' + g.key + ' signal'"
+                      [disabled]="!unusedInScope(f, g.key).length">
+                <option value="">{{ scopePlaceholder(f, g.key) }}</option>
+                <option *ngFor="let s of unusedInScope(f, g.key)" [value]="s">{{ s }}</option>
+              </select>
+              <button type="button" class="btn"
+                      (click)="addChipFor(f.key, scopeEntry[g.key] || ''); scopeEntry[g.key] = ''"
+                      [disabled]="!scopeEntry[g.key]">Add</button>
+            </div>
+          </div>
+          <div class="chips" *ngIf="orphanCount(f)">
+            <span class="chip orphan" *ngFor="let v of orphans(f)" [attr.title]="orphanReason">
+              {{ v }}
+              <button type="button" class="x" (click)="removeChip(f.key, v)"
+                      [attr.aria-label]="'Remove ' + v">×</button>
+            </span>
+          </div>
+          <p class="row-sub orphan-note" *ngIf="orphanCount(f) as n">
+            {{ n }} of these {{ n === 1 ? 'names a trigger' : 'name triggers' }}
+            with no signal type behind {{ n === 1 ? 'it' : 'them' }}. Nothing can
+            record {{ n === 1 ? 'it' : 'them' }} — define the type under Signal
+            types, or remove {{ n === 1 ? 'it' : 'them' }} here.
+          </p>
+        </div>
+
+        <!-- chips -->
+        <div *ngIf="f.kind === 'chips' && !f.optionsFrom" class="chips-wrap">
+          <div class="chips">
+            <span class="chip" *ngFor="let v of chips[f.key]"
+                  [class.orphan]="isOrphan(f, v)"
+                  [attr.title]="isOrphan(f, v) ? orphanReason : null">
+              {{ v }}
+              <button type="button" class="x" (click)="removeChip(f.key, v)"
+                      [attr.aria-label]="'Remove ' + v">×</button>
+            </span>
+            <span class="row-sub none" *ngIf="!chips[f.key]?.length">any</span>
+          </div>
+
+          <!-- A closed set, so a picker rather than a text box. Typing here
+               could only ever name a trigger nothing can record. -->
+          <div class="addrow" *ngIf="f.optionsFrom; else freeText">
+            <select class="field" [(ngModel)]="entry[f.key]"
+                    [attr.aria-label]="'Add to ' + f.label"
+                    [disabled]="!unusedSuggestions(f).length">
+              <option value="">
+                {{ optionsPlaceholder(f) }}
+              </option>
+              <option *ngFor="let s of unusedSuggestions(f)" [value]="s">{{ s }}</option>
+            </select>
+            <button type="button" class="btn" (click)="addChip(f.key)"
+                    [disabled]="!entry[f.key]">Add</button>
+          </div>
+
+          <ng-template #freeText>
+            <div class="addrow">
+              <input class="field" [attr.list]="listId(f.key)"
+                     [(ngModel)]="entry[f.key]"
+                     (keydown.enter)="addChip(f.key); $event.preventDefault()"
+                     [attr.aria-label]="'Add to ' + f.label"
+                     placeholder="type and press Enter">
+              <datalist [id]="listId(f.key)">
+                <option *ngFor="let s of unusedSuggestions(f)" [value]="s"></option>
+              </datalist>
+              <button type="button" class="btn" (click)="addChip(f.key)"
+                      [disabled]="!entry[f.key]?.trim()">Add</button>
+            </div>
+          </ng-template>
+
+          <p class="row-sub orphan-note" *ngIf="orphanCount(f) as n">
+            {{ n }} of these {{ n === 1 ? 'names a trigger' : 'name triggers' }}
+            with no signal type behind {{ n === 1 ? 'it' : 'them' }}. Nothing can
+            record {{ n === 1 ? 'it' : 'them' }} — define the type under Signal
+            types, or remove {{ n === 1 ? 'it' : 'them' }} here.
+          </p>
+        </div>
+
+        <!-- where to look -->
+        <div *ngIf="f.kind === 'sources'" class="chips-wrap">
+          <div class="sec-head" style="margin-bottom:8px;">
+            <span class="row-sub">
+              <ng-container *ngIf="pickedSources().length; else noSources">
+                <strong>{{ pickedSources().length }}</strong> source{{ pickedSources().length === 1 ? '' : 's' }}
+                read per account
+                <span *ngIf="extraSearches()"> · {{ extraSearches() }} extra
+                  search{{ extraSearches() === 1 ? '' : 'es' }} from exceptions</span>
+              </ng-container>
+              <ng-template #noSources>
+                None chosen — research falls back to whatever the signals above name.
+              </ng-template>
+            </span>
+            <button type="button" class="btn" *ngIf="profileId"
+                    (click)="askSources()" [class.busy]="askingSources()"
+                    [disabled]="askingSources()"
+                    title="Assemble the sources this ICP should read">
+              {{ askingSources() ? 'Asking…' : 'Suggest sources' }}
+            </button>
+            <span class="row-sub" *ngIf="!profileId">
+              Save this ICP first and its sources can be assembled for you.
+            </span>
+          </div>
+
+          <div class="fam-grid">
+            <label class="fam" *ngFor="let src of allSources()"
+                   [class.fam-on]="chips['sources']?.includes(src.key)"
+                   [title]="src.description">
+              <input type="checkbox"
+                     [checked]="chips['sources']?.includes(src.key)"
+                     (change)="toggleSource(src.key)">
+              <span>
+                {{ src.label }}
+                <em class="row-sub" style="display:block;font-style:normal;">
+                  <ng-container *ngIf="sourceReason(src.key) as r">{{ r }}</ng-container>
+                </em>
+              </span>
+            </label>
+          </div>
+
+          <p class="row-sub orphan-note" *ngIf="driftedSources().length">
+            {{ driftedSources().length === 1 ? 'One signal expects' : 'Signals expect' }}
+            <strong>{{ driftedSources().join(', ') }}</strong>, which
+            {{ driftedSources().length === 1 ? 'is' : 'are' }} not in this set. Nothing breaks —
+            everything read is still interpreted against every signal — but
+            {{ driftedSources().length === 1 ? 'that conclusion is' : 'those conclusions are' }}
+            less likely to be found.
+            <button type="button" class="btn" style="margin-left:8px;"
+                    (click)="addDrifted()">Add {{ driftedSources().length === 1 ? 'it' : 'them' }}</button>
+          </p>
+
+          <p class="row-sub" *ngIf="sourceNotes()" style="margin-top:8px;">{{ sourceNotes() }}</p>
+          <p class="row-sub" *ngIf="newSources().length" style="margin-top:4px;color:var(--warn);">
+            Also suggested, but not in the registry: {{ newSources().join(', ') }} — add
+            {{ newSources().length === 1 ? 'it' : 'them' }} under <strong>Research</strong> first.
+          </p>
+        </div>
+
+        <!-- range -->
+        <div *ngIf="f.kind === 'range'" class="range">
+          <input class="field narrow" type="number" min="0" [(ngModel)]="rangeMin"
+                 (ngModelChange)="emit()" aria-label="Minimum headcount" placeholder="min">
+          <span class="row-sub">to</span>
+          <input class="field narrow" type="number" min="0" [(ngModel)]="rangeMax"
+                 (ngModelChange)="emit()" aria-label="Maximum headcount" placeholder="max">
+          <button type="button" class="btn" *ngFor="let p of presets"
+                  [class.on]="isPreset(p)" [attr.aria-pressed]="isPreset(p)"
+                  (click)="applyPreset(p)">{{ p.label }}</button>
+          <span class="row-sub none" *ngIf="rangeMin === null && rangeMax === null">any</span>
+        </div>
+
+        <!-- free text -->
+        <div *ngIf="f.kind === 'text'">
+          <textarea class="field" rows="2" [(ngModel)]="texts[f.key]" (ngModelChange)="emit()"
+                    [attr.aria-label]="f.label"></textarea>
+        </div>
+      </div>
+
+      <!-- Anything this form cannot represent. Shown rather than hidden,
+           because it is still going into every prompt. -->
+      <div class="fac passthrough" *ngIf="passthroughKeys().length">
+        <div class="lbl">
+          <strong>Other factors</strong>
+          <span class="row-sub">
+            Set outside this form, and kept exactly as they are. Edit them in the JSON view.
+          </span>
+        </div>
+        <div>
+          <div class="pass" *ngFor="let k of passthroughKeys()">
+            <code>{{ k }}</code>
+            <span class="row-sub">{{ preview(k) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rawbar">
+        <button type="button" class="btn" (click)="toggleRaw()">
+          {{ showRaw() ? 'Hide JSON' : 'Edit as JSON' }}
+        </button>
+        <span class="row-sub" *ngIf="!showRaw()">
+          Keys are free-form. The JSON view is the escape hatch for anything the
+          fields above cannot express.
+        </span>
+        <span class="row-sub bad" *ngIf="rawError()">{{ rawError() }}</span>
+      </div>
+
+      <div *ngIf="showRaw()" style="grid-column:1/-1;">
+        <textarea class="field mono" rows="10" [(ngModel)]="raw"
+                  (ngModelChange)="onRawEdit()" aria-label="ICP as JSON"></textarea>
+      </div>
+    </div>
+  `,
+  styles: [
+    `
+      .icp { display: flex; flex-direction: column; gap: 16px; }
+      .fac { display: grid; grid-template-columns: 210px 1fr; gap: 14px;
+             align-items: start; }
+      .lbl { display: flex; flex-direction: column; gap: 2px; }
+      .lbl strong { font-size: .84rem; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;
+               min-height: 22px; align-items: center; }
+      .chip { display: inline-flex; align-items: center; gap: 5px;
+              padding: 2px 6px 2px 9px; border-radius: 12px; font-size: .78rem;
+              border: 1px solid var(--line); background: rgba(127,127,127,.08); }
+      .chip .x { border: 0; background: none; cursor: pointer; font-size: .95rem;
+                 line-height: 1; padding: 0 2px; color: inherit; opacity: .6; }
+      .chip .x:hover { opacity: 1; }
+      .none { opacity: .6; }
+      .addrow { display: flex; gap: 8px; }
+      .addrow .field { max-width: 260px; }
+      .range { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .range .narrow { max-width: 90px; }
+      /* A value no signal type backs. Struck through rather than hidden:
+         removing it silently would change what every prompt is told without
+         appearing in any diff a person reads. */
+      .chip.orphan { border-color: var(--critical); color: var(--critical);
+                     text-decoration: line-through; }
+      .personas { display: flex; flex-direction: column; gap: 8px; }
+      .persona { display: grid; grid-template-columns: 170px 1fr auto; gap: 10px;
+                 align-items: start; }
+      .persona .role { max-width: 170px; }
+      .persona .chips { margin: 0; }
+      .persona .title-in { max-width: 200px; padding: 3px 8px; font-size: .8rem; }
+      .scope-group + .scope-group { margin-top: 12px; }
+      .scope-h { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+      .scope-h strong { font-size: .8rem; }
+      .orphan-note { margin-top: 6px; color: var(--critical); max-width: 60ch; }
+      .range .btn { padding: 2px 9px; font-size: .74rem; }
+      /* Which bands are in the span. Border as well as colour: a fill alone
+         reads as a hover state, and several lit at once has to look chosen. */
+      .range .btn.on { border-color: var(--accent); color: var(--accent);
+                       background: var(--accent-soft); font-weight: 600; }
+      .passthrough .pass { display: flex; gap: 10px; align-items: baseline;
+                           margin-bottom: 4px; }
+      .rawbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+                padding-top: 12px; border-top: 1px solid var(--line); }
+      .bad { color: var(--critical); }
+      textarea.mono { font-family: 'IBM Plex Mono', monospace; font-size: .8rem; }
+      @media (max-width: 720px) { .fac { grid-template-columns: 1fr; } }
+    `,
+  ],
+})
+export class IcpEditorComponent implements OnInit {
+  private api = inject(ConfigService);
+  readonly factors = FACTORS;
+  /**
+   * The selectable headcount bands.
+   *
+   * `label` and bounds are separate because the two are not the same thing:
+   * the top band reads `>1000` but is stored as `1000+`, the open-ended form
+   * `parseBand` already understands and that anyone's existing ICP may hold.
+   * Showing the stored form would be the easier code and the worse label.
+   *
+   * The boundaries touch rather than gap — 50 ends one band and starts the
+   * next. That is how these are quoted in practice ("50 to 100 people"), and a
+   * gap would leave a company of exactly 50 in no band at all.
+   */
+  readonly presets: Band[] = [
+    { label: '1-50', min: 1, max: 50 },
+    { label: '50-100', min: 50, max: 100 },
+    { label: '100-200', min: 100, max: 200 },
+    { label: '200-500', min: 200, max: 500 },
+    { label: '500-1000', min: 500, max: 1000 },
+    { label: '>1000', min: 1000, max: null },
+  ];
+
+  readonly buyingRoles = BUYING_ROLES;
+  readonly scopes = SCOPES;
+
+  /** Buyer personas, in the order they were written. */
+  personas: Persona[] = [];
+  /** The in-progress title in each persona's input. */
+  personaEntry: string[] = [];
+  /** The in-progress choice in each signal-scope picker. Starts at '' so the
+   *  prompt option is selected — an undefined value matches no option and
+   *  leaves the picker blank. */
+  scopeEntry: Record<string, string> = { company: '', contact: '' };
+
+  /** Chip lists, by factor key. */
+  chips: Record<string, string[]> = {};
+  /** The in-progress entry in each chip input. */
+  entry: Record<string, string> = {};
+  texts: Record<string, string> = {};
+  rangeMin: number | null = null;
+  rangeMax: number | null = null;
+
+  /** Everything the form cannot represent, carried through untouched. */
+  private passthrough: Record<string, unknown> = {};
+
+  raw = '{}';
+  showRaw = signal(false);
+  rawError = signal<string | null>(null);
+
+  @Input() set value(icp: Record<string, unknown> | null | undefined) {
+    this.hydrate(icp ?? {});
+  }
+
+  @Output() valueChange = new EventEmitter<Record<string, unknown>>();
+
+  /**
+   * The profile being edited, when there is one.
+   *
+   * Absent while creating: the assembly call reads the ICP's saved signals and
+   * industries, and there is nothing to read until it exists.
+   */
+  @Input() profileId: string | null = null;
+
+  allSources = signal<ResearchSource[]>([]);
+  signalTypes = signal<SignalType[]>([]);
+  askingSources = signal(false);
+  sourceNotes = signal('');
+  newSources = signal<string[]>([]);
+  /** Why each source is in, from the last assembly. Cleared by nothing. */
+  private reasons: Record<string, string> = {};
+
+  toggleSource(key: string): void {
+    const on = this.chips['sources'] ?? [];
+    this.chips['sources'] = on.includes(key)
+      ? on.filter((k) => k !== key)
+      : [...on, key];
+    this.emit();
+  }
+
+  pickedSources(): string[] {
+    return this.chips['sources'] ?? [];
+  }
+
+  /**
+   * What each source costs beyond the sweeps: the exceptions.
+   *
+   * Counted here rather than only on the Signal types screen because this is
+   * where the whole per-account bill is decided, and a number a rep never sees
+   * is a number that only grows.
+   */
+  extraSearches(): number {
+    const wanted = new Set(this.chips['signals_that_matter'] ?? []);
+    const keys = new Set<string>();
+    for (const t of this.signalTypes()) {
+      if (t.status !== 'active' || !t.search_instruction) continue;
+      if (wanted.size && !wanted.has(t.key)) continue;
+      keys.add(t.search_group ? `group:${t.search_group}` : `type:${t.key}`);
+    }
+    return keys.size;
+  }
+
+  sourceReason(key: string): string {
+    if (this.reasons[key]) return this.reasons[key];
+    const naming = this.signalTypes()
+      .filter((t) => t.status === 'active' && t.produced_by.includes(key))
+      .map((t) => t.key);
+    return naming.length ? `expected by ${naming.join(', ')}` : '';
+  }
+
+  /**
+   * Sources this ICP's signals expect that the accepted set leaves out.
+   *
+   * Shown rather than merged in silently: the accepted set is what a run is
+   * recorded against, so changing it is a decision with a person's name on it.
+   */
+  driftedSources(): string[] {
+    const wanted = new Set(this.chips['signals_that_matter'] ?? []);
+    const have = new Set(this.chips['sources'] ?? []);
+    if (!have.size) return [];
+    const missing = new Set<string>();
+    for (const t of this.signalTypes()) {
+      if (t.status !== 'active') continue;
+      if (wanted.size && !wanted.has(t.key)) continue;
+      for (const key of t.produced_by) if (!have.has(key)) missing.add(key);
+    }
+    return [...missing].sort();
+  }
+
+  addDrifted(): void {
+    this.chips['sources'] = [...(this.chips['sources'] ?? []), ...this.driftedSources()];
+    this.emit();
+  }
+
+  askSources(): void {
+    if (!this.profileId) return;
+    this.askingSources.set(true);
+    this.api.suggestSourcesForIcp(this.profileId).subscribe({
+      next: (r) => {
+        this.askingSources.set(false);
+        this.chips['sources'] = r.sources.map((x) => x.key);
+        this.reasons = {};
+        for (const x of r.sources) {
+          this.reasons[x.key] = x.for_types.length
+            ? `expected by ${x.for_types.join(', ')}`
+            : x.why || 'suggested for this ICP';
+        }
+        this.sourceNotes.set(r.notes);
+        this.newSources.set(r.new_sources.map((n) => n.label || n.key));
+        this.emit();
+      },
+      error: () => {
+        this.askingSources.set(false);
+        this.sourceNotes.set('Could not assemble sources just now.');
+      },
+    });
+  }
+
+  /**
+   * Active signal type keys, once they have actually arrived.
+   *
+   * `null` until then, and the distinction is load-bearing: with an empty array
+   * every stored value would look like an orphan, so a failed request would
+   * accuse a correct ICP of being broken. Null means "not known yet" and
+   * nothing is judged.
+   */
+  signalTypeKeys = signal<string[] | null>(null);
+  /** Each active type's scope, as set on the Signal types screen. */
+  signalTypeScopes = signal<Record<string, string>>({});
+  /** Set when the list could not be fetched, so the note can say which. */
+  signalTypesFailed = signal(false);
+
+  readonly orphanReason =
+    'No signal type by this name is active, so nothing can ever record it.';
+
+  ngOnInit(): void {
+    // Active only. A paused or deprecated type is rejected by the extraction
+    // guard exactly like an unknown one, so offering it would repeat the trap
+    // this picker exists to close.
+    this.api.signalTypes().subscribe({
+      next: (types) => {
+        const active = types.filter((t) => t.status === 'active');
+        this.signalTypeScopes.set(Object.fromEntries(active.map((t) => [t.key, t.scope])));
+        this.signalTypeKeys.set(active.map((t) => t.key));
+        // The whole rows too: "where to look" needs each type's sources and
+        // its exception instruction, neither of which a key list can carry.
+        this.signalTypes.set(types);
+      },
+      error: () => this.signalTypesFailed.set(true),
+    });
+    this.api.researchSources().subscribe({
+      next: (rows) => this.allSources.set(rows.filter((r) => r.status === 'active')),
+      error: () => undefined,
+    });
+  }
+
+  /** A known type's scope. A type that arrives without one reads as company. */
+  private scopeOf(key: string): string {
+    return this.signalTypeScopes()[key] ?? 'company';
+  }
+
+  /** The chosen signals of one scope. Orphans belong to neither and are shown apart. */
+  chipsInScope(f: Factor, scope: string): string[] {
+    return (this.chips[f.key] ?? []).filter(
+      (v) => !this.isOrphan(f, v) && this.scopeOf(v) === scope,
+    );
+  }
+
+  /** Active types of one scope not yet chosen. */
+  unusedInScope(f: Factor, scope: string): string[] {
+    return this.unusedSuggestions(f).filter((k) => this.scopeOf(k) === scope);
+  }
+
+  scopePlaceholder(f: Factor, scope: string): string {
+    if (this.signalTypesFailed()) return 'could not load signal types';
+    if (this.signalTypeKeys() === null) return 'loading…';
+    const any = (this.signalTypeKeys() ?? []).some((k) => this.scopeOf(k) === scope);
+    if (!any) return `no ${scope} signal types yet`;
+    if (!this.unusedInScope(f, scope).length) return `every ${scope} signal type is listed`;
+    return `choose a ${scope} signal…`;
+  }
+
+  orphans(f: Factor): string[] {
+    return (this.chips[f.key] ?? []).filter((v) => this.isOrphan(f, v));
+  }
+
+  addPersona(): void {
+    const used = new Set(this.personas.map((p) => p.buying_role));
+    const role = BUYING_ROLES.find((r) => !used.has(r.key))?.key ?? BUYING_ROLES[0].key;
+    this.personas = [...this.personas, { buying_role: role, titles: [] }];
+    this.personaEntry = [...this.personaEntry, ''];
+    this.emit();
+  }
+
+  removePersona(i: number): void {
+    this.personas = this.personas.filter((_, j) => j !== i);
+    this.personaEntry = this.personaEntry.filter((_, j) => j !== i);
+    this.emit();
+  }
+
+  setPersonaRole(i: number, role: string): void {
+    this.personas = this.personas.map((p, j) => (j === i ? { ...p, buying_role: role } : p));
+    this.emit();
+  }
+
+  addPersonaTitle(i: number): void {
+    this.addPersonaTitleFor(i, this.personaEntry[i] ?? '');
+  }
+
+  /** The same add, given the title directly. Used by the input and by tests. */
+  addPersonaTitleFor(i: number, raw: string): void {
+    const value = raw.trim();
+    const persona = this.personas[i];
+    if (!value || !persona) return;
+    // Case-insensitive for the same reason chips are: "CTO" and "cto" are one title.
+    if (!persona.titles.some((t) => t.toLowerCase() === value.toLowerCase())) {
+      this.personas = this.personas.map((p, j) =>
+        j === i ? { ...p, titles: [...p.titles, value] } : p,
+      );
+    }
+    this.personaEntry[i] = '';
+    this.emit();
+  }
+
+  removePersonaTitle(i: number, title: string): void {
+    this.personas = this.personas.map((p, j) =>
+      j === i ? { ...p, titles: p.titles.filter((t) => t !== title) } : p,
+    );
+    this.emit();
+  }
+
+  listId(key: string): string {
+    return `icp-${key}`;
+  }
+
+  /** The options for a factor: configuration where it has some, else its own. */
+  private options(f: Factor): string[] | null {
+    if (f.optionsFrom !== 'signal-types') return f.suggestions ?? [];
+    return this.signalTypeKeys();
+  }
+
+  /** Suggestions not already chosen — offering a duplicate is noise. */
+  unusedSuggestions(f: Factor): string[] {
+    const chosen = new Set(this.chips[f.key] ?? []);
+    return (this.options(f) ?? []).filter((s) => !chosen.has(s));
+  }
+
+  /** What the empty first option should say, which depends on why it is empty. */
+  optionsPlaceholder(f: Factor): string {
+    if (this.signalTypesFailed()) return 'could not load signal types';
+    if (this.signalTypeKeys() === null) return 'loading…';
+    if (!this.unusedSuggestions(f).length) return 'every signal type is already listed';
+    return 'choose a signal type…';
+  }
+
+  /** A stored value that no active signal type backs. */
+  isOrphan(f: Factor, value: string): boolean {
+    if (f.optionsFrom !== 'signal-types') return false;
+    const known = this.signalTypeKeys();
+    // Not known yet, or never arrived: judge nothing.
+    if (known === null) return false;
+    return !known.includes(value);
+  }
+
+  orphanCount(f: Factor): number {
+    return (this.chips[f.key] ?? []).filter((v) => this.isOrphan(f, v)).length;
+  }
+
+  addChip(key: string): void {
+    this.addChipFor(key, this.entry[key] ?? '');
+  }
+
+  /** The same add, given the value directly. Used by the input and by tests. */
+  addChipFor(key: string, raw: string): void {
+    const value = raw.trim();
+    if (!value) return;
+    const list = this.chips[key] ?? [];
+    // Case-insensitive, because "SaaS" and "saas" reaching a prompt as two
+    // separate facts is the spelling problem this editor exists to stop.
+    if (!list.some((v) => v.toLowerCase() === value.toLowerCase())) {
+      this.chips[key] = [...list, value];
+    }
+    this.entry[key] = '';
+    this.emit();
+  }
+
+  removeChip(key: string, value: string): void {
+    this.chips[key] = (this.chips[key] ?? []).filter((v) => v !== value);
+    this.emit();
+  }
+
+  /** Is this band inside the range currently held? */
+  isPreset(p: Band): boolean {
+    if (this.rangeMin === null && this.rangeMax === null) return false;
+    const low = this.rangeMin ?? 0;
+    if (p.min < low) return false;
+    // A range with no upper bound covers every band above its floor, including
+    // the open-ended top band; a bounded range cannot cover that top band at
+    // all, however high it reaches.
+    if (this.rangeMax === null) return true;
+    return p.max !== null && p.max <= this.rangeMax;
+  }
+
+  /**
+   * Select bands, several at a time, as one span.
+   *
+   * The ICP stores a **single** min–max, so a selection is always contiguous —
+   * `50-100` plus `500-1000` necessarily includes everything between them, and
+   * there is no way to express "these two but not the middle". Rather than
+   * pretend otherwise with checkboxes that cannot mean what they look like,
+   * clicking extends or trims one span:
+   *
+   * * nothing selected — start at this band;
+   * * the only selected band — clear back to "any";
+   * * either end of the selection — trim that end;
+   * * beyond the selection — extend out to reach it;
+   * * inside the selection — collapse to this band alone, so an interior click
+   *   does something rather than nothing.
+   */
+  applyPreset(p: Band): void {
+    const i = this.presets.indexOf(p);
+    const selected = this.presets
+      .map((band, index) => (this.isPreset(band) ? index : -1))
+      .filter((index) => index >= 0);
+
+    let lo: number;
+    let hi: number;
+    if (!selected.length) {
+      lo = hi = i;
+    } else {
+      const first = selected[0];
+      const last = selected[selected.length - 1];
+      if (first === last && i === first) {
+        this.rangeMin = null;
+        this.rangeMax = null;
+        this.emit();
+        return;
+      }
+      if (i === first) [lo, hi] = [first + 1, last];
+      else if (i === last) [lo, hi] = [first, last - 1];
+      else if (i < first) [lo, hi] = [i, last];
+      else if (i > last) [lo, hi] = [first, i];
+      else [lo, hi] = [i, i];
+    }
+
+    this.rangeMin = this.presets[lo].min;
+    this.rangeMax = this.presets[hi].max;
+    this.emit();
+  }
+
+  passthroughKeys(): string[] {
+    return Object.keys(this.passthrough).sort();
+  }
+
+  preview(key: string): string {
+    const text = JSON.stringify(this.passthrough[key]);
+    return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  }
+
+  toggleRaw(): void {
+    const next = !this.showRaw();
+    if (next) this.raw = JSON.stringify(this.compose(), null, 2);
+    this.showRaw.set(next);
+    this.rawError.set(null);
+  }
+
+  /**
+   * Editing the JSON re-hydrates the fields.
+   *
+   * Kept in step deliberately: two editors over one value that disagree is
+   * worse than one bad editor, because whichever saves last silently wins.
+   */
+  onRawEdit(): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(this.raw || '{}');
+    } catch (e) {
+      this.rawError.set(`Not valid JSON — ${(e as Error).message}`);
+      return;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      this.rawError.set('The ICP must be a JSON object.');
+      return;
+    }
+    this.rawError.set(null);
+    this.hydrate(parsed as Record<string, unknown>, { keepRaw: true });
+    this.valueChange.emit(this.compose());
+  }
+
+  emit(): void {
+    const composed = this.compose();
+    if (this.showRaw()) this.raw = JSON.stringify(composed, null, 2);
+    this.valueChange.emit(composed);
+  }
+
+  /** Split an incoming ICP into fields this form owns and the rest. */
+  private hydrate(icp: Record<string, unknown>, options: { keepRaw?: boolean } = {}): void {
+    this.chips = {};
+    this.texts = {};
+    this.passthrough = {};
+    this.personas = [];
+    this.personaEntry = [];
+    this.rangeMin = null;
+    this.rangeMax = null;
+
+    for (const [key, value] of Object.entries(icp)) {
+      const factor = KNOWN.has(key) ? FACTORS.find((f) => f.key === key)! : null;
+
+      // Only the `{buying_role, titles}` form is owned here. An older
+      // definition's bare strings are still read by enrichment, so they are
+      // carried through untouched rather than coerced into a role nobody chose.
+      if (factor?.kind === 'personas' && isPersonaArray(value)) {
+        this.personas = value.map((p) => ({ buying_role: p.buying_role, titles: [...p.titles] }));
+        this.personaEntry = this.personas.map(() => '');
+        continue;
+      }
+
+      // `sources` is a list of registry keys, stored and carried exactly like
+      // a chips factor — it differs only in how it is chosen on screen.
+      if ((factor?.kind === 'chips' || factor?.kind === 'sources') && isStringArray(value)) {
+        this.chips[key] = [...value];
+        continue;
+      }
+      if (factor?.kind === 'text' && typeof value === 'string') {
+        this.texts[key] = value;
+        continue;
+      }
+      if (factor?.kind === 'range' && typeof value === 'string') {
+        const band = parseBand(value);
+        if (band) {
+          this.rangeMin = band.min;
+          this.rangeMax = band.max;
+          continue;
+        }
+      }
+      // A known key whose value is the wrong shape lands here too — coercing
+      // it would quietly rewrite what a prompt says, and the JSON view can
+      // still reach it.
+      this.passthrough[key] = value;
+    }
+
+    if (!options.keepRaw) this.raw = JSON.stringify(icp, null, 2);
+  }
+
+  /** Rebuild the ICP. Empty factors are omitted, not written as blanks. */
+  private compose(): Record<string, unknown> {
+    const out: Record<string, unknown> = { ...this.passthrough };
+
+    for (const factor of FACTORS) {
+      if (factor.kind === 'chips' || factor.kind === 'sources') {
+        const list = this.chips[factor.key] ?? [];
+        // An empty array and an absent key read differently to a model: one
+        // says "no industries qualify", the other says "industry is not a
+        // constraint". Absent is what an empty control means.
+        if (list.length) out[factor.key] = list;
+      } else if (factor.kind === 'text') {
+        const text = (this.texts[factor.key] ?? '').trim();
+        if (text) out[factor.key] = text;
+      } else if (factor.kind === 'range') {
+        const band = formatBand(this.rangeMin, this.rangeMax);
+        if (band) out[factor.key] = band;
+      } else if (factor.kind === 'personas') {
+        // A role with no titles matches nothing a CSV carries, so it is not
+        // written; an empty section is omitted rather than saved as [].
+        const rows = this.personas
+          .filter((p) => p.titles.length)
+          .map((p) => ({ buying_role: p.buying_role, titles: [...p.titles] }));
+        if (rows.length) out[factor.key] = rows;
+      }
+    }
+    return out;
+  }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
+const ROLE_KEYS = new Set(BUYING_ROLES.map((r) => r.key));
+
+function isPersonaArray(value: unknown): value is Persona[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (p) =>
+        typeof p === 'object' &&
+        p !== null &&
+        ROLE_KEYS.has((p as Persona).buying_role) &&
+        isStringArray((p as Persona).titles),
+    )
+  );
+}
+
+/** `"50-500"` and `"5000+"` are both bands somebody may already have stored. */
+function parseBand(value: string): { min: number | null; max: number | null } | null {
+  const range = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(value);
+  if (range) return { min: Number(range[1]), max: Number(range[2]) };
+  const open = /^\s*(\d+)\s*\+\s*$/.exec(value);
+  if (open) return { min: Number(open[1]), max: null };
+  return null;
+}
+
+function formatBand(min: number | null, max: number | null): string | null {
+  const low = min === null || Number.isNaN(min) ? null : min;
+  const high = max === null || Number.isNaN(max) ? null : max;
+  if (low === null && high === null) return null;
+  if (low !== null && high !== null) return `${low}-${high}`;
+  if (low !== null) return `${low}+`;
+  return `0-${high}`;
+}
