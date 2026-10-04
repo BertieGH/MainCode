@@ -143,8 +143,32 @@ async def _clean_database(request):
             # RESTART IDENTITY so version counters start from 1 in every test.
             await conn.execute(_text(f"TRUNCATE {joined} RESTART IDENTITY CASCADE"))
         await _seed_builtin_sources(conn)
+        await _seed_prompt_templates(conn)
     await engine.dispose()
     yield
+
+
+async def _seed_prompt_templates(conn) -> None:
+    """Put v1 of every stage prompt back after the truncate.
+
+    Same reason as the research sources: a migration seeds these, so every real
+    database has one active row per scenario and no test should have to know
+    that. Truncating them away leaves `load_prefix` resolving nothing, falling
+    back to the shipped text, and quietly not exercising the stored-prompt path
+    at all — a test suite that passes while the feature is bypassed.
+    """
+    from sqlalchemy import text as _text
+
+    from app.services.instructions import STAGE
+
+    for scenario, body in sorted(STAGE.items()):
+        await conn.execute(
+            _text(
+                "INSERT INTO prompt_template (scenario, body, version, is_active) "
+                "VALUES (:scenario, :body, 1, true) ON CONFLICT DO NOTHING"
+            ),
+            {"scenario": scenario, "body": body.strip()},
+        )
 
 
 async def _seed_builtin_sources(conn) -> None:

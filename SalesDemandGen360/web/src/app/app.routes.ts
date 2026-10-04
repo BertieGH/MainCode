@@ -83,6 +83,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./settings/signal-types.component').then((m) => m.SignalTypesComponent),
       },
+      {
+        path: 'prompts',
+        loadComponent: () =>
+          import('./settings/prompts.component').then((m) => m.PromptsComponent),
+      },
       // Merged into Setup. Kept as a redirect so bookmarks and the links
       // this app printed in its own copy do not 404.
       { path: 'integrations', redirectTo: 'setup', pathMatch: 'full' },

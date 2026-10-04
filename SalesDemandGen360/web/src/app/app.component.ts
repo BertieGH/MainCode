@@ -98,6 +98,9 @@ export class AppComponent implements OnInit {
   settingsNav = [
     { label: 'API settings', path: '/settings/setup', gated: false },
     { label: 'Model config', path: '/settings/models', gated: true },
+    // Beside Model config on purpose: one says how hard a stage thinks, the
+    // other says what it is asked to do, and people look for them together.
+    { label: 'Prompts', path: '/settings/prompts', gated: true },
     { label: 'ICP profiles', path: '/settings/icp-profiles', gated: true },
     { label: 'Services & proof', path: '/settings/services', gated: true },
     { label: 'Writing samples', path: '/settings/writing', gated: true },

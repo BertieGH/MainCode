@@ -1,20 +1,9 @@
--- GENERATED FILE — do not edit by hand.
---
--- The whole schema, dumped from the development database so that reading it is
--- faster than reading 40-odd migrations. It is a *convenience*, not the source
--- of truth: the SQLAlchemy models and the alembic migrations are, and this file
--- drifts the moment either changes without being regenerated.
---
--- Regenerate with:
---   pg_dump -h localhost -U postgres -d sdg360 --schema-only
---           --no-owner --no-privileges -f docs/schema/full-schema.sql
---
--- Generated 2026-10-04 · PostgreSQL 17.9 · 53 tables.
+-- Generated 2026-10-04 · PostgreSQL 17.9 · 55 tables.
 --
 -- PostgreSQL database dump
 --
 
-\restrict q9FDgfb9x3w0F5vxfw4jWuBlkPT3qvuld7FU8Ijx8cPgwcQGJjyTU1OxbaEreQb
+\restrict eBkYB4lTzegPWgKGtZKedru48ZsgboobVq9YHrsscGmQGelERynvK1NTPQJCoCR
 
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
@@ -205,6 +194,23 @@ CREATE TABLE public.account_list_member (
 CREATE TABLE public.account_list_service (
     list_id uuid NOT NULL,
     service_id uuid NOT NULL
+);
+
+
+--
+-- Name: admin_secret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_secret (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    password_hash bytea NOT NULL,
+    salt bytea NOT NULL,
+    n integer NOT NULL,
+    r integer NOT NULL,
+    p integer NOT NULL,
+    is_active boolean DEFAULT false NOT NULL
 );
 
 
@@ -857,6 +863,24 @@ CREATE TABLE public.persona_service_score (
 
 
 --
+-- Name: prompt_template; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.prompt_template (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    scenario text NOT NULL,
+    body text NOT NULL,
+    note text,
+    version integer NOT NULL,
+    is_active boolean DEFAULT false NOT NULL,
+    CONSTRAINT ck_prompt_template_ck_prompt_template_body_not_blank CHECK ((length(btrim(body)) > 0)),
+    CONSTRAINT ck_prompt_template_ck_prompt_template_version_positive CHECK ((version > 0))
+);
+
+
+--
 -- Name: proof_point; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1454,6 +1478,14 @@ ALTER TABLE ONLY public.account_list_service
 
 
 --
+-- Name: admin_secret pk_admin_secret; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_secret
+    ADD CONSTRAINT pk_admin_secret PRIMARY KEY (id);
+
+
+--
 -- Name: approval pk_approval; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1675,6 +1707,14 @@ ALTER TABLE ONLY public.outreach_sequence
 
 ALTER TABLE ONLY public.persona_service_score
     ADD CONSTRAINT pk_persona_service_score PRIMARY KEY (id);
+
+
+--
+-- Name: prompt_template pk_prompt_template; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_template
+    ADD CONSTRAINT pk_prompt_template PRIMARY KEY (id);
 
 
 --
@@ -1939,6 +1979,14 @@ ALTER TABLE ONLY public.model_availability
 
 ALTER TABLE ONLY public.org_profile
     ADD CONSTRAINT uq_org_profile_version UNIQUE (version);
+
+
+--
+-- Name: prompt_template uq_prompt_template_scenario_version; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.prompt_template
+    ADD CONSTRAINT uq_prompt_template_scenario_version UNIQUE (scenario, version);
 
 
 --
@@ -2340,6 +2388,13 @@ CREATE UNIQUE INDEX uq_account_domain ON public.account USING btree (lower(domai
 
 
 --
+-- Name: uq_admin_secret_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_admin_secret_active ON public.admin_secret USING btree ((true)) WHERE is_active;
+
+
+--
 -- Name: uq_contact_email_per_account; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2393,6 +2448,13 @@ CREATE UNIQUE INDEX uq_org_profile_single_active ON public.org_profile USING btr
 --
 
 CREATE UNIQUE INDEX uq_outreach_event_external ON public.outreach_event USING btree (source, external_id) WHERE (external_id IS NOT NULL);
+
+
+--
+-- Name: uq_prompt_template_active_per_scenario; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_prompt_template_active_per_scenario ON public.prompt_template USING btree (scenario) WHERE is_active;
 
 
 --
@@ -3090,5 +3152,5 @@ ALTER TABLE ONLY public.signal
 -- PostgreSQL database dump complete
 --
 
-\unrestrict q9FDgfb9x3w0F5vxfw4jWuBlkPT3qvuld7FU8Ijx8cPgwcQGJjyTU1OxbaEreQb
+\unrestrict eBkYB4lTzegPWgKGtZKedru48ZsgboobVq9YHrsscGmQGelERynvK1NTPQJCoCR
 

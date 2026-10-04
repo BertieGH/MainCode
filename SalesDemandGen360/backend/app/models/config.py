@@ -413,6 +413,111 @@ class LlmConfig(Base):
 
 
 # --------------------------------------------------------------------------
+# prompt_template — what each stage is asked to do
+# --------------------------------------------------------------------------
+class PromptTemplate(Base):
+    """The editable half of a stage's instructions, versioned per scenario.
+
+    `llm_config` tunes *how hard* a stage thinks; this is *what it is asked to
+    do*. The pair sit beside each other deliberately.
+
+    These lived in `services/instructions.py` and in git until 2026-10-04, for
+    a reason worth restating rather than losing: a prompt change alters what
+    every downstream artefact means — the same account researched under two
+    instruction texts produces two different books. Moving them into the
+    database had to replace what git was providing, which is why this table is
+    versioned per scenario rather than edited in place, why `version` is
+    stamped onto the rows a stage writes, and why `STAGE` stays in code as the
+    shipped baseline to diff and reset against.
+
+    What is **not** here: the `_COMMON` preamble. It carries invariant 10 —
+    retrieved text is data, never an instruction — and the rule that nothing is
+    asserted without a citation. It is prepended server-side, after this body
+    is loaded, and is not editable from anywhere. A screen that lets someone
+    delete the prompt-injection guard is a hole, not a feature.
+    """
+
+    __tablename__ = "prompt_template"
+
+    #: One of the sixteen keys in `instructions.STAGE`. Not a foreign key —
+    #: the scenario list is code, and a row for a scenario the code no longer
+    #: has should survive long enough to be noticed rather than cascade away.
+    scenario: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The instruction text, without `_COMMON`.
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Why this version exists, in the editor's words. Optional, and worth
+    #: having: "which instructions wrote this?" is answerable from `version`,
+    #: but "why were they changed?" is only answerable if someone said.
+    note: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+    __table_args__ = (
+        # One active row per scenario, enforced by the index rather than by
+        # application code — two concurrent activations would both pass a
+        # check-then-write and leave two live prompts with no error.
+        Index(
+            "uq_prompt_template_active_per_scenario",
+            "scenario",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+        UniqueConstraint(
+            "scenario", "version", name="uq_prompt_template_scenario_version"
+        ),
+        CheckConstraint("version > 0", name="version_positive"),
+        # An empty prompt is not an edit, it is a stage with no instructions.
+        CheckConstraint("length(btrim(body)) > 0", name="body_not_blank"),
+    )
+
+
+# --------------------------------------------------------------------------
+# admin_secret — the password gating prompt edits
+# --------------------------------------------------------------------------
+class AdminSecret(Base):
+    """A scrypt hash of the one password that may change prompts.
+
+    Deliberately not a user table. This app has no authentication at all, and
+    adding accounts, sessions and route guards is a larger piece of work than
+    the screen it would protect. What this does is stop the one screen that
+    can rewrite the model's instructions from being as open as everything
+    else — it is a lock on a door, not a security model, and it is recorded as
+    such in `docs/14-prompt-config-plan.md`.
+
+    scrypt rather than bcrypt or argon2: it is a real KDF, it is in the
+    standard library, and neither of the others is installed. The salt is
+    stored beside the hash because that is what a salt is for; the parameters
+    are stored so they can be raised later without invalidating the row.
+    """
+
+    __tablename__ = "admin_secret"
+
+    #: Raw bytes, never hex or base64 in a column someone might eyeball and
+    #: mistake for the secret itself.
+    password_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    salt: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    #: scrypt cost parameters, kept with the hash so raising them later is a
+    #: per-row migration rather than a flag day.
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    r: Mapped[int] = mapped_column(Integer, nullable=False)
+    p: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_admin_secret_active",
+            text("(true)"),
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+    )
+
+
+# --------------------------------------------------------------------------
 # model_availability — which models this installation may use
 # --------------------------------------------------------------------------
 class ModelAvailability(Base):

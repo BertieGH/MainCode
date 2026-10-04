@@ -40,6 +40,14 @@ the evidence it rests on. An honest "nothing found" is a useful answer and is \
 always preferred to a plausible one.
 """
 
+#: The same text, public, because the prompt editor shows it above the editable
+#: box so an admin can see what their instructions sit beneath. Exported
+#: read-only and on purpose: the stage bodies moved into the database in
+#: migration c3f7b2e9a815, and this did not. It carries invariant 10, and a
+#: screen that let someone delete the prompt-injection guard would be a hole
+#: rather than a feature.
+COMMON = _COMMON
+
 
 STAGE: dict[str, str] = {
     # ---------------------------------------------------------------- research
@@ -425,17 +433,35 @@ Cite only approved proof points.
 }
 
 
-def block(scenario: str) -> str:
-    """The instruction text for one scenario.
+def block(scenario: str, body: str | None = None) -> str:
+    """The instruction text for one scenario, `_COMMON` first.
 
     Raises rather than falling back to a generic block: a stage silently
     running on someone else's instructions produces output that looks right and
     answers a different question.
+
+    `body` is the stored, admin-editable text — see `services/prompts.py`. It
+    is assembled **here** rather than at the edge so that `_COMMON` cannot be
+    bypassed by whatever is in the database: the preamble carries invariant 10
+    and the cite-or-do-not-assert rule, and a stored body that tries to
+    countermand it is appended after it, not substituted for it.
+
+    Omitting `body` falls back to the shipped `STAGE` text. That path is for
+    tests and for anything running without a session; the application always
+    passes the stored body, so an edit made in the UI is what actually runs.
+    The scenario is still validated against `STAGE` either way — an unknown
+    key is a bug whichever text was going to be used.
     """
-    try:
-        return _COMMON + "\n" + STAGE[scenario].strip() + "\n"
-    except KeyError:
+    if scenario not in STAGE:
         raise KeyError(
             f"no instruction block for scenario {scenario!r}; "
             f"known scenarios are {sorted(STAGE)}"
-        ) from None
+        )
+    text = (body if body is not None else STAGE[scenario]).strip()
+    if not text:
+        # A blank stored body would leave the model with the preamble and
+        # nothing to do, which reads as a working call and returns plausible
+        # noise. The column forbids it; this catches the path that bypasses
+        # the column.
+        raise ValueError(f"instruction block for {scenario!r} is empty")
+    return _COMMON + "\n" + text + "\n"

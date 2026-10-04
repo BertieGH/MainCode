@@ -390,6 +390,54 @@ export class ConfigService {
   private http = inject(HttpClient);
   private base = '/api/config';
 
+  // --- prompts: what each stage is asked to do ---
+  // Reads are open; writes carry the unlock token. Seeing a prompt is not the
+  // risk — changing one quietly is.
+  promptGate(): Observable<PromptGate> {
+    return this.http.get<PromptGate>(`${this.base}/prompts/gate`);
+  }
+  setPromptPassword(body: {
+    password: string;
+    current_password?: string;
+  }): Observable<PromptUnlock> {
+    return this.http.post<PromptUnlock>(`${this.base}/prompts/gate`, body);
+  }
+  unlockPrompts(password: string): Observable<PromptUnlock> {
+    return this.http.post<PromptUnlock>(`${this.base}/prompts/unlock`, { password });
+  }
+  listPrompts(): Observable<PromptSummary[]> {
+    return this.http.get<PromptSummary[]>(`${this.base}/prompts`);
+  }
+  readPrompt(scenario: string): Observable<PromptDetail> {
+    return this.http.get<PromptDetail>(`${this.base}/prompts/${scenario}`);
+  }
+  promptHistory(scenario: string): Observable<PromptVersion[]> {
+    return this.http.get<PromptVersion[]>(`${this.base}/prompts/${scenario}/history`);
+  }
+  savePrompt(
+    scenario: string,
+    body: { body: string; note?: string | null },
+    token: string,
+  ): Observable<PromptDetail> {
+    return this.http.post<PromptDetail>(`${this.base}/prompts/${scenario}`, body, {
+      headers: { 'X-Admin-Token': token },
+    });
+  }
+  resetPrompt(scenario: string, token: string): Observable<PromptDetail> {
+    return this.http.post<PromptDetail>(
+      `${this.base}/prompts/${scenario}/reset`,
+      {},
+      { headers: { 'X-Admin-Token': token } },
+    );
+  }
+  restorePrompt(scenario: string, version: number, token: string): Observable<PromptDetail> {
+    return this.http.post<PromptDetail>(
+      `${this.base}/prompts/${scenario}/restore/${version}`,
+      {},
+      { headers: { 'X-Admin-Token': token } },
+    );
+  }
+
   // --- sales rules: PUT writes a new version, never mutates ---
   getSalesRules(): Observable<SalesRules> {
     return this.http.get<SalesRules>(`${this.base}/sales-rules`);
@@ -764,4 +812,65 @@ export interface LlmSpend {
   cache_read_tokens: number;
   by_stage: LlmSpendRow[];
   note: string;
+}
+
+/**
+ * Whether the prompt editor is locked, and with what.
+ *
+ * `configured: false` means no password has been set — the screen offers to
+ * set one. It deliberately does not mean "locked": treating it that way would
+ * shut the owner out of their own installation with no way back.
+ */
+export interface PromptGate {
+  configured: boolean;
+  token_header: string;
+  ttl_seconds: number;
+  min_password_length: number;
+}
+
+export interface PromptUnlock {
+  token: string;
+  ttl_seconds: number;
+}
+
+export interface PromptSummary {
+  scenario: string;
+  version: number | null;
+  /** The first question a new admin asks: what have we changed? */
+  differs_from_default: boolean;
+  note: string | null;
+  updated_at: string | null;
+  chars: number;
+  /**
+   * False when the code has a stage no migration seeded. It runs on its
+   * shipped text, and the screen says so rather than implying it was edited.
+   */
+  seeded: boolean;
+}
+
+export interface PromptVersion {
+  version: number;
+  is_active: boolean;
+  note: string | null;
+  created_at: string;
+  chars: number;
+  body: string;
+}
+
+export interface PromptDetail {
+  scenario: string;
+  body: string;
+  version: number | null;
+  note: string | null;
+  updated_at: string | null;
+  shipped_default: string;
+  differs_from_default: boolean;
+  /**
+   * Prepended to every stage and editable by nobody. It carries the rule that
+   * retrieved text is data rather than instruction, and the one that nothing
+   * is asserted without a citation. Shown read-only so an admin can see what
+   * their words sit beneath.
+   */
+  common_preamble: string;
+  seeded: boolean;
 }

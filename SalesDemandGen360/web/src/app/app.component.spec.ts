@@ -133,8 +133,14 @@ describe('AppComponent', () => {
   it('orders the settings by what depends on what', () => {
     settle(READY);
     // Reading top to bottom is a working sequence: credentials, then the
-    // models they unlock, then the content every prompt is assembled from,
-    // then the pipeline in the order it runs.
+    // models they unlock, then what those models are asked to do, then the
+    // content every prompt is assembled from, then the pipeline in the order
+    // it runs.
+    //
+    // "Prompts" sits next to "Model config" because they are two halves of one
+    // question — how hard a stage thinks, and what it is asked to do — and
+    // people come looking for them together. It is above the content screens
+    // because it is the instruction, not something assembled into it.
     //
     // "Org profile" is gone: it held who is selling *and* who we sell to, and
     // the second half moved to ICP profiles — which absorbed the remaining two
@@ -142,6 +148,7 @@ describe('AppComponent', () => {
     expect(cmp.settingsNav.map((n) => n.label)).toEqual([
       'API settings',
       'Model config',
+      'Prompts',
       'ICP profiles',
       'Services & proof',
       'Writing samples',

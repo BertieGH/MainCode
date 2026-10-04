@@ -50,7 +50,7 @@ from app.schemas.prep import SalesPrepPayload
 from app.schemas.qualification import DimensionAssessments
 from app.schemas.signal import SignalBatch, build_batch_model
 from app.schemas.strategy import StrategyProposal
-from app.services import durability, instructions, llm
+from app.services import durability, instructions, llm, prompts
 from app.services.prompt import PromptAssembly, build_research_prefix, stable_json
 from app.services.query_families import BY_KEY
 from app.services.research import build_plan
@@ -94,6 +94,14 @@ async def load_prefix(
     qualification would push it to *write* like an outreach email rather than
     assess like an analyst.
     """
+    # The admin-editable instruction text. Loaded here rather than baked into
+    # the module so an edit made in the UI is what actually runs on the next
+    # call — which is the whole point of moving these out of git. `_COMMON` is
+    # still prepended inside `instructions.block`, where a stored body cannot
+    # displace it.
+    stage_key = instructions_key or scenario
+    stored_body, stored_version = await prompts.body_and_version(session, stage_key)
+
     org = (
         await session.execute(select(OrgProfile).where(OrgProfile.is_active.is_(True)))
     ).scalar_one_or_none()
@@ -177,9 +185,10 @@ async def load_prefix(
         ],
         # A stage can share a scenario's model config and still need its own
         # instructions — contact research runs on company research's model.
-        stage_instructions=instructions.block(instructions_key or scenario),
+        stage_instructions=instructions.block(stage_key, stored_body),
         writing_samples=samples,
         tools=tools,
+        prompt_version=stored_version,
     )
 
 

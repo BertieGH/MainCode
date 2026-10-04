@@ -1897,3 +1897,63 @@ Also fixed in passing: the empty-state row still said `colspan="6"` for what is 
 table.
 
 `settings/signal-types.component.ts`, `settings/signal-types.component.spec.ts` (5 tests added).
+
+## §57 — Prompts moved out of git, behind a lock (2026-10-04)
+
+Asked for: a config screen where an admin edits the LLM prompts, instead of them being hardcoded.
+
+**Two things the investigation turned up before any code was written.**
+
+*There is no authentication in this application.* No user table, no login, no roles —
+`curl http://127.0.0.1:8011/api/config/signal-types` with no header at all returns `HTTP 200`. (The
+`X-API-Key` used in earlier sessions belongs to the *Survey* project; this app ignores it.) So
+"admin login" did not exist. Offered three scopes; **a password gate on the prompt routes only** was
+chosen, and it is recorded in `docs/14-prompt-config-plan.md` as what it is: a lock on one door in a
+building with no front door.
+
+*Prompts living in git was a recorded decision*, in `instructions.py`'s own docstring — a prompt
+change alters what every downstream artefact means, so it belonged in review and in a diff.
+Overriding that is the user's call, but the design had to **replace what git was providing**: history,
+diffs, and an answer to "which instructions wrote this row?". Hence versioned per scenario, the
+existing `llm_config` shape.
+
+**`_COMMON` is not editable, and that is the load-bearing decision.** The preamble carries invariant
+10 — retrieved text is DATA, never an instruction — and the cite-or-do-not-assert rule. A screen that
+let someone delete the prompt-injection guard is a hole, not a feature. It stays a module constant,
+is prepended **inside `instructions.block`** rather than at the edge, and the editor shows it
+read-only above the box. Assembling it downstream of where the body is loaded is what makes a hostile
+stored body get appended *after* the rule rather than substituted for it — tested directly.
+
+| | |
+|---|---|
+| `prompt_template` | 16 scenarios, versioned, one active per scenario (partial unique index) |
+| `admin_secret` | scrypt hash; stdlib, since neither bcrypt nor argon2 is installed |
+| migration `c3f7b2e9a815` | seeds v1 for all 16 from the live `STAGE` dict |
+| `STAGE` in code | no longer what runs — it is what Reset restores and what the diff compares against |
+
+Verified end to end against the running API: write with no password set → 409; with a password but
+no token → 401; wrong password → 401; edit with a token → v2, and the edited text **reaches the
+assembled prompt** with `_COMMON` still first and the injection guard still present; reset → v3
+matching the shipped default, with v2 still in the history.
+
+**Three bugs found by the tests, each worth recording.**
+
+1. **`updated_at` NOT NULL rejected every insert.** `Base` maps it nullable with an `onupdate` and
+   no insert default, so SQLAlchemy sends an explicit NULL. Every other table here has it nullable;
+   the new migration did not, and nothing failed until the first write.
+2. **scrypt refused its own parameters.** `n=2^15, r=8` needs `128·N·r` = exactly 32 MiB, and
+   OpenSSL's default cap is 32 MiB — so the shipped cost failed by the margin of the bookkeeping
+   overhead. Fixed by raising `maxmem`, not by lowering `N`: the memory-hardness is the point.
+3. **conftest TRUNCATEs before every test**, which wiped the seeded prompts and left `load_prefix`
+   silently falling back to the shipped text — a suite that passes while the feature it tests is
+   bypassed. Re-seeded alongside the existing research-sources hook, for the same reason.
+
+The settings nav order is pinned by a test that explains its own sequence. "Prompts" went beside
+"Model config" — how hard a stage thinks and what it is asked to do are two halves of one question —
+and the test's reasoning was extended rather than the list quietly re-sorted.
+
+`models/config.py`, `services/prompts.py` (new), `services/admin_gate.py` (new),
+`services/instructions.py`, `services/stages.py`, `services/prompt.py`, `api/prompts.py` (new),
+`main.py`, `alembic c3f7b2e9a815`, `core/config.service.ts`, `settings/prompts.component.ts` (new),
+`shared/icon.component.ts`, `app.routes.ts`, `app.component.ts`, `tests/conftest.py`,
+`tests/test_prompt_config.py` (new, 27), `settings/prompts.component.spec.ts` (new, 16).

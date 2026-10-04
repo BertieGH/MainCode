@@ -24,6 +24,8 @@ export type IconName =
   | 'pause'
   | 'play'
   | 'edit'
+  | 'lock'
+  | 'undo'
   | 'info';
 
 @Component({
@@ -59,6 +61,14 @@ export type IconName =
         }
         @case ('x') {
           <path d="M6 6l12 12M18 6 6 18" />
+        }
+        @case ('lock') {
+          <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+          <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+        }
+        @case ('undo') {
+          <path d="M3.5 8.5h9a6 6 0 0 1 0 12H8" />
+          <path d="M3.5 8.5 8 4m-4.5 4.5L8 13" />
         }
         @case ('eye') {
           <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />

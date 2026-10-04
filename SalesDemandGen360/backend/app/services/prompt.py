@@ -78,6 +78,13 @@ class PromptAssembly:
     blocks: list[SystemBlock] = field(default_factory=list)
     #: Deterministic order, never sorted differently between calls.
     tools: list[dict[str, Any]] = field(default_factory=list)
+    #: Which version of the stage's instructions built this, for stamping onto
+    #: whatever the call produces. Deliberately **not** part of any block: it
+    #: would change the prefix byte-for-byte on every edit and the point of the
+    #: prefix is that it is identical across a batch so the cache hits. It
+    #: rides alongside the text, not inside it. None when the stage ran on the
+    #: shipped default with no row to name.
+    prompt_version: int | None = None
 
     def system(self) -> list[dict[str, Any]]:
         cached = sum(1 for b in self.blocks if b.cache)
@@ -109,6 +116,7 @@ def build_research_prefix(
     stage_instructions: str,
     writing_samples: list[str],
     tools: list[dict[str, Any]] | None = None,
+    prompt_version: int | None = None,
 ) -> PromptAssembly:
     """The three-block prefix from §5, in that order.
 
@@ -117,6 +125,7 @@ def build_research_prefix(
     """
     return PromptAssembly(
         tools=list(tools or []),
+        prompt_version=prompt_version,
         blocks=[
             SystemBlock(
                 "org",

@@ -20,6 +20,7 @@ from app.api import (
     lists,
     outreach_events,
     pasted,
+    prompts,
 )
 from app.config import get_settings
 from app.database import engine
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(campaign_strategy.router, prefix="/api")
     app.include_router(outreach_events.router, prefix="/api")
     app.include_router(campaign_drafts.router, prefix="/api")
+    app.include_router(prompts.router, prefix="/api")
     return app
 
 
