@@ -17,6 +17,7 @@ Legend:
 | ☠ | source is dead — Gemini grounding excludes `linkedin.com` (§64) |
 | 🔵 | technology track; pause for the current book |
 | 🔴 | recommended for deprecation |
+| ❌ | **deleted on 2026-10-05.** Zero signals after a month live, so deletable rather than deprecable — nothing cited it, so nothing lost a citation. Kept in this table as the record of what was tried |
 | 🐛 | configuration bug |
 
 ---
@@ -32,14 +33,14 @@ Legend:
 | `vendor_consolidation` | news, company_site | `"{company}" ("vendor consolidation" OR "cost rationalisation" OR "preferred vendor" OR "contractor reduction" OR "IT spend")` plus wires | 270 | 810 | 0 |
 | `digital_transformation_mandate` | news, leadership, company_site, content_activity | `"{company}" ("digital transformation" OR "client portal" OR "automation initiative" OR "cloud migration")` plus the newsroom | 365 | 1095 | 0 |
 | `hiring_bottleneck` | hiring, job_board ⚠, company_site | ✅ `site:{domain}/careers OR {company}careers.com OR site:ziprecruiter.com "{company}"` — titles, posting age, re-posts | 90 | 270 | 0 |
-| `company_pain_statement` | company_site, news | `"{company}" ("struggling with" OR "manual process" OR "bottleneck" OR "we need to")` — their own words, quoted | 150 | 450 | 0 |
-| `delivery_quality_theme` | reviews ⚠, company_site | ✅ `"{company}" site:glassdoor.com OR site:google.com/maps` — **not** G2 or Capterra, which review software products | 180 | 540 | 0 |
+| ~~`company_pain_statement`~~ ❌ | company_site, news | `"{company}" ("struggling with" OR "manual process" OR "bottleneck" OR "we need to")` — their own words, quoted | 150 | 450 | 0 |
+| ~~`delivery_quality_theme`~~ ❌ | reviews ⚠, company_site | ✅ `"{company}" site:glassdoor.com OR site:google.com/maps` — **not** G2 or Capterra, which review software products | 180 | 540 | 0 |
 | `partnership` | news, company_site | `"{company}" ("carrier appointment" OR "partnership" OR "alliance" OR "now offers")` | 180 | 540 | 1 |
 | `public_focus` | company_site, news, linkedin ☠ | `site:{domain}/blog OR /insights OR /resources` — recurring themes | 90 | 270 | 1 |
 | `funding` 🔵 | funding | Crunchbase, PitchBook, wires | 300 | 900 | 0 |
 | `tech_adoption` 🔵 | tech_stack | `site:builtwith.com "{domain}"`, `site:{domain}/engineering` | 365 | 500 | 1 |
 | `engineering_scaling` 🔵 | hiring, job_board ⚠ | ATS boards — overlaps `hiring_bottleneck` | 60 | 180 | 0 |
-| `product_launch` 🔵 | news, company_site | `"{company}" ("launches" OR "introduces" OR "now available")` | 120 | 360 | 0 |
+| `product_launch` | news, company_site | `"{company}" ("launches" OR "introduces" OR "now available")` | 120 | 360 | 0 |
 | `mgt_change` 🔴 | leadership, company_site, news | Superseded: split into `leadership_vendor_review` and `m_and_a_integration` | 180 | 540 | 5 |
 
 ## Contact-scoped
@@ -73,13 +74,31 @@ produced nothing, and they are the technology-track ones.
 
 ## Open decisions
 
+**Settled on 2026-10-05**, reviewing the eight types that had been live since September and
+produced nothing:
+
+| type | decision |
+|---|---|
+| `delivery_quality_theme` | **deleted.** Its `reviews` family never produced evidence of its own either |
+| `company_pain_statement` | **deleted** |
+| `product_launch` | **kept, redefined**, and the key renamed back from `product_feature_launch` (`f7b3d9e24a16`). Off the technology track — see item 3 |
+| `engineering_team_expansion` | **stays.** 17 `jobs` evidence rows exist, so it has had documents to read and the question is the definition, not the type |
+
+The four contact-scoped ones are untouched and are item 1 below: with three people in the database
+they have never been tested, so a cull would be a decision about the book's size, not about them.
+
 1. **Per-person research — in or out?** Decides whether the contact table is four types or one.
    There are three contacts in the database, with truncated surnames.
 2. **Deprecate `mgt_change` now, or after a measured run?** It carries five signals, three of which
    are acquisitions that belong to `m_and_a_integration`.
-3. **Pause the technology track for this book?** `funding`, `tech_adoption`, `engineering_scaling`,
-   `product_launch` — four types interpreted against every document for a book of insurance
-   brokerages.
+3. **Pause the technology track for this book?** `funding`, `tech_adoption`, `engineering_scaling`
+   — three types interpreted against every document for a book of insurance brokerages.
+   **`product_launch` left the technology track on 2026-10-05** and is no longer part of this
+   question: it was defined as a *product or feature* launch, which reads as software and so only
+   ever fitted an ISV or SaaS account. Relabelled "Product launch" and redescribed against whatever
+   the company actually sells — a scheme, programme, cover or service line for a broker; a product
+   or feature for a vendor. The description is what extraction reads to choose between types, so a
+   software-shaped one was the reason a brokerage launch had nowhere to go.
 4. **Place-shaped sources** — whether to restructure the twelve sources around *where* rather than
    *what*, and if so how many. The evidence for place-shaping is strong; the case for twelve of them
    is not (see §65).

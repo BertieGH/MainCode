@@ -64,70 +64,78 @@ class QueryFamily:
     runner: Runner = "search"
 
 
+#: **Every row is a place, not a topic.** The list used to hold `funding`,
+#: `hiring`, `tech_stack`, `news`, `leadership`, `content_activity` and
+#: `reviews` — names for what you hoped to find rather than where to look. A
+#: signal type naming `hiring` then said the same thing twice and neither said
+#: where to go, which contradicts the invariant this module serves: *a source
+#: says what research opens; signal types say what is read out of it.*
+#: Restructured by `c1f7e3b89d24`, which also carries the frozen copy a
+#: migration needs.
+#:
+#: This list and the `research_source` table must agree. They are the same
+#: registry seen from two places — code for a fresh install and for
+#: `tests/conftest.py`, the table for a running one — and when they drift, a
+#: test validates `produced_by` against a registry production does not have.
 QUERY_FAMILIES: tuple[QueryFamily, ...] = (
     QueryFamily(
-        "funding", "Funding",
-        "Rounds, amounts, investors, filings, dates.",
+        "company_site", "Company announcements",
+        "The company's own feed and pages: releases, press, blog posts, and its "
+        "/security, /trust and /compliance pages, with its own dates.",
         ("company",),
+        runner="fetch",
     ),
     QueryFamily(
-        "hiring", "Hiring",
-        "Open roles, counts by function, urgency language in postings.",
-        ("company",),
-    ),
-    QueryFamily(
-        "tech_stack", "Tech stack",
-        "Tools named in job posts, integrations pages, engineering blog.",
-        ("company",),
-    ),
-    QueryFamily(
-        "news", "News / press",
-        "Launches, partnerships, expansions, incidents.",
+        "trade_press", "Trade press and wire services",
+        "Insurance and technology trade publications, and the wire services companies file "
+        "announcements to — Business Insurance, Insurance Journal, PR Newswire, Business "
+        "Wire. Read for what somebody other than the company has said about it: an "
+        "acquisition, an appointment, a new programme, an office opening. Keep the date.",
         ("company", "contact"),
     ),
     QueryFamily(
-        "leadership", "Leadership",
-        "Exec appointments and departures, team-page changes.",
+        "company_data_providers", "Company data and funding providers",
+        "Crunchbase, PitchBook, ZoomInfo, Dun and Bradstreet, Bloomberg profiles and "
+        "BuiltWith. Read for the structured facts a directory holds: a funding round with "
+        "its size, lead investor and date; headcount and its direction; technologies "
+        "detected on the domain; parent or subsidiary ownership.",
+        ("company",),
+    ),
+    QueryFamily(
+        "conference_and_podcast_circuit", "Conference, podcast and panel circuit",
+        "Conference agendas and speaker bios, podcast episode pages, webinar listings and "
+        "trade-press interviews. Read for a named person at this company saying something "
+        "in public, in their own words, with the event and the date.",
         ("company", "contact"),
     ),
     QueryFamily(
-        "reviews", "Reviews & ratings",
-        "Recurring themes in employee and customer reviews. Supports a signal, never creates one.",
+        "regulators_and_registers", "Regulators and licence registers",
+        "State insurance department licence registers, SEC and Companies House filings, and "
+        "change-of-control notices filed with a regulator. A regulator's record is dated and "
+        "authoritative, so prefer it over a press release describing the same event.",
         ("company",),
-        support_only=True,
+    ),
+    QueryFamily(
+        "linkedin_index", "LinkedIn via the public search index",
+        "Public LinkedIn content as Google has indexed it, reached with X-Ray path operators: "
+        "site:linkedin.com/in for a profile and site:linkedin.com/posts for a dated post, "
+        "paired with the quoted company and person name. Read through a SERP API. "
+        "**Never by opening linkedin.com.**",
+        ("company", "contact"),
+    ),
+    QueryFamily(
+        "ats_boards", "ATS boards and careers pages",
+        "Open roles from the company's own applicant-tracking board (Greenhouse, Lever, Ashby "
+        "or Workday) and its careers domain: titles, teams, locations and descriptions, dated "
+        "by when each role opened.",
+        ("company",),
+        runner="fetch",
     ),
     QueryFamily(
         "enrichment", "Enrichment",
         "Apollo → ContactOut waterfall: title, seniority, contactable details.",
         ("contact",),
         runner="provider",
-    ),
-    QueryFamily(
-        "content_activity", "Content activity",
-        "What the person has published, posted or said in public.",
-        ("contact",),
-    ),
-    QueryFamily(
-        "company_site", "Company announcements",
-        "The company's own feed: releases, press and blog posts, with its dates.",
-        ("company",),
-        runner="fetch",
-    ),
-    QueryFamily(
-        "job_board", "Job board",
-        "Open roles from the company's own applicant-tracking board (Greenhouse, Lever or "
-        "Ashby): titles, teams, locations and descriptions, dated by when each role opened.",
-        ("company",),
-        runner="fetch",
-    ),
-    QueryFamily(
-        "linkedin", "LinkedIn (via search)",
-        "What search engines have indexed from LinkedIn: the company's LinkedIn page and posts "
-        "published by it, and each person's profile headline and posts. Search "
-        "site:linkedin.com/company/<slug>, site:linkedin.com/posts/<slug> and "
-        "site:linkedin.com/in/<slug>, using the LinkedIn URL given when there is one. Quote only "
-        "what the search results show; never open a linkedin.com page.",
-        ("company", "contact"),
     ),
     QueryFamily(
         "manual", "Manual entry",

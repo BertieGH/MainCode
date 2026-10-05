@@ -84,12 +84,12 @@ class TestNotEveryFamilyIsASearch:
     def test_the_job_board_is_read_not_searched(self):
         """An ATS publishes the company's open roles through a public API.
         Searching for what a board already lists is paying to be told less."""
-        assert query_families.BY_KEY["job_board"].runner == "fetch"
+        assert query_families.BY_KEY["ats_boards"].runner == "fetch"
 
     def test_everything_else_is_a_search(self):
         others = [
             f for f in query_families.QUERY_FAMILIES
-            if f.key not in ("enrichment", "manual", "company_site", "job_board")
+            if f.key not in ("enrichment", "manual", "company_site", "ats_boards")
         ]
         assert others, "the fixture stopped describing the catalogue"
         assert all(f.runner == "search" for f in others)
@@ -98,15 +98,28 @@ class TestNotEveryFamilyIsASearch:
         keys = {f.key for f in query_families.searchable()}
         assert "enrichment" not in keys
         assert "manual" not in keys
-        assert "funding" in keys
+        assert "trade_press" in keys
 
     def test_support_only_is_a_separate_question(self):
-        """`reviews` is a genuine search that may corroborate but never
-        conclude. Conflating the two axes would either stop it running or let
-        it create a signal on its own."""
-        reviews = query_families.BY_KEY["reviews"]
-        assert reviews.runner == "search"
-        assert reviews.support_only is True
+        """A source can be a genuine search that corroborates but never
+        concludes. Conflating the two axes would either stop it running or let
+        it create a signal on its own.
+
+        Asserted against a source built here rather than a shipped one. The
+        catalogue ships none since `review_sites` was trialled against three
+        accounts, found nothing at any of them and was retired
+        (`c1f7e3b89d24`) — but the rule still holds and `sources.validate`
+        still enforces it, so the test outlives the row it used to use.
+        """
+        corroborating = query_families.QueryFamily(
+            "review_sites", "Reviews", "Repeated themes only.", ("company",),
+            support_only=True,
+        )
+        assert corroborating.runner == "search"
+        assert corroborating.support_only is True
+        assert not any(
+            f.support_only for f in query_families.QUERY_FAMILIES
+        ), "nothing ships support-only now; if that changes, say which and why"
 
     def test_a_provider_source_is_still_valid_provenance(self):
         """`role_change` really is produced by enrichment — a title that

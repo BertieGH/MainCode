@@ -245,7 +245,9 @@ Q: dict[str, tuple[str, str, list[tuple[str, str, str]]]] = {
         ],
     ),
     "product_launch": (
-        "product_feature_launch",
+        # Renamed back from `product_feature_launch` by f7b3d9e24a16 — the
+        # curated spreadsheet's own name turned out to be the right one.
+        "product_launch",
         "fetch; grounded",
         [
             ("fetch", "Own newsroom and blog",

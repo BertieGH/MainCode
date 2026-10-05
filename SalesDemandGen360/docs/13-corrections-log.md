@@ -2856,3 +2856,302 @@ Backend 1,765 pass, front end 348 pass, `ng build` exit 0.
 
 `schemas/strategy.py`, `services/campaign_strategy.py`, `services/gemini.py`,
 `services/instructions.py`, `services/stages.py`, `tests/test_campaign_strategy.py`.
+
+## §76 — The eight barren types reviewed, and what the review found (2026-10-05)
+
+§60 deferred deprecating eight signal types until a measured run existed. Asked to show them before
+anything was deleted — which was the right order, because showing them changed the answer for half.
+
+### The eight are still exactly eight, but not for one reason
+
+19 active types, **4 had ever produced a signal**, 6 signals in total, from 10 of 57 accounts.
+Grouping by the date each type was added separates two different things:
+
+```
+Sept 5-15 (original registry)   12 types   6 signals   -> 4 productive, 8 barren
+2026-10-04 (Phase 2, §60)        7 types   0 signals   -> never had a run
+```
+
+The seven Enterprise IT types read as unproductive on a naive count and are nothing of the kind;
+they are a day old. The eight are the September set.
+
+They split again on **why**:
+
+* **Four company-scoped types had documents and produced nothing.** 17 `jobs`, 19 `news` and 90
+  `web` evidence rows exist, so these were read against real material.
+* **Four contact-scoped types were never tested. There are three contacts in the database.** Every
+  signal ever produced is company-scoped. That is a fact about the size of the book, not about four
+  type definitions, and deprecating them would have recorded the wrong conclusion permanently.
+
+One of the four is worse than untested: **`contact_content_activity` has an empty `produced_by`**.
+No source opens research for it, so it cannot fire at all. A type that cannot fire counts as zero
+whatever its definition says.
+
+### Decisions taken
+
+| type | decision |
+|---|---|
+| `delivery_quality_theme` | deleted |
+| `company_pain_statement` | deleted |
+| `product_feature_launch` | kept, relabelled **"Product launch"**, redescribed, key renamed to `product_launch` |
+| `engineering_team_expansion` | stays |
+
+Both deletions went through `DELETE /api/config/signal-types/{key}`, not SQL, so the zero-signal
+guard is what authorised them rather than my reading of the count. 17 types remain; all 6 signals
+intact.
+
+**`product_feature_launch` was mis-defined, not unproductive.** "A product or feature launch" reads
+as software and so only ever fitted an ISV or SaaS account; the book is 57 insurance brokerages. The
+description is what extraction reads to choose between types, so a brokerage launching a scheme or a
+service line had nowhere to put it. Now described against whatever the company actually sells, with
+a software feature named as one instance and explicitly not the definition.
+
+**The key followed, to `product_launch`** (`f7b3d9e24a16`). `SignalTypePatch` omits `key` on purpose
+— it is written into the extraction output schema — so the API cannot do this and a migration must.
+Safe to rename rather than recreate: `signal.signal_type` carries a composite FK to
+`signal_type(key, scope)` and this type has produced no signals, so nothing pointed at the old
+name and nothing had to be deleted. All eight `icp_profile_version` rows were remapped in the same
+transaction, historical ones included, following `b4f8d1a27c95` — a rename is the same concept under
+a new name, so a version that recorded "this type mattered" still records that. Round-tripped down
+and back up: the downgrade restores the old name in all eight, the upgrade puts it back.
+
+`product_launch` was the curated spreadsheet's own name all along. The rename to
+`product_feature_launch` in `b4f8d1a27c95` is where the software reading entered.
+
+### Two things the deletion dragged behind it
+
+* **The active ICP still named both deleted types** in `signals_that_matter`. Harmless at runtime —
+  both consumers use the list as a filter (`SignalType.key.in_(wanted)`), so a dangling name matches
+  nothing — but wrong on the screen a rep reads. Cleaned as Default **v10** through
+  `PUT /icp-profiles/{id}`, which activates a new version rather than editing v9, so runs that
+  recorded v9 stay explainable.
+* **Two one-off scripts would have put the types straight back.** Neither type was created by a
+  migration; both came from setup scripts that insert by key and are documented as idempotent. A
+  script that silently undoes a deliberate deletion is worse than no script, so both are deleted:
+  `add_company_pain_type.py`, whose entire purpose was one of them, and `enable_more_families.py`,
+  which by the end of the day had nothing left that was still true — `delivery_quality_theme` and
+  `public_focus` deleted, `partnership` and `tech_adoption` renamed by `b4f8d1a27c95`, and
+  `product_launch` redescribed. Recoverable:
+  `git show b0aeaaf:SalesDemandGen360/backend/scripts/<name>`.
+
+### Then, in the same review
+
+* **`product_feature_launch` → `product_launch`** (`f7b3d9e24a16`), above.
+* **`contact_profile_headline_change` → `contact_profile`** (`a2e8c5b74f91`). "A headline change" is
+  one observation about a profile; what the type is wanted for is keeping the stored contact profile
+  current from the public index, so the key says that. It pairs with the `contact_profile()` stage
+  from §70 — the stage fills the profile, this type is what notices the profile has moved on.
+* **`public_focus` deleted with its two signals** (`a2e8c5b74f91`). It had produced signals, so the
+  API answers 409 and is right to; the owner confirmed test data and asked for the type and the data
+  to go. **The two evidence rows survive** — invariant 2 is not suspended by a reset, exactly as
+  `b4f8d1a27c95` reasoned. Verified: 134 evidence rows before and after.
+* **The three remaining contact types wired to `linkedin_serp`**, which is contact-scoped and which
+  `sources.validate` accepts — it refuses unknown, wrong-scope, duplicate and support-only-and-alone
+  lists, but **not a paused source**. So all three are configured and none can fire until a SERP
+  credential exists. `contact_role_change` asked for "the company website" and cannot name
+  `company_site`, which is company-scope only; `leadership` ("exec appointments and departures,
+  team-page changes") is that route for a contact.
+* **`contact_content_activity`'s two import defects fixed**: `produced_by` was `{}`, so no source
+  opened research and it could never fire, and `search_group` held the spreadsheet note
+  `"together or alone"`.
+
+`alembic f7b3d9e24a16`, `alembic a2e8c5b74f91`, `scripts/export_signal_registry.py`,
+`scripts/fill_signal_queries.py`, `docs/15-signal-registry.md`, ICP Default v10,
+`signal_type` (3 rows deleted, 2 renamed, 4 retuned), `signal` (2 test rows deleted).
+
+## §77 — Source reachability audited; the LinkedIn queries moved to X-Ray (2026-10-05)
+
+"First we need to check all sources are reachable." Reachable turned out to be **four** questions,
+and a source can pass three and still never produce anything. `build_plan` applies them in this
+order:
+
+1. **Active?** Paused or deprecated is skipped outright.
+2. **In the ICP's `sources` list?** That list **takes precedence over what the signal types claim.**
+   A source three types name but the ICP omits never runs; a source the ICP names but nobody claims
+   runs anyway, as an `extra`. This is the gate nobody was checking.
+3. **A `search` or `fetch` kind?** `provider` and `manual` are excluded by design — fanning research
+   over a provider would spend Apollo credits like tokens.
+4. **Scope.**
+
+Written up as `scripts/audit_sources.py`, read-only, no network and no credits: every answer is
+already in the database. What it found on 17 sources:
+
+```
+producing   company_site 25 · leadership 10 · news 9 · content_activity 7 · reviews 6
+            hiring 4 · funding 4 · tech_stack 4
+dead weight job_board — 26 attempts, nothing
+untried     careers_domain_direct · press_wire_aggregators · regulatory_and_filings
+            trust_security_portals  (wired yesterday in d1a7e9c45b82; no run since)
+never runs  funding · tech_stack — not in the ICP · linkedin — deprecated
+```
+
+### Three things the audit found that nobody had looked for
+
+* **`linkedin_serp` could never have run.** Earlier today its three contact types were pointed at it;
+  it was active and claimed by all three, and **absent from the ICP's source list**, so the wiring
+  was inert. My own change, and the ICP gate is why checking beat asserting.
+* **Two of the three types that have ever produced a signal are structurally dead.**
+  `funding_growth_milestone` and `tech_stack_expansion` have exactly one source each — `funding` and
+  `tech_stack` — and both were pruned from the ICP in `d1a7e9c45b82`. That prune was sound on cost
+  (sixteen calls for one passage, technology sources against a brokerage book) but it silently
+  removed the only route two producing types had. **Left as it is, pending a decision** — reinstating
+  them would undo a measured call.
+* **`linkedin_serp` was resumed outside this session at 09:39** and kept the `status_reason` it was
+  paused with, "No SERP API credential is configured", so the registry showed a running source
+  carrying a live-looking warning.
+
+### And underneath that, a 500 on every real edit
+
+`PATCH /research-sources/{key}` built its response as
+`{c.name: getattr(row, c.name) for c in row.__table__.columns}` **after** `commit()`. `updated_at` is
+mapped `onupdate=func.now()` — a SQL expression, so a flush expires the attribute and the next read
+of it is IO, inside a synchronous comprehension. `MissingGreenlet`, a 500, **and the commit had
+already happened**: the write landed and the caller was told it failed. A patch that changes nothing
+flushes nothing and looks fine, which is how it survived. That is exactly the shape of what happened
+at 09:39 — database correct, screen wrong.
+
+Fixed with `await session.refresh(row)` before the columns are read, and the endpoint now clears
+`status_reason` when a source goes back to active, because that field answers "why is this not
+active?" and has to go when the answer stops existing. Three tests added, one of them on a patch
+that genuinely changes a value — the no-op case is what hid this.
+
+### The LinkedIn queries (`b6d4a8f32e07`)
+
+`linkedin` is **deprecated, not paused**: paused reads as "we may turn this back on", and §64 settled
+that there is nothing to turn back on — grounding excludes `linkedin.com` for everyone, confirmed
+four ways, 16 attempts and no evidence. Removed from every ICP's sources and from every type's
+`produced_by`, so nothing claims a route that cannot run.
+
+The queries move to the path operators rather than the bare domain:
+
+```
+site:linkedin.com/in      a person's public profile
+site:linkedin.com/posts   a dated post
+```
+
+Narrower than `site:linkedin.com`, which also matches jobs, learning, pulse and company pages and
+buries the two things worth having. Written into the `linkedin_serp` description and into
+`contact_content_activity`'s instruction, so the form lives in the registry rather than in somebody's
+memory.
+
+**Stated plainly because it is easy to miss: this still retrieves nothing today.** X-Ray is a query
+*form*, not a retrieval route — the exclusion is on the domain, not the phrasing, so through
+grounding these return what every other LinkedIn query returns. They need a SERP API, and **no SERP
+credential is configured** (`integration_credential` holds anthropic, apollo, gemini, lgm). What the
+migration buys is that the day a credential exists, the queries are already right. Nothing here
+opens `linkedin.com`.
+
+`scripts/audit_sources.py` (new), `api/config.py`, `alembic b6d4a8f32e07`,
+`tests/test_research_config.py` (+3).
+
+## §78 — Sources become places, and are trialled before they are stored (2026-10-05)
+
+"Some of the sources are not source where we get signal/evidence. They are more of signal type mixed
+with sources." Correct, and it was the registry contradicting the invariant it exists to serve —
+*a source says what research opens; signal types say what is read out of it*. Seven of seventeen rows
+were named for what you hoped to find: `funding`, `hiring`, `leadership`, `tech_stack`,
+`content_activity`, `news`, `reviews`. A type naming `hiring` said the same thing twice and neither
+half said where to go. Open decision #4 in docs/15, now closed.
+
+### Two designs, and why the measurement chose
+
+* **A** — a registry of places, each with a tested query; types stay interpretation.
+* **B** — no registry; each type owns its queries, grouped by common source into one call.
+
+B is the better authoring story and **it is the shape already measured as worse**: Arm A (broad
+topic briefs) beat Arm B (narrow per-signal queries) **7 calls to 38 for the same evidence** (§66),
+and the best producer on the book is the fast sweep — one broad call. B recovers that only by
+grouping queries back into broad calls, which is A with the registry hidden inside a string-matching
+step. A also keeps "every document is read against every active type" structural rather than a rule
+to remember. **A, with B's authoring flow**: a type is authored with a "where is this found?" step
+that picks or creates a locus, and the locus owns the query.
+
+### Try it before you store it (`services/source_trial.py`)
+
+The reason a bad source is expensive is that it costs a read per account from the moment it is saved
+and is only judged afterwards. `job_board` took **26 attempts across 57 accounts** to establish that
+it finds nothing.
+
+`POST /api/config/research-sources/try` takes a candidate — the same fields that would be stored —
+runs it against up to six real accounts, and shows what came back and what it cost. It stores
+nothing: no evidence, no coverage, no signals.
+
+**The trial is the real path or it is worthless.** A search goes through `stages.research_family`
+with a new `candidate` override, so it is the same prompt, model, effort and contract as a stored
+source; the only differences are where the definition comes from and that `store_found` is never
+reached. A fetch goes through `sweep_account`, already read-only. `provider` and `manual` are
+**refused by name** rather than trialled — "no evidence" and "no implementation" look identical in a
+result and mean opposite things, which is exactly how `linkedin_serp` sat configured for a day with
+no credential and nothing saying so.
+
+It earned its cost on first use. Four candidate loci against three accounts, 12 calls:
+
+```
+trade_press                     2 passages   STORE
+company_data_providers          2 passages   STORE
+conference_and_podcast_circuit  2 passages   STORE
+review_sites                    0 of 3       NOT STORED
+```
+
+`review_sites` was never written. `reviews`, the row it would have replaced, is retired.
+
+### What the trial found that matters more than the renaming
+
+**Every passage came from the one insurtech in the sample.** Both brokerages returned nothing from
+any locus. The stored record agrees: **47 of 57 accounts have never produced a passage**, and the two
+largest (41 and 42 people) hold **69% of all evidence**.
+
+So these places are where a *technology* company appears. They open the technology track; they do
+not improve brokerage coverage, and nothing will — a twenty-person brokerage has no public footprint
+beyond its own website. That is why `company_site` is the only reliable producer at 25, and it is a
+fact about the book rather than about the registry.
+
+### The registry after `c1f7e3b89d24`
+
+Seven loci and two routes, from seventeen rows:
+
+```
+company_site                    fetch   8 types   producing 25
+trade_press                     search 10 types   trialled
+company_data_providers          search  4 types   trialled
+conference_and_podcast_circuit  search  2 types   trialled
+regulators_and_registers        search  2 types   trialled 0/2
+linkedin_index                  search  3 types   no SERP credential
+ats_boards                      fetch   3 types   PAUSED - 26 attempts, nothing
+enrichment / manual             routes
+```
+
+`trust_security_portals` folded into `company_site` because it always was part of it —
+`site_sweep.PAGE_PATHS` already reads `/security`, `/trust` and `/compliance`. It was a second row
+for pages one fetch already opened.
+
+**A dead end closed by accident, worth noting.** §77 flagged that `funding_growth_milestone` and
+`tech_stack_expansion` — two of the three types that have ever produced a signal — had exactly one
+source each, both pruned from the ICP. Both collapsed onto `company_data_providers`, which is active
+and in the ICP, so both are reachable again without reinstating anything. `engineering_team_expansion`
+was left naming only the paused `ats_boards` and was given `trade_press` and
+`company_data_providers`, so every type now reaches at least one live source.
+
+### The seed and the table had to be corrected together
+
+`query_families.QUERY_FAMILIES` is the registry seen from the other side — what a fresh install gets
+and what `tests/conftest.py` restores after a truncate. It still held the old topic-shaped keys, and
+**the suite passed anyway**, because the tests were internally consistent with a registry production
+no longer had. That is the drift the module's own comment warns about. Rewritten to the same seven
+loci, which broke 20 tests that encoded the old catalogue; all updated, none bent.
+
+One of those was a real consequence rather than a stale fixture: **`reviews` was the only
+`support_only` source**, so retiring it left the concept with no instance. The rule is still enforced
+by `sources.validate`, so the tests now build a corroborating source rather than borrowing a shipped
+one — a better test, and it outlives the next retirement.
+
+**Old keys were deleted with their coverage rows**, per the standing instruction to purge conflicting
+transaction data rather than reconcile it. The measured record was written to
+`docs/source-health-2026-10-05.csv` first — `scripts/audit_sources.py --csv` — which is the baseline
+the restructure gets judged against.
+
+Backend 1,776 pass; front end 348 pass; `ng build` exit 0.
+
+`services/source_trial.py` (new), `scripts/trial_loci.py` (new), `scripts/audit_sources.py`,
+`services/query_families.py`, `services/stages.py`, `api/config.py`, `schemas/config.py`,
+`alembic c1f7e3b89d24`, and five test modules.

@@ -88,30 +88,59 @@ class TestAClaimedSourceMustExist:
         problems = await sources.validate(session, ["enrichment"], "company")
         assert any("not available to company" in p for p in problems)
 
+    async def _support_only(self, session) -> str:
+        """A corroborating source, created here because none ships.
+
+        `reviews` used to be the one. `review_sites`, its place-shaped
+        replacement, was trialled against three accounts, found nothing at any
+        of them, and was never stored (`c1f7e3b89d24`). The rule it exercised
+        is still enforced, so the test keeps it alive without depending on a
+        row somebody may retire next.
+        """
+        from app.models.config import ResearchSource
+
+        session.add(
+            ResearchSource(
+                key="corroborating_only", label="Corroborating only",
+                description="Repeated themes; never conclusive on its own.",
+                kind="search", scopes=["company"], support_only=True,
+            )
+        )
+        await session.flush()
+        return "corroborating_only"
+
     async def test_a_support_only_source_alone_is_rejected(self, session):
-        """Reviews corroborates a signal but never creates one (docs/06 §7.1
-        rule 1), so a type produced only by reviews can never fire."""
-        problems = await sources.validate(session, ["reviews"], "company")
+        """A source that corroborates but never concludes (docs/06 §7.1 rule 1)
+        cannot be a type's only source — that type could never fire."""
+        key = await self._support_only(session)
+        problems = await sources.validate(session, [key], "company")
         assert any("never create one" in p for p in problems)
 
     async def test_a_support_only_source_alongside_a_producer_is_fine(self, session):
-        assert await sources.validate(session, ["reviews", "hiring"], "company") == []
+        key = await self._support_only(session)
+        assert await sources.validate(session, [key, "trade_press"], "company") == []
 
     async def test_the_seeded_sources_are_all_there(self, session):
-        """The ten families the product shipped with, under their own keys.
+        """The catalogue the product ships with, as places rather than topics.
 
-        Under new keys, every coverage row written before this migration would
-        name a source the registry cannot resolve — the report would print bare
-        keys, and reuse would re-search everything once.
+        Seven loci and two routes after `c1f7e3b89d24`. This list and
+        `query_families.QUERY_FAMILIES` are the same registry seen from two
+        sides; when they drift, a test validates `produced_by` against a
+        registry production does not have.
         """
         known = await sources.by_key(session)
         for key in (
-            "funding", "hiring", "tech_stack", "news", "leadership", "reviews",
-            "enrichment", "content_activity", "company_site", "manual",
+            "company_site", "trade_press", "company_data_providers",
+            "conference_and_podcast_circuit", "regulators_and_registers",
+            "linkedin_index", "ats_boards", "enrichment", "manual",
         ):
-            assert known[key].builtin is True
+            assert known[key].builtin is True, f"{key} missing from the seeded registry"
         assert known["company_site"].kind == "fetch"
+        assert known["ats_boards"].kind == "fetch"
         assert known["enrichment"].kind == "provider"
+        assert "reviews" not in known and "news" not in known, (
+            "the topic-shaped rows should be gone"
+        )
 
 
 # ==========================================================================
@@ -166,39 +195,46 @@ class TestTheIcpsSourcesAreThePlan:
     async def test_no_icp_sources_falls_back_to_what_the_types_claim(self, session):
         """How research behaved before sources were configurable. An ICP that
         has not been through the new screen must still research."""
-        session.add(a_type("mgt_change", produced_by=["leadership"]))
+        session.add(a_type("mgt_change", produced_by=["trade_press"]))
         await session.flush()
         plan = await build_plan(session, scope="company", type_keys={"mgt_change"})
-        assert plan.keys == ["leadership"]
+        assert plan.keys == ["trade_press"]
 
     async def test_a_contact_source_stays_out_of_the_company_plan(self, session):
-        session.add(a_type("role_change", scope="contact", produced_by=["news"]))
+        # A contact-only search, added here because the shipped catalogue has
+        # none: every place-shaped locus that reaches a person also reaches the
+        # company it belongs to. The scope rule is unchanged and still worth
+        # a test, so the fixture supplies the shape the catalogue no longer does.
+        session.add(a_source("personal_newsletter", scopes=["contact"]))
+        session.add(a_type("role_change", scope="contact", produced_by=["trade_press"]))
         await session.flush()
         plan = await build_plan(
             session, scope="company", type_keys={"role_change"},
-            source_keys={"content_activity"},
+            source_keys={"personal_newsletter"},
         )
         assert plan.keys == []
 
     async def test_a_paused_source_is_left_out(self, session):
-        session.add(a_source("trade_press", status="paused"))
-        session.add(a_type("mgt_change", produced_by=["leadership"]))
+        session.add(a_source("local_business_journal", status="paused"))
+        session.add(a_type("mgt_change", produced_by=["trade_press"]))
         await session.flush()
         plan = await build_plan(
             session, scope="company", type_keys={"mgt_change"},
-            source_keys={"leadership", "trade_press"},
+            source_keys={"trade_press", "local_business_journal"},
         )
-        assert plan.keys == ["leadership"]
+        assert plan.keys == ["trade_press"]
 
     async def test_a_rep_added_source_carries_its_own_brief(self, session):
         """The point of the registry: a source a rep added reads exactly like
         one that shipped, with no deploy between wanting it and having it."""
-        session.add(a_source("trade_press", label="Trade press",
-                             description="Sector publications and their newsletters."))
+        session.add(a_source("local_chamber_of_commerce", label="Local chamber of commerce",
+                             description="Member directories and their newsletters."))
         await session.flush()
-        plan = await build_plan(session, scope="company", source_keys={"trade_press"})
-        planned = plan.family("trade_press")
-        assert planned.label == "Trade press"
+        plan = await build_plan(
+            session, scope="company", source_keys={"local_chamber_of_commerce"}
+        )
+        planned = plan.family("local_chamber_of_commerce")
+        assert planned.label == "Local chamber of commerce"
         assert planned.kind == "search"
 
     async def test_a_provider_source_is_never_fanned_out_over(self, session):
@@ -206,9 +242,9 @@ class TestTheIcpsSourcesAreThePlan:
         Running it as though it were a search charges for it twice and reports
         "coverage gap" when the truth is "no credential"."""
         plan = await build_plan(
-            session, scope="contact", source_keys={"enrichment", "content_activity"}
+            session, scope="contact", source_keys={"enrichment", "linkedin_index"}
         )
-        assert plan.keys == ["content_activity"]
+        assert plan.keys == ["linkedin_index"]
 
 
 # ==========================================================================

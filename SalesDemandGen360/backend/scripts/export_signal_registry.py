@@ -62,16 +62,13 @@ CURATED: dict[str, tuple[str, str, str, str, str]] = {
         'site:{domain}/careers OR {company}careers.com OR site:ziprecruiter.com '
         '"{company}" - titles, posting age, re-posts',
     ),
-    "company_pain_statement": (
-        "enterprise", "keep - supporting", "ok", "no",
-        '"{company}" ("struggling with" OR "manual process" OR "bottleneck") - '
-        "their own words, quoted",
-    ),
-    "delivery_quality_theme": (
-        "enterprise", "keep - supporting", "weak (reviews)", "yes",
-        '"{company}" site:glassdoor.com OR site:google.com/maps - NOT G2 or '
-        "Capterra, which review software products",
-    ),
+    # `company_pain_statement` and `delivery_quality_theme` were here, both
+    # "keep - supporting". **Deleted on 2026-10-05**: a month live against the
+    # documents this book produces and not one signal between them. Their rows
+    # are dropped rather than marked, because this map is read by
+    # `CURATED.get(key)` over the *live* types — an entry for a key that no
+    # longer exists can never be reached, so leaving it would be a note nobody
+    # reads. The record of what was tried is in docs/15 and §76.
     "partnership": (
         "enterprise", "keep - supporting", "ok", "no",
         '"{company}" ("carrier appointment" OR "partnership" OR "alliance" OR '
@@ -94,7 +91,11 @@ CURATED: dict[str, tuple[str, str, str, str, str]] = {
         "ATS boards - overlaps hiring_bottleneck",
     ),
     "product_launch": (
-        "tech", "pause for this book", "ok", "no",
+        # Was "tech / pause for this book" while the type meant a *software*
+        # product or feature. Redescribed on 2026-10-05 against whatever the
+        # company sells, which puts a broker's new scheme or service line in
+        # scope, so it belongs to both tracks and is not paused.
+        "both", "keep - core", "ok", "no",
         '"{company}" ("launches" OR "introduces" OR "now available")',
     ),
     "mgt_change": (

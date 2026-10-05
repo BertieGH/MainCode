@@ -1,0 +1,18 @@
+key,kind,status,claims,in_icp,attempts,evidence,verdict
+careers_domain_direct,search,active,3,yes,0,0,untried - no run since it was wired
+company_site,fetch,active,8,yes,15,25,producing (25 over 15 attempts)
+content_activity,search,active,2,yes,17,7,producing (7 over 17 attempts)
+enrichment,provider,active,1,yes,0,0,not planned by design (provider)
+funding,search,active,1,NO,15,4,NEVER RUNS - not in the ICP's sources
+hiring,search,active,3,yes,15,4,producing (4 over 15 attempts)
+job_board,fetch,active,2,yes,26,0,"DEAD WEIGHT - 26 attempts, nothing"
+leadership,search,active,3,yes,32,10,producing (10 over 32 attempts)
+linkedin,search,deprecated,0,NO,16,0,NEVER RUNS - deprecated
+linkedin_serp,search,active,3,yes,0,0,untried - no run since it was wired
+manual,manual,active,1,NO,0,0,not planned by design (manual)
+news,search,active,8,yes,32,9,producing (9 over 32 attempts)
+press_wire_aggregators,search,active,6,yes,0,0,untried - no run since it was wired
+regulatory_and_filings,search,active,2,yes,0,0,untried - no run since it was wired
+reviews,search,active,0,yes,15,6,producing (6 over 15 attempts)
+tech_stack,search,active,2,NO,15,4,NEVER RUNS - not in the ICP's sources
+trust_security_portals,fetch,active,1,yes,0,0,untried - no run since it was wired

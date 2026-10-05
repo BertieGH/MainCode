@@ -64,11 +64,11 @@ async def world(session):
     session.add_all(
         [
             SignalType(key="funding", label="Funding", scope="company",
-                       default_ttl_days=300, produced_by=["funding"]),
+                       default_ttl_days=300, produced_by=["company_data_providers"]),
             SignalType(key="mgt_change", label="Leadership change", scope="company",
-                       default_ttl_days=180, produced_by=["leadership"]),
+                       default_ttl_days=180, produced_by=["trade_press"]),
             SignalType(key="role_change", label="Role change", scope="contact",
-                       default_ttl_days=180, produced_by=["leadership"]),
+                       default_ttl_days=180, produced_by=["trade_press"]),
         ]
     )
     await session.flush()
@@ -145,15 +145,15 @@ class TestThePlanFollowsTheList:
         )
         plan = await plan_for_list(session, lst.id)
         assert plan.company.keys == [], "researched company families nobody asked for"
-        assert plan.contact.keys == ["leadership"]
+        assert plan.contact.keys == ["trade_press"]
         assert "cto" in plan.targets
         assert plan.icp_version_ids == [str(version.id)]
 
     async def test_an_icp_naming_no_signals_falls_back_to_the_registry(self, session, world):
         lst, _ = await self._list(session, {"industries": ["SaaS"]})
         plan = await plan_for_list(session, lst.id)
-        assert plan.company.keys == ["funding", "leadership"]
-        assert plan.contact.keys == ["leadership"]
+        assert plan.company.keys == ["company_data_providers", "trade_press"]
+        assert plan.contact.keys == ["trade_press"]
 
 
 class TestOneRunCoversTheCompanyAndEachPerson:
@@ -186,11 +186,11 @@ class TestOneRunCoversTheCompanyAndEachPerson:
             contact_plan=contact_plan, run_contact_family=people,
         )
 
-        assert calls == [("leadership", ["Dana Reyes", "Sam Lee"])]
+        assert calls == [("trade_press", ["Dana Reyes", "Sam Lee"])]
         rows = await coverage(session, result.run_id)
         company_rows = {r.family for r in rows if r.contact_id is None}
         person_rows = {r.contact_id: r for r in rows if r.contact_id is not None}
-        assert company_rows == {"funding", "leadership"}, "company and person rows collide"
+        assert company_rows == {"company_data_providers", "trade_press"}, "company and person rows collide"
         assert person_rows[p["cto"].id].status == "ran"
         assert person_rows[p["cio"].id].status == "empty"
         assert person_rows[p["cio"].id].not_found == ["CIO appointment news"]
@@ -211,7 +211,7 @@ class TestOneRunCoversTheCompanyAndEachPerson:
             session, account=account, crm=StubCrmAdapter(),
             run_family=lambda a, f: _one(), company_plan=ResearchPlan(),
             contacts=[p["cto"], p["cio"]], contact_plan=contact_plan,
-            run_contact_family=people, contact_skip={p["cio"].id: {"leadership"}},
+            run_contact_family=people, contact_skip={p["cio"].id: {"trade_press"}},
         )
         assert calls == [["Dana Reyes"]]
         assert result.contact_reused == 1
@@ -280,7 +280,7 @@ class TestTheRealRunnerFilesPerPerson:
         stored = list(
             (await session.execute(select(Evidence).where(Evidence.run_id == run_id))).scalars()
         )
-        assert [(e.contact_id, e.family) for e in stored] == [(p["cto"].id, "leadership")]
+        assert [(e.contact_id, e.family) for e in stored] == [(p["cto"].id, "trade_press")]
         cio_row = next(
             r for r in await coverage(session, result.run_id) if r.contact_id == p["cio"].id
         )

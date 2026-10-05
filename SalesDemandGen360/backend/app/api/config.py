@@ -71,8 +71,11 @@ from app.schemas.config import (
     ReadinessOut,
     ResearchConfigIn,
     ResearchConfigOut,
+    AccountTrialOut,
     ResearchSourceIn,
     ResearchSourceOut,
+    SourceTrialIn,
+    SourceTrialOut,
     ResearchSourcePatch,
     SalesRulesIn,
     SalesRulesOut,
@@ -1423,6 +1426,62 @@ async def create_research_source(
     )
 
 
+@router.post("/research-sources/try", response_model=SourceTrialOut)
+async def try_research_source(
+    payload: SourceTrialIn, session: AsyncSession = Depends(get_session)
+):
+    """Run a candidate source against a few real accounts. Stores nothing.
+
+    Declared **before** `/{key}` so "try" is not read as a source key.
+
+    A source costs a read per account from the moment it is saved, and whether
+    it earns that is only visible afterwards — `job_board` spent 26 attempts
+    establishing that it finds nothing here. This runs the real prompt against
+    the real model and shows what came back, so the wording can be fixed while
+    it is still free.
+
+    Nothing is written: no evidence, no coverage, no signals. The one thing it
+    does cost is the model calls themselves, which is why the sample is capped.
+    """
+    from app.services import source_trial
+
+    candidate = payload.model_dump(exclude={"account_ids"})
+    try:
+        report = await source_trial.try_source(
+            session, candidate=candidate, account_ids=payload.account_ids
+        )
+    except source_trial.NotTestable as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    if not report.trials:
+        raise HTTPException(404, "none of those account ids exist")
+
+    return SourceTrialOut(
+        candidate=report.candidate,
+        route=report.route,
+        accounts=report.accounts,
+        found=report.found,
+        dry=report.dry,
+        failed=report.failed,
+        input_tokens=report.input_tokens,
+        output_tokens=report.output_tokens,
+        verdict=report.verdict,
+        trials=[
+            AccountTrialOut(
+                account_id=t.account_id,
+                account_name=t.account_name,
+                found=[e.model_dump(mode="json") for e in t.found],
+                not_found=t.not_found,
+                duration_ms=t.duration_ms,
+                input_tokens=t.input_tokens,
+                output_tokens=t.output_tokens,
+                error=t.error,
+            )
+            for t in report.trials
+        ],
+    )
+
+
 @router.patch("/research-sources/{key}", response_model=ResearchSourceOut)
 async def update_research_source(
     key: str, payload: ResearchSourcePatch, session: AsyncSession = Depends(get_session)
@@ -1446,7 +1505,23 @@ async def update_research_source(
         raise HTTPException(400, "no fields to update")
     for field, value in changes.items():
         setattr(row, field, value)
+    if changes.get("status") == "active":
+        # `status_reason` answers "why is this not active?", so it has to go
+        # when the answer stops existing. Found by the source audit: resuming
+        # `linkedin_serp` left it active while still saying "No SERP API
+        # credential is configured", which reads as a live warning about a
+        # source that is running.
+        row.status_reason = None
     await session.commit()
+    # Refreshed before the columns are read, not after. `updated_at` is mapped
+    # `onupdate=func.now()` — a SQL expression, so once a real UPDATE flushes,
+    # SQLAlchemy expires that attribute and the next read of it is IO. The
+    # comprehension below is synchronous, so that read raised MissingGreenlet
+    # and the endpoint 500ed on every genuine change while still committing it:
+    # that is why resuming `linkedin_serp` left the database correct and the
+    # caller holding an error. A no-op patch flushed nothing and looked fine,
+    # which is how it survived this long.
+    await session.refresh(row)
     return ResearchSourceOut(
         **{c.name: getattr(row, c.name) for c in row.__table__.columns}
     )

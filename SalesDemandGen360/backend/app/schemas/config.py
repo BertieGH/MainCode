@@ -807,6 +807,57 @@ class ResearchSourceIn(BaseModel):
     reuse_days: Annotated[int, Field(ge=1, le=3650)] | None = None
 
 
+class SourceTrialIn(BaseModel):
+    """A candidate source and the accounts to try it against.
+
+    The same fields as `ResearchSourceIn` plus `kind` and the sample, because
+    the point is to trial exactly what would be stored. `key` is wanted even
+    though nothing is written under it: it appears in the prompt and in the
+    log line, and a trial of an unnamed thing is hard to talk about afterwards.
+    """
+
+    key: str = Field(min_length=2, max_length=60, pattern=r"^[a-z][a-z0-9_]*$")
+    label: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=600)
+    scopes: list[Scope] = Field(min_length=1)
+    #: `search` or `fetch`. Anything else is refused with 422 rather than
+    #: trialled, because there is no client to run it and a green result would
+    #: mean nothing.
+    kind: Literal["search", "fetch"] = "search"
+    #: Which accounts to sample. At least one, and the service caps the list.
+    account_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class AccountTrialOut(ORMModel):
+    account_id: uuid.UUID
+    account_name: str
+    #: What came back, in full. Shown rather than counted: the decision is
+    #: whether these passages are worth paying for, which a number cannot say.
+    found: list[dict]
+    not_found: list[str]
+    duration_ms: int
+    input_tokens: int
+    output_tokens: int
+    error: str | None = None
+
+
+class SourceTrialOut(ORMModel):
+    """What a trial returned, and nothing stored."""
+
+    candidate: dict
+    route: str
+    accounts: int
+    found: int
+    #: Accounts where it ran cleanly and found nothing — the number that decides
+    #: whether a source is worth having.
+    dry: int
+    failed: int
+    input_tokens: int
+    output_tokens: int
+    verdict: str
+    trials: list[AccountTrialOut]
+
+
 class ResearchSourcePatch(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, min_length=1, max_length=600)

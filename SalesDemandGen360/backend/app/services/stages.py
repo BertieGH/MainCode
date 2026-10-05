@@ -428,6 +428,7 @@ async def research_family(
     *,
     account: Account,
     family: str,
+    candidate: dict | None = None,
     client: Any | None = None,
 ) -> llm.CallResult[EvidenceBatch]:
     """Read one source for one account.
@@ -443,6 +444,14 @@ async def research_family(
     somebody expected here — context for what counts as notable, never a filter.
     Narrowing the sweep to it is what made research cost one search per signal
     type and throw away most of what it paid for.
+
+    `candidate` is a source definition that is **not in the registry yet** — the
+    "try it before you store it" path. It replaces the row this would otherwise
+    look up and changes nothing else, so what a trial runs is the same prompt,
+    the same model and the same contract as the stored article. A trial that
+    took a shortcut here would be worth nothing: the whole point is to find out
+    what the real call returns before a source starts costing a read per
+    account. The caller is responsible for not storing what comes back.
     """
     known = next(
         (
@@ -461,16 +470,26 @@ async def research_family(
     plan = await build_plan(session)
     planned = plan.family(family)
 
-    payload = {
-        "account": _account_facts(account),
-        "source": {
+    source = (
+        {
+            "key": candidate.get("key") or family,
+            "label": candidate.get("label") or family,
+            "read_for": candidate.get("description"),
+            "scopes": list(candidate.get("scopes") or ["company"]),
+        }
+        if candidate is not None
+        else {
             "key": family,
             "label": (known.label if known else None)
             or (fallback.label if fallback else family),
             "read_for": (known.description if known else None)
             or (fallback.description if fallback else None),
             "scopes": list(known.scopes if known else (fallback.scopes if fallback else [])),
-        },
+        }
+    )
+    payload = {
+        "account": _account_facts(account),
+        "source": source,
         "of_interest": list(planned.feeds) if planned else [],
         # The oldest publication date any active signal type could still use.
         # Stated as a month, not a day — see `durability.cutoff_for_prompt`.
