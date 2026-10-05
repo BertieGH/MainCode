@@ -98,6 +98,13 @@ class Account(Base):
     crm_record_id: Mapped[str | None] = mapped_column(Text)
     icp_match_score: Mapped[float | None] = mapped_column(Numeric(5, 2))
     icp_match_reasons: Mapped[dict | None] = mapped_column(JSONB)
+    #: Firmographics: what the company does, who it serves, how big it is,
+    #: where it operates, what it is currently pushing. Metadata for the
+    #: context builder, **not** a signal — nothing about a company's size or
+    #: description says *now*, and giving it a TTL would mean expiring a fact
+    #: that does not expire. Proposed during curation as a
+    #: `firmographic_baseline` signal type; it is this instead.
+    profile: Mapped[dict | None] = mapped_column(JSONB)
 
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'new'"))
     research_status: Mapped[str] = mapped_column(
@@ -170,6 +177,12 @@ class Contact(Base):
     persona_role: Mapped[str | None] = mapped_column(Text)
     buying_role: Mapped[str | None] = mapped_column(Text)
     linkedin_url: Mapped[str | None] = mapped_column(Text)
+    #: Who this person is, as standing description — what they own, how long
+    #: they have been there, what they talk about. Undated and never aged: a
+    #: profile page carries no publication time, and a role is not untrue for
+    #: being long-held. The dated event is `contact_role_change`.
+    #: See `schemas/profile.ContactProfile`.
+    profile: Mapped[dict | None] = mapped_column(JSONB)
     #: Which LGM lead this person resolves to. Set before enrolment; the
     #: enrolment lock is keyed on it rather than on contact_id.
     lgm_identity_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -55,6 +55,7 @@ function intel(signals: SignalRow[]): Intelligence {
     account_id: ACCOUNT,
     account_name: 'Champion Risk',
     domain: 'championrisk.test',
+    profile: null,
     signals,
     coverage: [],
     context_narrative: null,

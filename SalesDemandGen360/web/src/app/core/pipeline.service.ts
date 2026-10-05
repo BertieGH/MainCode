@@ -126,6 +126,24 @@ export interface Intelligence {
   account_id: string;
   account_name: string;
   domain: string | null;
+  /**
+   * What the company *is* — services, who it sells to, size, where, what it is
+   * pushing. Firmographics rather than a signal: nothing in it says *now*, so
+   * it carries no expiry and reads as standing context. Null until the profile
+   * stage has run.
+   */
+  profile: {
+    what_they_do?: string | null;
+    services?: string[];
+    target_customers?: string[];
+    industries_served?: string[];
+    size?: string | null;
+    locations?: string[];
+    current_focus?: string[];
+    ownership?: string | null;
+    founded?: string | null;
+    sources?: string[];
+  } | null;
   signals: SignalRow[];
   coverage: CoverageRow[];
   /** The model's reading of the signals: themes, what changed, what is unknown. */

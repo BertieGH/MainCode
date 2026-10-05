@@ -460,21 +460,46 @@ async def build(
     # before the model was asked. So an empty answer is retried once and only
     # then reported — and reported as a provider failure, not as a judgement
     # about the person, which is what sent a rep looking for their own mistake.
+    wanted = {c.id: c for c in ordered}
+
+    def answers_nobody(parsed) -> bool:
+        """Nothing here is about a person we asked about.
+
+        Used to be "the threads list is empty", which `StrategyProposal`'s
+        `min_length=1` now makes unreachable — the contract refuses that at
+        parse time. The useless answer that remains is one carrying threads for
+        somebody else entirely: it satisfies the schema, is discarded here, and
+        leaves the rep told that nothing came back for their person.
+        """
+        return not any(t.contact_id in wanted for t in parsed.threads)
+
     result = await synthesise(account=account, context=context, threads=asked, contacts=ordered)
-    if not result.parsed.threads:
+    if answers_nobody(result.parsed):
         log.warning(
-            "campaign_strategy.empty_proposal account=%s asked=%d — retrying once",
-            account.id, len(asked),
+            "campaign_strategy.empty_proposal account=%s asked=%d returned=%d — retrying once",
+            account.id, len(asked), len(result.parsed.threads),
         )
         result = await synthesise(account=account, context=context, threads=asked, contacts=ordered)
     proposal = result.parsed
-
-    wanted = {c.id: c for c in ordered}
     accepted = []
+    log.info(
+        "campaign_strategy.proposal account=%s asked=%d returned=%d ids=%s",
+        account.id, len(asked), len(proposal.threads),
+        [str(t.contact_id) for t in proposal.threads],
+    )
     for proposed in proposal.threads:
         contact = wanted.get(proposed.contact_id)
         if contact is None:
-            continue  # the model may not add a person
+            # The model may not add a person — but a thread dropped here is
+            # invisible, and the rep is told "the model returned nothing for
+            # them", which sends them looking at the person rather than at a
+            # `contact_id` that came back subtly wrong. Say which id arrived
+            # and which were sent.
+            log.warning(
+                "campaign_strategy.unknown_contact account=%s returned=%s sent=%s",
+                account.id, proposed.contact_id, sorted(str(k) for k in wanted),
+            )
+            continue
         cited = [s for s in proposed.trigger_signal_ids if s in live_ids]
         if not cited and contact.id not in allow_without_signal:
             out.excluded.append({"name": contact.full_name, "reason": "the strategy cited no live signal"})

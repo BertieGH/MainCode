@@ -603,3 +603,66 @@ describe('IcpEditorComponent', () => {
     });
   });
 });
+
+describe('IcpEditorComponent · the buyer track', () => {
+  let fixture: ComponentFixture<IcpEditorComponent>;
+  let cmp: IcpEditorComponent;
+  let http: HttpTestingController;
+  let emitted: Record<string, unknown> | null;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [IcpEditorComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    http = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(IcpEditorComponent);
+    cmp = fixture.componentInstance;
+    emitted = null;
+    cmp.valueChange.subscribe((v) => (emitted = v as Record<string, unknown>));
+  });
+
+  afterEach(() => http.verify({ ignoreCancelled: true }));
+
+  const load = (icp: Record<string, unknown>) => {
+    cmp.value = icp;
+    fixture.detectChanges();
+    http.match(() => true).forEach((r) => r.flush([]));
+  };
+
+  it('round-trips a track through the form', () => {
+    // The editor's `compose` had no branch for a single-choice field, so the
+    // track was read in and silently dropped on the way back out.
+    load({ track: 'enterprise', industries: ['Insurance'] });
+    cmp.pickChoice('track', 'tech_company');
+
+    expect(emitted!['track']).toBe('tech_company');
+    expect(emitted!['industries']).toEqual(['Insurance']);
+  });
+
+  it('omits the key entirely when cleared, rather than writing an empty one', () => {
+    // The prompts read a missing track as "not established" and argue from the
+    // evidence. `""` would be a third state nothing is written to handle.
+    load({ track: 'enterprise' });
+    cmp.pickChoice('track', '');
+
+    expect('track' in emitted!).toBeFalse();
+  });
+
+  it('does not show an unrecognised track as if it were one of the two', () => {
+    // It lands in passthrough instead, where the JSON view can reach it — the
+    // form showing "enterprize" as selected is the confusion the server-side
+    // validator exists to prevent.
+    load({ track: 'enterprize' });
+
+    expect(cmp.texts['track']).toBeUndefined();
+    expect(emitted === null || emitted!['track'] === 'enterprize').toBeTrue();
+  });
+
+  it('keeps a track that was never touched', () => {
+    load({ track: 'tech_company' });
+    cmp.emit();
+
+    expect(emitted!['track']).toBe('tech_company');
+  });
+});

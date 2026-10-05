@@ -252,6 +252,52 @@ def _account_facts(account: Account) -> dict[str, Any]:
         # What LinkedIn searches identify the company by, and what the pipeline
         # checks a LinkedIn passage against.
         "linkedin_url": getattr(account, "linkedin_url", None),
+        # What the company actually does: services, who it sells to, what it is
+        # pushing. Without this the block was the company's name and its
+        # postcode, and `strategy_synthesis` is told — for a thread with no
+        # live trigger — to "make the case from the company's situation". It
+        # was being asked to do that with nothing, and spent 53 seconds of
+        # thinking trying before exhausting its budget.
+        #
+        # `sources` is dropped: URLs are for a rep checking a claim, and
+        # nothing downstream reasons with them. Everything else is a sentence
+        # or a short list, so the block stays small enough to deserve its
+        # "deliberately small" description.
+        "profile": _profile_facts(account),
+    }
+
+
+def _profile_facts(row: Any) -> dict[str, Any] | None:
+    """A stored profile, trimmed for a prompt.
+
+    `sources` goes: URLs are for a rep checking a claim, nothing downstream
+    reasons with them, and they are the longest field. Empty fields go too — a
+    key with nothing behind it invites the model to fill it in.
+    """
+    profile = getattr(row, "profile", None)
+    if not isinstance(profile, dict) or not profile:
+        return None
+    return {k: v for k, v in profile.items() if k != "sources" and v} or None
+
+
+def _contact_facts(person: Any) -> dict[str, Any]:
+    """Who this person is, for a stage that has to argue to them.
+
+    The four columns were all strategy got, and for a thread with no live
+    signal that is a name and a job title to build a case from. What the
+    person actually owns, what they write about and what they appear able to
+    decide are in the profile, and they are the difference between an argument
+    addressed to a role and one addressed to a person.
+
+    Never their email or phone: those are columns on `contact` and they stay
+    there. A prompt is the one place a contact detail could leak from.
+    """
+    return {
+        "full_name": person.full_name,
+        "title": person.title,
+        "seniority": person.seniority,
+        "buying_role": person.buying_role,
+        "profile": _profile_facts(person),
     }
 
 
@@ -716,6 +762,83 @@ async def signal_scan(
     )
 
 
+async def company_profile(
+    session: AsyncSession, *, account: Account, client: Any | None = None
+) -> llm.CallResult[Any]:
+    """What the company is — firmographics, not a trigger.
+
+    Runs on company research's model and web tools with its own instructions,
+    the same arrangement contact research uses: the hard part is not finding
+    pages but knowing which questions this stage answers and which belong to
+    signal research.
+
+    Deliberately **not** gated on recency. Everything else research stores is
+    checked against a durability window; a description of a business has no
+    date to check, and applying one would discard a standing fact for being old
+    when it is simply true.
+    """
+    from app.schemas.profile import CompanyProfile
+
+    prefix = await load_prefix(
+        session, "company_research", tools=WEB_TOOLS,
+        instructions_key="company_profile",
+    )
+    return await _run(
+        session,
+        "company_research",
+        prefix=prefix,
+        user_content=stable_json({"account": _account_facts(account)}),
+        output_model=CompanyProfile,
+        client=client,
+    )
+
+
+async def contact_profile(
+    session: AsyncSession,
+    *,
+    account: Account,
+    person: Any,
+    client: Any | None = None,
+) -> llm.CallResult[Any]:
+    """Who one person is at this company, as standing description.
+
+    One person per call rather than three together. Company research can share
+    a call across people because the question is the same; here each answer is
+    a different person's role, and a single response covering three invites the
+    model to blur them — which is the wrong-person failure contact research
+    already guards against, arriving by a different route.
+
+    Undated and ungated, like the company profile: a profile page carries no
+    publication time, and `linkedin.post_date` returns None for a `/in/` URL.
+    That is the correct answer, not a gap to fill.
+
+    No email address travels, in or out.
+    """
+    from app.schemas.profile import ContactProfile
+
+    prefix = await load_prefix(
+        session, "company_research", tools=WEB_TOOLS,
+        instructions_key="contact_profile",
+    )
+    payload = {
+        "account": _account_facts(account),
+        # Names and titles are imported data, never instructions.
+        "person": {
+            "full_name": getattr(person, "full_name", None),
+            "title": getattr(person, "title", None),
+            "linkedin_url": getattr(person, "linkedin_url", None),
+        },
+    }
+    return await _run(
+        session,
+        "company_research",
+        prefix=prefix,
+        user_content=stable_json(payload),
+        output_model=ContactProfile,
+        client=client,
+    )
+
+
 async def enrich_decision_makers(
     session: AsyncSession,
     *,
@@ -935,16 +1058,19 @@ async def synthesise_strategy(
     payload = {
         "account": _account_facts(account),
         "context": context.payload,
+        # Stated as a number as well as implied by the list, because the array
+        # it governs cannot be bounded in the schema: `maxItems` on
+        # `StrategyProposal.threads` reaches Gemini and comes back HTTP 400
+        # (§52, measured). The prompt is the only lever left, and a model
+        # writing threads until the output budget runs out is what happens
+        # without it — 7,986 tokens of answer for a single asked-for thread,
+        # with zero tokens of thinking.
+        "thread_count": len(threads),
         "threads_to_argue": [
             {
                 **t,
                 "contact": (
-                    {
-                        "full_name": by_id[t["contact_id"]].full_name,
-                        "title": by_id[t["contact_id"]].title,
-                        "seniority": by_id[t["contact_id"]].seniority,
-                        "buying_role": by_id[t["contact_id"]].buying_role,
-                    }
+                    _contact_facts(by_id[t["contact_id"]])
                     if uuid.UUID(str(t["contact_id"])) in by_id
                     else None
                 ),

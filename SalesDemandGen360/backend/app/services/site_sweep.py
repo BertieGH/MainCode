@@ -59,6 +59,28 @@ FEED_PATHS = (
     "/feed", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml",
     "/blog/feed", "/blog/rss.xml", "/news/feed", "/blog/index.xml",
 )
+#: Read as HTML when no feed answers. The first four are where a company puts
+#: announcements; the last three are where it states compliance obligations,
+#: which no feed ever carries — the reason a feed reader could not produce a
+#: `compliance_security_deadline` however the prompt was written.
+PAGE_PATHS = (
+    "/news", "/newsroom", "/press", "/about/news",
+    "/security", "/trust", "/compliance",
+)
+#: Kept per account from the fallback. Each miss costs a timeout.
+MAX_PAGES = 4
+#: Below this a page is a shell that renders with a script, or a redirect stub.
+#: Storing it files "Skip to main content" as evidence about the company.
+#:
+#: 250, not the 400 first written: a shell measures **zero** characters of text
+#: once the tags are stripped, so the threshold needs nowhere near that much
+#: headroom — and a terse but genuine trust page runs to about 380, which 400
+#: would have thrown away. The floor is here to exclude emptiness, not brevity.
+MIN_PAGE_CHARS = 250
+#: A page is not an entry: it has navigation, a footer and a cookie banner
+#: around whatever matters. Enough for the opening, which is where a newsroom
+#: or a trust page states its business.
+PAGE_EXCERPT_CHARS = 1200
 #: Said plainly, because a rep will see it: we are a research tool reading a
 #: public feed, and a site owner should be able to tell who called.
 USER_AGENT = "SalesDemandGen360-research/1.0 (+company announcement reader)"
@@ -199,6 +221,52 @@ def _text(value: str | None) -> str:
     return _WS.sub(" ", _TAGS.sub(" ", value or "")).strip()
 
 
+async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
+    """The fallback: conventional pages, read as HTML when there is no feed.
+
+    Two kinds of page, for two reasons. `/news` and `/press` carry what a feed
+    would have carried on a site that has one. `/security` and `/trust` carry
+    compliance deadlines and are never in a feed at all — which is why
+    `company_site`, a feed reader, could not produce a single
+    `compliance_security_deadline` no matter how the prompt was worded.
+
+    **Undated, and left that way.** A page carries no publication date the way
+    a feed entry does, and guessing one from the fetch would date every
+    company's history to today. `observed_at` stays null; the intake gate
+    admits undated evidence precisely so this is possible, and extraction
+    takes the date from the text when the text gives one.
+
+    Bounded hard. Each miss costs a timeout, and a site that has none of these
+    at the conventional spellings does not have them.
+    """
+    out: list[FoundEvidence] = []
+    for path in PAGE_PATHS:
+        if len(out) >= MAX_PAGES:
+            break
+        url = f"https://{domain}{path}"
+        if not await allowed(http, url, robots):
+            continue
+        body = await _get(http, url)
+        if not body:
+            continue
+        text = _text(body)
+        if len(text) < MIN_PAGE_CHARS:
+            # A shell that renders its content with a script, or a redirect
+            # stub. Storing it would file "Skip to main content" as evidence.
+            continue
+        out.append(
+            FoundEvidence(
+                source_type="web",
+                source_url=url,
+                source_name=domain,
+                title=path.strip("/").replace("/", " ").replace("-", " ") or domain,
+                excerpt=text[:PAGE_EXCERPT_CHARS],
+                observed_at=None,
+            )
+        )
+    return out
+
+
 def _when(value: str | None) -> date | None:
     """A feed date, from either dialect. Unparseable is None, never today."""
     if not value:
@@ -326,9 +394,35 @@ async def sweep_account(
                 break
 
         if not items:
+            # No feed. Fall back to reading the conventional pages directly —
+            # a company with no RSS still has a newsroom, and the pages that
+            # carry a compliance deadline (`/security`, `/trust`) are never in
+            # a feed even on a site that has one.
+            #
+            # A fallback, deliberately, and not the first thing tried: a feed
+            # is dated, bounded and meant to be read by machines, where a page
+            # is none of those. The other route to these pages is a search with
+            # `site:` operators, which costs a model call instead of four HTTP
+            # requests. Both exist so the comparison can be made on evidence
+            # rather than argued — this one writes `read_pages` into its notes
+            # so a coverage query can tell them apart.
+            pages = await _read_pages(own, domain, robots)
+            if pages:
+                note = (
+                    f"no feed at {domain}; read {len(pages)} "
+                    f"page{'s' if len(pages) != 1 else ''} directly"
+                )
+                log.info("site_sweep.pages domain=%s read=%d", domain, len(pages))
+                return SweepResult(
+                    EvidenceBatch(evidence=pages),
+                    (),
+                    notes=(note, "read_pages"),
+                    linkedin_company=linkedin_company,
+                )
             note = (
-                f"no feed found at {domain} — tried the page's own links and "
-                f"{tried} conventional path{'s' if tried != 1 else ''}"
+                f"no feed found at {domain} — tried the page's own links, "
+                f"{tried} conventional path{'s' if tried != 1 else ''} and "
+                f"{len(PAGE_PATHS)} standard pages"
             )
             return SweepResult(
                 EvidenceBatch(not_found=[note]), (note,), linkedin_company=linkedin_company

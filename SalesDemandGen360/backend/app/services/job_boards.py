@@ -76,8 +76,29 @@ _PATTERNS: tuple[tuple[str, bool, re.Pattern[str]], ...] = (
     # Ashby: a hosted posting or embed, or the API.
     ("ashby", False, re.compile(r"jobs\.ashbyhq\.com/" + _TOKEN, re.I)),
     ("ashby", False, re.compile(r"api\.ashbyhq\.com/posting-api/job-board/" + _TOKEN, re.I)),
+    # Workday: the enterprise board, and the reason this reader found nothing
+    # across 57 accounts. Greenhouse, Lever and Ashby host startups; a
+    # non-technology company of any size is on Workday, iCIMS or Taleo. The
+    # hosted URL carries everything the API needs — tenant, cluster and site —
+    # in that order, with an optional locale segment between the last two:
+    #   acme.wd1.myworkdayjobs.com/External
+    #   acme.wd5.myworkdayjobs.com/en-US/External_Careers
+    #   acme.wd1.myworkdayjobs.com/wday/cxs/acme/External/jobs
+    ("workday", False, re.compile(
+        r"([A-Za-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/"
+        r"(?:wday/cxs/[A-Za-z0-9-]+/)?(?:[a-z]{2}-[A-Z]{2}/)?([A-Za-z0-9_-]+)",
+        re.I,
+    )),
 )
-_LABELS = {"greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby"}
+_LABELS = {
+    "greenhouse": "Greenhouse",
+    "lever": "Lever",
+    "ashby": "Ashby",
+    "workday": "Workday",
+}
+#: Named in the "nothing found" note, so a rep reading coverage knows what was
+#: looked for rather than assuming every board was tried.
+_LOOKED_FOR = "Greenhouse, Lever, Ashby and Workday"
 
 _HREF = re.compile(r"""<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']""", re.I)
 _CAREER_WORDS = re.compile(r"career|jobs|join-us|join_us|work-with-us|hiring", re.I)
@@ -92,6 +113,12 @@ class Board:
     provider: str
     token: str
     eu: bool = False
+    #: Workday only. Its boards are per-tenant hosts rather than one API with a
+    #: token, so the cluster (`wd1`, `wd5`…) and the site name both have to be
+    #: carried — `acme.wd1.myworkdayjobs.com` and `acme.wd5.…` are different
+    #: machines, and guessing the cluster reaches nobody.
+    cluster: str = ""
+    site: str = ""
 
     @property
     def label(self) -> str:
@@ -104,7 +131,25 @@ class Board:
         if self.provider == "lever":
             host = "api.eu.lever.co" if self.eu else "api.lever.co"
             return f"https://{host}/v0/postings/{token}?mode=json"
+        if self.provider == "workday":
+            return (
+                f"https://{token}.{self.cluster}.myworkdayjobs.com"
+                f"/wday/cxs/{token}/{self.site}/jobs"
+            )
         return f"https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=false"
+
+    @property
+    def post_body(self) -> dict | None:
+        """The request body, for a board that answers a POST rather than a GET.
+
+        Workday's careers API is a search endpoint: it takes facets, an offset
+        and a limit, and returns nothing at all to a GET. The three
+        startup-oriented boards are plain GETs, so this is None for them and
+        the caller branches on it.
+        """
+        if self.provider != "workday":
+            return None
+        return {"appliedFacets": {}, "limit": MAX_JOBS, "offset": 0, "searchText": ""}
 
 
 @dataclass(frozen=True)
@@ -126,12 +171,27 @@ def boards_named(page: str | None) -> list[Board]:
         for match in pattern.finditer(page or ""):
             # A sentence ending in a link leaves its full stop on the token.
             token = match.group(1).rstrip(".-")
-            if token:
+            if not token:
+                continue
+            if provider == "workday":
+                # Three parts, not one: the API is on the tenant's own host and
+                # needs the site name as well, so a Workday board cannot be
+                # reconstructed from a token alone the way the others can.
+                cluster, site = match.group(2).lower(), match.group(3).rstrip(".-")
+                if not site:
+                    continue
+                hits.append(
+                    (match.start(), Board(provider, token, eu, cluster, site))
+                )
+            else:
                 hits.append((match.start(), Board(provider, token, eu)))
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     out: list[Board] = []
     for _, board in sorted(hits, key=lambda h: h[0]):
-        key = (board.provider, board.token.lower())
+        # The site is part of the identity: a company with "External" and
+        # "Internal" boards on one tenant has two, and only the first is ours
+        # to read — but they must not dedupe into one.
+        key = (board.provider, board.token.lower(), board.site.lower())
         if key not in seen:
             seen.add(key)
             out.append(board)
@@ -170,6 +230,24 @@ def _iso(value: str | None) -> datetime | None:
 
 def _teams(*names: str | None) -> str:
     return ", ".join(dict.fromkeys(n.strip() for n in names if n and n.strip()))
+
+
+async def _post(http, url: str, body: dict) -> str | None:
+    """POST and return the response text, or None.
+
+    `site_sweep._get`'s sibling, kept here because Workday is the only board
+    that needs it and the sweep has no other reason to write. Same contract: an
+    unreachable or unhappy endpoint is a finding, not a fault, and costs one
+    source rather than the run.
+    """
+    try:
+        response = await http.post(url, json=body)
+    except Exception as exc:  # noqa: BLE001 — one board must not cost the run
+        log.info("job_boards.unreachable url=%s err=%s", url, type(exc).__name__)
+        return None
+    if response.status_code != 200:
+        return None
+    return response.text
 
 
 # --------------------------------------------------------------- parsers ---
@@ -232,11 +310,57 @@ def _ashby_roles(data) -> list[Role]:
     return roles
 
 
+def _workday_roles(data, board: Board) -> list[Role]:
+    """Workday's search results.
+
+    Two things are different enough from the other three to be worth stating.
+
+    **`postedOn` is prose, not a date** — "Posted Today", "Posted 30+ Days
+    Ago". It is deliberately *not* parsed into `opened`: inventing a date from
+    "30+" would put a guess in a field every downstream expiry calculation
+    trusts. It is kept in the excerpt instead, where it is the most useful
+    sentence on the posting — a role advertised for thirty days is the
+    `hiring_bottleneck` signal stated by the employer.
+
+    `startDate` is a real date when a tenant sends one, and only then.
+
+    **The body is one line.** The search endpoint returns titles and facets,
+    not descriptions; the full text is behind a second request per role, which
+    would be twenty-five more requests per account for prose extraction mostly
+    ignores. The title, team, location and how long it has been open are the
+    parts that carry the signal.
+    """
+    roles = []
+    for job in (data or {}).get("jobPostings") or []:
+        path = (job.get("externalPath") or "").lstrip("/")
+        posted = (job.get("postedOn") or "").strip()
+        roles.append(
+            Role(
+                title=(job.get("title") or "").strip(),
+                # Workday's facets vary by tenant; `bulletFields` is where the
+                # requisition id and sometimes the department land.
+                teams=_teams(*(job.get("bulletFields") or [])),
+                location=(job.get("locationsText") or "").strip(),
+                opened=_iso(job.get("startDate")),
+                url=(
+                    f"https://{board.token}.{board.cluster}.myworkdayjobs.com"
+                    f"/en-US/{board.site}/{path}"
+                    if path
+                    else f"https://{board.token}.{board.cluster}.myworkdayjobs.com/{board.site}"
+                ),
+                body=posted,
+            )
+        )
+    return roles
+
+
 def roles_from(board: Board, data) -> list[Role]:
     if board.provider == "greenhouse":
         return _greenhouse_roles(data, board.token)
     if board.provider == "lever":
         return _lever_roles(data)
+    if board.provider == "workday":
+        return _workday_roles(data, board)
     return _ashby_roles(data)
 
 
@@ -308,7 +432,7 @@ async def sweep_account(account, *, http=None, max_jobs: int = MAX_JOBS) -> Swee
         board, fetched = await _find_board(own, domain, robots)
         if board is None:
             note = (
-                f"no job board found on {domain} — looked for Greenhouse, Lever and Ashby on "
+                f"no job board found on {domain} — looked for {_LOOKED_FOR} on "
                 f"{fetched} page{'s' if fetched != 1 else ''}"
             )
             return SweepResult(EvidenceBatch(not_found=[note]), (note,))
@@ -317,8 +441,11 @@ async def sweep_account(account, *, http=None, max_jobs: int = MAX_JOBS) -> Swee
             note = f"robots.txt disallows reading {board.label} board {board.token}"
             return SweepResult(EvidenceBatch(not_found=[note]), (note,))
 
-        body = await _get(own, board.jobs_url())
-        if body is None and board.token != board.token.lower():
+        if board.post_body is not None:
+            body = await _post(own, board.jobs_url(), board.post_body)
+        else:
+            body = await _get(own, board.jobs_url())
+        if body is None and board.post_body is None and board.token != board.token.lower():
             # A site may write the board's name as the brand does — Linear links
             # "jobs.ashbyhq.com/Linear/…" — where the API wants it lower-cased.
             body = await _get(own, board.jobs_url(board.token.lower()))

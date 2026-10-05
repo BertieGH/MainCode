@@ -18,6 +18,7 @@ genuinely hits — already has a live test in `test_prompt_caching.py`, marked
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -895,3 +896,70 @@ class TestTheLinkedInSourceMayOnlySearch:
 
     def test_the_account_block_carries_its_linkedin_page(self):
         assert "linkedin_url" in stages._account_facts(_account())
+
+
+class TestTheAccountBlockCarriesTheProfile:
+    """`strategy_synthesis` is told, for a thread with no live trigger, to
+    "make the case from the company's situation". The account block held the
+    company's name and its postcode, so there was no situation in it — and the
+    model spent 53 seconds of thinking trying to invent one before exhausting
+    its token budget.
+    """
+
+    def test_a_profile_reaches_the_prompt(self):
+        from app.services.stages import _account_facts
+
+        account = SimpleNamespace(
+            id=uuid.uuid4(), name="Simplicity", domain="simplicity.test",
+            industry="insurance", employee_count=28, hq_country="US",
+            hq_region="CA", linkedin_url=None,
+            profile={
+                "what_they_do": "A brokerage general agency.",
+                "services": ["concierge underwriting"],
+                "target_customers": ["financial advisors"],
+            },
+        )
+        facts = _account_facts(account)
+
+        assert facts["profile"]["target_customers"] == ["financial advisors"]
+        assert facts["profile"]["what_they_do"] == "A brokerage general agency."
+
+    def test_sources_are_left_out(self):
+        """URLs are for a rep checking a claim. Nothing downstream reasons with
+        them, and they are the longest field in the profile."""
+        from app.services.stages import _account_facts
+
+        account = SimpleNamespace(
+            id=uuid.uuid4(), name="X", domain="x.test", industry=None,
+            employee_count=None, hq_country=None, hq_region=None,
+            linkedin_url=None,
+            profile={"what_they_do": "Something.", "sources": ["https://x.test/a"]},
+        )
+
+        assert "sources" not in _account_facts(account)["profile"]
+
+    def test_an_account_without_one_sends_nothing(self):
+        """None rather than an empty object: "not established" and "established
+        to be empty" are different, and a `{}` invites the model to fill it."""
+        from app.services.stages import _account_facts
+
+        account = SimpleNamespace(
+            id=uuid.uuid4(), name="X", domain="x.test", industry=None,
+            employee_count=None, hq_country=None, hq_region=None,
+            linkedin_url=None, profile=None,
+        )
+
+        assert _account_facts(account)["profile"] is None
+
+    def test_empty_fields_are_dropped(self):
+        from app.services.stages import _account_facts
+
+        account = SimpleNamespace(
+            id=uuid.uuid4(), name="X", domain="x.test", industry=None,
+            employee_count=None, hq_country=None, hq_region=None,
+            linkedin_url=None,
+            profile={"what_they_do": "Something.", "services": [], "size": None},
+        )
+        out = _account_facts(account)["profile"]
+
+        assert out == {"what_they_do": "Something."}

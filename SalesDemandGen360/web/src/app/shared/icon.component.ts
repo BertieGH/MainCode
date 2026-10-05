@@ -26,6 +26,7 @@ export type IconName =
   | 'edit'
   | 'lock'
   | 'undo'
+  | 'download'
   | 'info';
 
 @Component({
@@ -61,6 +62,11 @@ export type IconName =
         }
         @case ('x') {
           <path d="M6 6l12 12M18 6 6 18" />
+        }
+        @case ('download') {
+          <path d="M12 3.5v11" />
+          <path d="M7.5 10.5 12 15l4.5-4.5" />
+          <path d="M4.5 17.5v1.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-1.5" />
         }
         @case ('lock') {
           <rect x="4.5" y="10.5" width="15" height="10" rx="2" />

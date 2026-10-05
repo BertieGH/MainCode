@@ -206,6 +206,37 @@ describe('PromptsComponent', () => {
     });
   });
 
+  describe('the download', () => {
+    it('does not need the lock', () => {
+      // Everything in the document is already on this screen. Collecting it
+      // into a file changes how convenient it is to review, not who may see it.
+      boot();
+      expect(cmp.unlocked()).toBeFalse();
+
+      cmp.download();
+
+      const req = http.expectOne(`${BASE}/export`);
+      expect(req.request.responseType).toBe('blob');
+      req.flush(new Blob(['PK'], { type: 'application/octet-stream' }));
+      expect(cmp.downloading()).toBeFalse();
+    });
+
+    it('surfaces a failure on the screen rather than losing it', () => {
+      // Fetched through HttpClient rather than an <a href> straight at the
+      // route precisely so a failure lands here instead of replacing the app
+      // with a browser error page.
+      boot();
+      cmp.download();
+      http.expectOne(`${BASE}/export`).flush(null, {
+        status: 500,
+        statusText: 'Server Error',
+      });
+
+      expect(cmp.error()).toBeTruthy();
+      expect(cmp.downloading()).toBeFalse();
+    });
+  });
+
   describe('the preamble', () => {
     it('is rendered so the admin can see what their text sits beneath', () => {
       boot();

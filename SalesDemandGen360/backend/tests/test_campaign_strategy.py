@@ -140,6 +140,25 @@ def proposer(calls=None):
     return synthesise
 
 
+def _about_a_stranger() -> StrategyProposal:
+    """A schema-valid proposal that answers nobody we asked about.
+
+    The contract floors `threads` at one, so a model cannot come back empty any
+    more. What it can still do is argue a case for a `contact_id` that was
+    never in the request — and the service has to treat that as a provider
+    failure rather than silently dropping it and telling the rep nothing came
+    back for their person.
+    """
+    return StrategyProposal(threads=[
+        ProposedThread(
+            contact_id=uuid.uuid4(), service_id=uuid.uuid4(),
+            problem_hypothesis="about somebody else entirely", trigger_summary="Series B",
+            trigger_signal_ids=[str(SIGNAL)],
+            positioning="p", channel_sequence=["email"], cta="15 minutes",
+        )
+    ])
+
+
 def reasons(out) -> dict[str, str]:
     return {e["name"]: e["reason"] for e in out.excluded}
 
@@ -316,11 +335,15 @@ class TestBuilding:
         reasons = approval.flag_reasons(approval.Candidate(sequence_id=uuid.uuid4(), chosen_by_rep=True))
         assert any("chosen by a rep" in r for r in reasons)
 
-    async def test_an_empty_answer_is_retried_once(self, session, live):
+    async def test_an_answer_about_nobody_we_asked_for_is_retried_once(self, session, live):
         """Measured, not assumed: the same request returned one sound thread on
-        411 output tokens and an empty list on 790, minutes apart. Returning
-        nothing is a contract violation, not an opinion — the prompt asks for
-        one thread per entry and says who was decided before the call."""
+        411 output tokens and nothing usable on 790, minutes apart.
+
+        "Nothing usable" used to mean an empty `threads` list. `min_length=1`
+        on the contract now refuses that at parse time, so the useless answer
+        that remains is one carrying threads for somebody we never asked
+        about — it satisfies the schema, is discarded, and leaves the rep told
+        that nothing came back for their person."""
         w = await campaign_world(session)
         calls: list = []
         good = proposer()
@@ -328,7 +351,7 @@ class TestBuilding:
         async def flaky(**kwargs):
             calls.append(kwargs)
             if len(calls) == 1:
-                return SimpleNamespace(parsed=StrategyProposal(threads=[]))
+                return SimpleNamespace(parsed=_about_a_stranger())
             return await good(**kwargs)
 
         out = await campaign_strategy.build(
@@ -336,13 +359,13 @@ class TestBuilding:
         assert len(calls) == 2, "the first empty answer was retried"
         assert out.built and out.pursued == ["Enrico Bergamo"]
 
-    async def test_two_empty_answers_are_reported_as_the_provider_failing(self, session, live):
+    async def test_two_useless_answers_are_reported_as_the_provider_failing(self, session, live):
         """Not "no case was argued for them", which reads as a judgement and
         sends a rep looking for their own mistake."""
         w = await campaign_world(session)
 
         async def always_empty(**kwargs):
-            return SimpleNamespace(parsed=StrategyProposal(threads=[]))
+            return SimpleNamespace(parsed=_about_a_stranger())
 
         out = await campaign_strategy.build(
             session, w.campaign, w.account, synthesise=always_empty)

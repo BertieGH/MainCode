@@ -309,3 +309,46 @@ class TestTheCall:
         parsed, _ = await _call(FreshnessVerdict, tools=False)
         assert parsed.proceed is True
         assert counted == [], "a stage that never asked to search was checked for one"
+
+
+class TestUnresolvedRedirectsAreDroppedFromLists:
+    """A grounding redirect that did not resolve is not an address.
+
+    It is a temporary link issued by the search API: it expires, it names no
+    site, and a reader who clicks it gets nothing. Left in a profile's
+    `sources` it stores a dead link that looks like a citation — worse than
+    three sources, because it is four that cannot all be checked.
+    """
+
+    def test_a_resolved_link_is_replaced(self):
+        from app.services.gemini_grounding import REDIRECT_PREFIX, replace_links
+
+        link = f"{REDIRECT_PREFIX}abc"
+        out = replace_links({"sources": [link]}, {link: "https://real.test/page"})
+
+        assert out == {"sources": ["https://real.test/page"]}
+
+    def test_an_unresolved_link_is_dropped_from_a_list(self):
+        from app.services.gemini_grounding import REDIRECT_PREFIX, replace_links
+
+        good, dead = "https://real.test/a", f"{REDIRECT_PREFIX}xyz"
+        out = replace_links({"sources": [good, dead]}, {})
+
+        assert out == {"sources": [good]}
+
+    def test_a_plain_url_is_never_dropped(self):
+        from app.services.gemini_grounding import replace_links
+
+        out = replace_links({"sources": ["https://real.test/a"]}, {})
+
+        assert out == {"sources": ["https://real.test/a"]}
+
+    def test_a_lone_string_field_is_left_alone(self):
+        """Emptying it would discard whatever the field meant; the caller is
+        better placed to decide than a generic rewriter."""
+        from app.services.gemini_grounding import REDIRECT_PREFIX, replace_links
+
+        dead = f"{REDIRECT_PREFIX}xyz"
+        out = replace_links({"source_url": dead}, {})
+
+        assert out == {"source_url": dead}

@@ -31,6 +31,7 @@ function source(over: Partial<ResearchSource> = {}): ResearchSource {
     reuse_days: null,
     builtin: true,
     status: 'active',
+    status_reason: null,
     claimed_by: 0,
     attempts: 0,
     evidence: 0,

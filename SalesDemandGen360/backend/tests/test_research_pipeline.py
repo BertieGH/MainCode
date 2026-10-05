@@ -501,3 +501,348 @@ class TestTheAccountRecordsWhereItsResearchStands:
             session, account=account, crm=StubCrmAdapter(), run_family=Recorder()
         )
         assert await _research_status(session, account) == "not_started"
+
+
+@requires_db
+class TestTheFastSweepGate:
+    """One cheap call decides whether the expensive ones happen.
+
+    Paid for by measurement: three contacts cost 138 model calls, 305k input
+    tokens and three minutes thirty-seven, and produced three passages and one
+    signal. Most of it was families reading pages that held nothing, for
+    accounts with nothing to find.
+
+    The behaviour worth defending is not "it skips things" — that is easy and
+    half of it is wrong. It is *which* things it skips, what it writes down
+    when it does, and what it does when the sweep itself breaks.
+    """
+
+    async def test_nothing_found_means_no_family_is_bought(self, session, account):
+        from app.services.pipeline import SweepOutcome
+
+        called: list[str] = []
+
+        async def runner(acc, family):
+            called.append(family)
+            return 1
+
+        async def sweep(acc):
+            return SweepOutcome(stored=0, found=0, not_found=("open roles",))
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=runner, run_sweep=sweep,
+        )
+
+        assert called == [], "the gate let the family passes through anyway"
+        assert result.gated_out, "nothing recorded as gated"
+        assert result.swept == 0
+
+    async def test_one_find_opens_the_gate(self, session, account):
+        from app.services.pipeline import SweepOutcome
+
+        called: list[str] = []
+
+        async def runner(acc, family):
+            called.append(family)
+            return 1
+
+        async def sweep(acc):
+            return SweepOutcome(stored=1, found=1)
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=runner, run_sweep=sweep,
+        )
+
+        assert called, "a sweep that found something must not gate the run"
+        assert result.gated_out == ()
+
+    async def test_a_gated_family_is_recorded_not_silently_dropped(
+        self, session, account
+    ):
+        """The rule this pipeline is built on. A family that disappears without
+        a coverage row turns a gap into apparent completeness, and "we looked
+        quickly and there was nothing" is a finding a rep can act on."""
+        from app.services.pipeline import SweepOutcome
+
+        async def sweep(acc):
+            return SweepOutcome(stored=0, found=0, not_found=("recent news",))
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_sweep=sweep,
+        )
+        rows = (
+            await session.execute(
+                select(ResearchCoverage).where(
+                    ResearchCoverage.account_id == account.id
+                )
+            )
+        ).scalars().all()
+        by_family = {r.family: r for r in rows}
+
+        for family in result.gated_out:
+            assert family in by_family, f"{family} was skipped with no coverage row"
+            assert by_family[family].status == "skipped"
+            assert "sweep" in (by_family[family].detail or "").lower()
+
+    async def test_the_sweep_records_what_it_searched_for(self, session, account):
+        """Its own coverage row, under its own name — so "the sweep looked and
+        found nothing" reads differently from "this source was empty"."""
+        from app.services.pipeline import SWEEP_FAMILY, SweepOutcome
+
+        async def sweep(acc):
+            return SweepOutcome(stored=0, found=0, not_found=("a", "b"))
+
+        await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_sweep=sweep,
+        )
+        row = (
+            await session.execute(
+                select(ResearchCoverage).where(
+                    ResearchCoverage.account_id == account.id,
+                    ResearchCoverage.family == SWEEP_FAMILY,
+                )
+            )
+        ).scalar_one()
+
+        assert list(row.not_found) == ["a", "b"]
+
+    async def test_a_broken_sweep_fails_open(self, session, account):
+        """A sweep that errored has not established that there is nothing here.
+
+        Treating its failure as "nothing found" would skip the whole account on
+        an infrastructure fault — the expensive kind of wrong, because it looks
+        exactly like a quiet prospect.
+        """
+        called: list[str] = []
+
+        async def runner(acc, family):
+            called.append(family)
+            return 1
+
+        async def sweep(acc):
+            raise RuntimeError("search provider down")
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=runner, run_sweep=sweep,
+        )
+
+        assert called, "a broken sweep must not gate the run"
+        assert result.sweep_failed is not None
+        assert "search provider down" in result.sweep_failed
+        assert result.gated_out == ()
+
+    async def test_no_sweep_supplied_changes_nothing(self, session, account):
+        """Opt-in. Every existing caller runs exactly as it did."""
+        called: list[str] = []
+
+        async def runner(acc, family):
+            called.append(family)
+            return 1
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(), run_family=runner
+        )
+
+        assert called
+        assert result.swept is None
+        assert result.gated_out == ()
+
+    async def test_duplicates_count_toward_opening_the_gate(self, session, account):
+        """A sweep returning only passages we already hold has still
+        established the account has something to read. The gate asks "is this
+        worth reading?", not "is this new?"."""
+        from app.services.pipeline import SweepOutcome
+
+        called: list[str] = []
+
+        async def runner(acc, family):
+            called.append(family)
+            return 1
+
+        async def sweep(acc):
+            return SweepOutcome(stored=0, found=3)
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=runner, run_sweep=sweep,
+        )
+
+        assert called, "all-duplicates is not nothing-found"
+        assert result.gated_out == ()
+
+
+@requires_db
+class TestTheProfileIsWrittenOncePerAccount:
+    """A standing description, outside the sweep gate on purpose.
+
+    The gate exists to stop paying *per run* for accounts with nothing
+    happening. A profile is paid **once per account** and reused on every run
+    after, so the thing the gate protects against does not apply — and a
+    profile is most valuable precisely on the accounts the gate turns away,
+    because an account with no live trigger can still be written to if we know
+    what it sells and who to.
+    """
+
+    async def test_it_runs_when_the_account_has_none(self, session, account):
+        seen = []
+
+        async def profiler(acc, person=None):
+            seen.append(person)
+            return True
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_profile=profiler,
+        )
+
+        assert seen == [None], "the company profile was not written"
+        assert result.profiled is True
+
+    async def test_it_is_not_bought_twice(self, session, account):
+        """Once per account, not once per run. This is what makes it cheap
+        enough to sit outside the gate."""
+        account.profile = {"what_they_do": "Already known."}
+        await session.flush()
+        seen = []
+
+        async def profiler(acc, person=None):
+            seen.append(person)
+            return True
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_profile=profiler,
+        )
+
+        assert seen == [], "an account with a profile was profiled again"
+        assert result.profiled is None, "absent, not False — it was not tried"
+
+    async def test_a_gated_account_is_still_profiled(self, session, account):
+        """The case the placement exists for: nothing live to say, so what the
+        company *is* becomes the only thing there is to write with."""
+        from app.services.pipeline import SweepOutcome
+
+        seen = []
+
+        async def profiler(acc, person=None):
+            seen.append(person)
+            return True
+
+        async def sweep(acc):
+            return SweepOutcome(stored=0, found=0)
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_profile=profiler, run_sweep=sweep,
+        )
+
+        assert result.gated_out, "the sweep should have gated this run"
+        assert seen == [None], "the gate swallowed the profile"
+
+    async def test_a_broken_profiler_does_not_cost_the_run(self, session, account):
+        called = []
+
+        async def runner(acc, family):
+            called.append(family)
+            return 1
+
+        async def profiler(acc, person=None):
+            raise RuntimeError("search provider down")
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=runner, run_profile=profiler,
+        )
+
+        assert called, "a failed profile stopped the research"
+        assert "search provider down" in (result.profile_failed or "")
+
+    async def test_no_profiler_changes_nothing(self, session, account):
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None,
+        )
+
+        assert result.profiled is None
+        assert result.contacts_profiled == 0
+
+
+@requires_db
+class TestEachPersonIsProfiledOnce:
+    async def test_contacts_without_a_profile_get_one(self, session, account):
+        from app.models.account import Contact
+
+        people = [
+            Contact(account_id=account.id, full_name="Dana Reyes"),
+            Contact(account_id=account.id, full_name="Sam Lee"),
+        ]
+        session.add_all(people)
+        await session.flush()
+        seen = []
+
+        async def profiler(acc, person=None):
+            seen.append(getattr(person, "full_name", None))
+            return True
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_profile=profiler, contacts=people,
+        )
+
+        assert sorted(n for n in seen if n) == ["Dana Reyes", "Sam Lee"]
+        assert result.contacts_profiled == 2
+
+    async def test_a_person_who_has_one_is_left_alone(self, session, account):
+        from app.models.account import Contact
+
+        known = Contact(
+            account_id=account.id, full_name="Dana Reyes",
+            profile={"summary": "Already described."},
+        )
+        fresh = Contact(account_id=account.id, full_name="Sam Lee")
+        session.add_all([known, fresh])
+        await session.flush()
+        seen = []
+
+        async def profiler(acc, person=None):
+            seen.append(getattr(person, "full_name", None))
+            return True
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_profile=profiler,
+            contacts=[known, fresh],
+        )
+
+        assert "Dana Reyes" not in seen
+        assert "Sam Lee" in seen
+        assert result.contacts_profiled == 1
+
+    async def test_one_persons_failure_does_not_cost_the_others(self, session, account):
+        """A profile is per person; a provider stumbling on one name must not
+        leave the rest undescribed."""
+        from app.models.account import Contact
+
+        people = [
+            Contact(account_id=account.id, full_name="Dana Reyes"),
+            Contact(account_id=account.id, full_name="Sam Lee"),
+        ]
+        session.add_all(people)
+        await session.flush()
+
+        async def profiler(acc, person=None):
+            if person is not None and person.full_name == "Dana Reyes":
+                raise RuntimeError("provider stumbled")
+            return True
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=lambda a, f: None, run_profile=profiler, contacts=people,
+        )
+
+        assert result.contacts_profiled == 1, "the second person was skipped too"

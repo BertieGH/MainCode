@@ -916,6 +916,16 @@ async def run_research_for_list(
     limit: int = Query(5, ge=1, le=100),
     payload: ResearchTargetsIn | None = Body(None),
     force: bool = Query(False),
+    # One cheap sweep before the per-family passes; nothing found means the
+    # families are not bought. On by default — it is the saving — and a query
+    # param rather than buried config because the first thing anyone needs to
+    # do with a gate is run the same list both ways and compare the ledger.
+    fast_sweep: bool = Query(True),
+    # The standing description — what the company is, and who its people are.
+    # Written once per account and per contact, then reused, so leaving it on
+    # costs nothing on a second run. Outside the sweep gate deliberately: a
+    # profile is most useful on exactly the accounts the gate turns away.
+    profiles: bool = Query(True),
     session: AsyncSession = Depends(get_session),
 ):
     """Research every confirmed account on this list.
@@ -1087,6 +1097,14 @@ async def run_research_for_list(
             result = await pipeline.run_research(
                 session, account=account, crm=crm,
                 run_family=runner, run_id=run_id, triggered_by="rep",
+                run_sweep=(
+                    pipeline.llm_sweep_runner(session, run_id=run_id)
+                    if fast_sweep
+                    else None
+                ),
+                run_profile=(
+                    pipeline.llm_profile_runner(session) if profiles else None
+                ),
                 skip_families=frozenset(fresh),
                 quarantined=held,
                 company_plan=list_plan.company,

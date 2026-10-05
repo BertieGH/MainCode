@@ -200,6 +200,11 @@ class IntelligenceOut(BaseModel):
     account_id: uuid.UUID
     account_name: str
     domain: str | None
+    #: What the company *is* — services, who it sells to, size, where, what it
+    #: is pushing. Firmographics, not a signal: nothing in it says *now*, so it
+    #: carries no expiry and is read as standing context rather than a trigger.
+    #: `None` when research has not established one.
+    profile: dict | None = None
     signals: list[SignalOut]
     coverage: list[CoverageOut]
     #: Passages from the coverage run stored before evidence recorded its
@@ -431,6 +436,7 @@ async def account_intelligence(
         account_id=account.id,
         account_name=account.name,
         domain=account.domain,
+        profile=account.profile,
         signals=signal_out,
         coverage=coverage,
         unattributed_evidence=unattributed,

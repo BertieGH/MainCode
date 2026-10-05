@@ -75,6 +75,13 @@ STAGE_TIMEOUT_SECONDS = {
     "strategy_synthesis": 60.0,
     "outreach_drafting": 75.0,
     "pre_send_revalidation": 30.0,
+    # The fast sweep is meant to be fast: it only has to answer "is there
+    # anything here at all?", and one still going at ninety seconds has found
+    # nothing cheap to find. The family passes are deliberately *not* listed —
+    # they already get `TIMEOUT_SECONDS`, which is the three minutes the deep
+    # pass is supposed to have. Repeating that number here would read as a cap
+    # somebody chose and would silently stop tracking the default if it moved.
+    "signal_scan": 90.0,
 }
 
 #: Repair attempts after a contract violation. One. See the module docstring.
@@ -232,11 +239,34 @@ def extract_text(payload: dict[str, Any]) -> str:
     if reason == "MAX_TOKENS":
         # Truncated JSON does not parse, and "invalid JSON" would send someone
         # looking at the schema instead of at the token budget.
-        raise GeminiError(
-            "Gemini hit maxOutputTokens before finishing — thinking is charged "
-            "against that budget, so lower this stage's effort before raising "
-            "max_tokens"
-        )
+        #
+        # **Which half** filled the budget is reported, because the old message
+        # asserted it was thinking and sent at least one person down that road
+        # for an afternoon. Gemini splits it: `thoughtsTokenCount` is
+        # deliberation, `candidatesTokenCount` is the answer. Lowering effort
+        # helps only the first; a runaway answer needs the contract or the
+        # prompt looked at instead.
+        usage = payload.get("usageMetadata") or {}
+        thinking = usage.get("thoughtsTokenCount")
+        answer = usage.get("candidatesTokenCount")
+        if thinking is not None or answer is not None:
+            split = (
+                f" — {thinking or 0} tokens of thinking and {answer or 0} of "
+                f"answer. "
+                + (
+                    "Thinking filled it: lower this stage's effort."
+                    if (thinking or 0) > (answer or 0)
+                    else "The answer filled it, not thinking: lowering effort "
+                    "will not help. Look at how much this stage is being asked "
+                    "to write."
+                )
+            )
+        else:
+            split = (
+                " — thinking is charged against that budget, so lower this "
+                "stage's effort before raising max_tokens"
+            )
+        raise GeminiError(f"Gemini hit maxOutputTokens before finishing{split}")
 
     parts = (candidate.get("content") or {}).get("parts") or []
     text = "".join(p["text"] for p in parts if isinstance(p.get("text"), str))

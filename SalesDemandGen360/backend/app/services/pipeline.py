@@ -67,6 +67,19 @@ class RunResult:
     #: Families not run because an earlier run answered them inside the reuse
     #: window. Neither a gap nor a failure: the answer exists, it is just older.
     reused: tuple[str, ...] = ()
+    #: The standing description. `True` when this run established one, `False`
+    #: when it tried and found nothing, absent when an account already had one
+    #: and it was not bought again.
+    profiled: bool | None = None
+    profile_failed: str | None = None
+    #: People given a standing description on this run.
+    contacts_profiled: int = 0
+    #: The fast sweep, when one ran: what it found, and whether it let the
+    #: family passes proceed. `gated_out` is the saving — the families that
+    #: were planned and never bought because the sweep found nothing.
+    swept: int | None = None
+    sweep_failed: str | None = None
+    gated_out: tuple[str, ...] = ()
     #: The contact pass. Evidence stored per person; the people looked into;
     #: contact families that failed; person-families answered, and reused.
     contact_evidence: dict[uuid.UUID, int] = field(default_factory=dict)
@@ -138,6 +151,34 @@ class FamilyOutcome:
     notes: tuple[str, ...] = ()
 
 
+#: Coverage is recorded per family, and the sweep is not one — it is the call
+#: that decides whether families run at all. It gets its own name rather than
+#: borrowing a family's, so a rep reading coverage can tell "the sweep looked
+#: and found nothing" apart from "this source was read and was empty".
+SWEEP_FAMILY = "fast_sweep"
+
+
+@dataclass
+class SweepOutcome:
+    """What the fast sweep established, and at what cost.
+
+    `stored` and `found` are separate on purpose, and the difference is
+    duplicates. Coverage must report what was *written* — a row claiming ten
+    when it stored two describes a run nobody had. The gate must test what was
+    *found*, because a sweep returning only passages we already hold has still
+    established that this account has something to read.
+    """
+
+    #: New evidence rows written. What coverage reports.
+    stored: int
+    #: Everything the sweep turned up, duplicates included. What opens the gate.
+    found: int
+    #: What it searched for and could not find. The reason a gated account is
+    #: a finding rather than a blank: these are the questions that were asked.
+    not_found: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+
+
 def _stale_note(count: int) -> tuple[str, ...]:
     """Say so when a family's finds were refused for being too old.
 
@@ -194,6 +235,16 @@ async def run_research(
     run_family,
     run_id: uuid.UUID | None = None,
     triggered_by: str = "system",
+    #: The fast sweep. Injected like the family runners, and **optional**: with
+    #: no sweep supplied every planned family runs exactly as before, so
+    #: turning the gate on is a decision a caller makes rather than a change
+    #: that arrives under every existing one.
+    run_sweep=None,
+    #: Writes the standing description for the account and its people. Injected
+    #: and optional, like the other runners: without one, nothing changes.
+    #: Called only when the account has no profile, so it is a once-per-account
+    #: cost rather than a per-run one.
+    run_profile=None,
     skip_families: frozenset[str] = frozenset(),
     quarantined: dict[str, str] | None = None,
     company_plan: ResearchPlan | None = None,
@@ -295,6 +346,78 @@ async def run_research(
     result.plan = plan
     await session.flush()
 
+    # --- 2a. The standing description, once per account ---
+    #
+    # Deliberately **before** the sweep gate and outside it. A profile is what
+    # the company *is*, and it is most valuable precisely when the sweep finds
+    # nothing: an account with no live trigger can still be written to if we
+    # know what it sells and who it sells to, and on this book that is the
+    # common case (§66, §67).
+    #
+    # It escapes the gate's logic because it escapes the gate's economics. The
+    # gate exists to stop paying per run for accounts with nothing happening;
+    # this is paid **once per account** and reused on every run after, so the
+    # thing the gate protects against does not apply.
+    if run_profile is not None and account.profile is None:
+        try:
+            result.profiled = await run_profile(account)
+        except Exception as exc:  # noqa: BLE001 — injected; context must not cost the run
+            log.warning("pipeline.profile_failed account=%s err=%s", account.id, exc)
+            result.profile_failed = f"{type(exc).__name__}: {exc}"
+
+    # --- 2b. The fast sweep, and the gate it opens ---
+    #
+    # One cheap, broad call before the expensive per-family passes. If it finds
+    # nothing worth a closer look, the families are not bought.
+    #
+    # The measurement that paid for this: three contacts cost 138 model calls,
+    # 305k input tokens and three minutes thirty-seven, and produced three
+    # passages and one signal. Most of that was families reading pages that
+    # held nothing for accounts with nothing to find.
+    #
+    # The gate is *skipped*, never *silent*. Every planned family still gets a
+    # coverage row saying it was not run and why, because the rule this
+    # pipeline is built on is that recording only the successes turns a gap
+    # into apparent completeness — and "we looked quickly and there was
+    # nothing" is a finding a rep can act on, where a blank is not.
+    if run_sweep is not None:
+        try:
+            sweep = await run_sweep(account)
+        except Exception as exc:  # noqa: BLE001 — injected; a broken sweep must not cost the run
+            # Fails open. A sweep that errored has not established that there
+            # is nothing here, and treating its failure as "nothing found"
+            # would skip the whole account on an infrastructure fault.
+            log.warning("pipeline.sweep_failed account=%s err=%s", account.id, exc)
+            result.sweep_failed = f"{type(exc).__name__}: {exc}"
+        else:
+            result.swept = sweep.found
+            await record_coverage(
+                session,
+                run_id=run.id,
+                account_id=account.id,
+                family=SWEEP_FAMILY,
+                evidence_count=sweep.stored,
+                not_found=sweep.not_found,
+                notes=sweep.notes,
+            )
+            if sweep.found == 0:
+                reason = "fast sweep found nothing worth a closer look"
+                for planned in plan.families:
+                    await record_coverage(
+                        session,
+                        run_id=run.id,
+                        account_id=account.id,
+                        family=planned.family,
+                        evidence_count=0,
+                        skipped=reason,
+                    )
+                result.gated_out = tuple(f.family for f in plan.families)
+                log.info(
+                    "pipeline.gated account=%s families_skipped=%d",
+                    account.id, len(result.gated_out),
+                )
+                plan = ResearchPlan(families=[], orphan_types=plan.orphan_types)
+
     # --- 3. Each family, recorded whatever it returns ---
     held = quarantined or {}
     for planned in plan.families:
@@ -359,6 +482,24 @@ async def run_research(
             skip=contact_skip or {},
             result=result,
         )
+
+    # --- 4a. A standing description per person, once each ---
+    #
+    # After the contact families rather than before: those may add people the
+    # account did not have, and a profile is worth having for everyone we end
+    # up approaching. Only for people who have none, so this is once per
+    # contact rather than once per run.
+    if contacts and run_profile is not None:
+        for person in contacts:
+            if getattr(person, "profile", None) is not None:
+                continue
+            try:
+                if await run_profile(account, person):
+                    result.contacts_profiled += 1
+            except Exception as exc:  # noqa: BLE001 — one person must not cost the run
+                log.warning(
+                    "pipeline.contact_profile_failed contact=%s err=%s", person.id, exc
+                )
 
     # --- 5. What the evidence means, typed against the registry ---
     if run_extraction is not None and signal_type_keys:
@@ -681,6 +822,83 @@ def llm_contact_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None
             stored_by_contact=stored,
             searched_by_contact={k: tuple(v) for k, v in searched.items()},
             notes=tuple(notes),
+        )
+
+    return run
+
+
+def llm_profile_runner(session: AsyncSession):
+    """The real profile runner: company when called with one argument, person
+    with two.
+
+    One runner for both because the pipeline calls it at two points and the
+    alternative is two injected arguments that are always supplied together.
+    Returns whether anything was established, so a run can report "looked and
+    found nothing" apart from "did not look".
+
+    No `run_id`: a profile is not evidence and carries no run. It is the
+    current best description, replaced wholesale when a better one is found,
+    with nothing citing the previous one the way a draft cites a signal.
+    """
+
+    async def run(account: Account, person=None) -> bool:
+        # Imported here rather than at module scope: `stages` imports the
+        # Anthropic SDK, and the pipeline's own tests must keep importing
+        # without it.
+        from app.services import profiles
+
+        if person is None:
+            return await profiles.build_company(session, account=account) is not None
+        return (
+            await profiles.build_contact(session, account=account, person=person)
+            is not None
+        )
+
+    return run
+
+
+def llm_sweep_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
+    """The real fast sweep: one broad call, before anything expensive.
+
+    What it finds is **stored**, not thrown away. The sweep reads real pages
+    and quotes real passages; discarding them would mean paying for the call
+    and then paying again for a family to find the same sentence. They are
+    filed under `fast_sweep` so coverage can say where they came from.
+
+    Injected, like the family runner, and for the same reason: the gate's
+    behaviour — what it records, what it skips, what it does when the sweep
+    itself fails — is asserted against a fake, with no network and no spend.
+    """
+
+    async def run(account: Account) -> SweepOutcome:
+        # Imported here rather than at module scope: `stages` imports the
+        # Anthropic SDK, and the pipeline's own tests must keep importing
+        # without it.
+        from app.services import evidence as evidence_service
+        from app.services import stages
+
+        result = await stages.signal_scan(session, account=account)
+        batch = result.parsed
+        outcome = await evidence_service.store_found(
+            session,
+            account_id=account.id,
+            batch=batch,
+            run_id=run_id,
+            family=SWEEP_FAMILY,
+        )
+        log.info(
+            "pipeline.swept account=%s stored=%d duplicate=%d stale=%d",
+            account.id, outcome.count, outcome.duplicates, outcome.stale,
+        )
+        # Duplicates count toward opening the gate. A sweep that turns up only
+        # passages we already hold has still established that there is
+        # something here — the families should run, and they will dedupe. The
+        # gate asks "is this account worth reading?", not "is this new?".
+        return SweepOutcome(
+            stored=outcome.count,
+            found=outcome.count + outcome.duplicates,
+            not_found=tuple(batch.not_found),
+            notes=_stale_note(outcome.stale),
         )
 
     return run

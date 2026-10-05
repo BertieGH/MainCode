@@ -244,3 +244,45 @@ class TestAServiceSaysWhoSignsOff:
     async def test_editing_an_unknown_service_is_404(self, api):
         r = await api.put("/api/config/services/NOPE", json={"name": "x"})
         assert r.status_code == 404
+
+
+class TestTheBuyerTrack:
+    """Which buyer an ICP is for, and why a typo must not be silent.
+
+    The definition is a free JSON document, so an unrecognised key is normally
+    harmless. `track` is not: `strategy_synthesis` and `outreach_drafting`
+    branch on it, and a value they do not know falls through to "no track
+    stated" — safe, and silent. "enterprize" would cost every draft on that
+    list its register with nothing anywhere saying so.
+    """
+
+    def test_the_two_tracks_are_accepted(self):
+        from app.schemas.config import ICP_TRACKS, IcpDefinitionIn
+
+        for track in ICP_TRACKS:
+            row = IcpDefinitionIn(definition={"track": track})
+            assert row.definition["track"] == track
+
+    def test_an_unknown_track_is_refused(self):
+        import pytest as _pytest
+
+        from app.schemas.config import IcpDefinitionIn
+
+        with _pytest.raises(ValueError, match="track must be one of"):
+            IcpDefinitionIn(definition={"track": "enterprize"})
+
+    def test_no_track_is_allowed(self):
+        """Not every list has decided, and "neither" is a real answer — the
+        prompts fall back to arguing from the evidence."""
+        from app.schemas.config import IcpDefinitionIn
+
+        row = IcpDefinitionIn(definition={"industries": ["Insurance"]})
+        assert "track" not in row.definition
+
+    def test_other_keys_are_still_free(self):
+        """Only `track` is closed. The rest of the document stays open, which
+        is what lets a rep describe an ICP this form has no field for."""
+        from app.schemas.config import IcpDefinitionIn
+
+        row = IcpDefinitionIn(definition={"anything": "at all", "track": "enterprise"})
+        assert row.definition["anything"] == "at all"

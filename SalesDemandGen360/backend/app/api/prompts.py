@@ -12,12 +12,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.services import admin_gate, instructions, prompts
+from app.services import admin_gate, instructions, prompt_export, prompts
 
 router = APIRouter(prefix="/config", tags=["prompts"])
 
@@ -182,6 +182,31 @@ async def list_prompts(session: AsyncSession = Depends(get_session)):
             )
         )
     return out
+
+
+# Declared **before** `/prompts/{scenario}`: FastAPI matches routes in
+# declaration order, so the other way round "export" arrives as a scenario name
+# and the download 404s.
+@router.get("/prompts/export")
+async def export_prompts(session: AsyncSession = Depends(get_session)):
+    """Every instruction the models receive, as one Word document.
+
+    Open, like the other reads. The preamble and the stage bodies are all
+    visible on the screen already; collecting them into a file changes how
+    convenient they are to review, not who can see them.
+    """
+    data = await prompt_export.export(session)
+    return Response(
+        content=data,
+        media_type=prompt_export.MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{prompt_export.FILENAME}"',
+            # The browser is fetching this through `HttpClient`, which cannot
+            # read a header the server does not expose. Without this the
+            # filename is unreachable and the download lands as "download".
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
 
 
 @router.get("/prompts/{scenario}", response_model=PromptDetailOut)

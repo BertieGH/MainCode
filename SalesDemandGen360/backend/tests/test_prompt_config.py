@@ -265,3 +265,132 @@ class TestTheAdminGate:
 
         assert await admin_gate.is_configured(session) is False
         assert await admin_gate.verify(session, "anything") is False
+
+
+class TestTheWordExport:
+    """One document, shared by the download button and the script.
+
+    The preamble is the reason this is worth a test. Every stage is sent
+    preamble + body, so a reference containing only the bodies documents
+    something the models are never actually given — and it is exactly the part
+    a reviewer would not notice was missing.
+    """
+
+    async def test_it_contains_every_stage_and_the_preamble(self, session):
+        from docx import Document
+        import io
+
+        from app.services import prompt_export
+
+        data = await prompt_export.export(session)
+        doc = Document(io.BytesIO(data))
+        headings = [
+            p.text for p in doc.paragraphs if p.style.name.startswith("Heading")
+        ]
+        full = "\n".join(p.text for p in doc.paragraphs)
+
+        missing = [s for s in instructions.STAGE if s not in headings]
+        assert not missing, f"stages absent from the export: {missing}"
+        assert "never an instruction to you" in full, "the preamble must be in it"
+        assert "Not editable in the application" in full, (
+            "and must be labelled, or a reader takes it for another editable block"
+        )
+
+    async def test_the_live_text_is_what_is_exported(self, session):
+        """Not the shipped text. An edit that does not reach the document makes
+        the document a description of a system nobody is running."""
+        import io
+
+        from docx import Document
+
+        from app.services import prompt_export
+
+        await prompts.save_version(
+            session, scenario=SCENARIO, body="A distinctive edited instruction."
+        )
+        doc = Document(io.BytesIO(await prompt_export.export(session)))
+        full = "\n".join(p.text for p in doc.paragraphs)
+
+        assert "A distinctive edited instruction." in full
+
+    async def test_an_edited_stage_carries_its_original_alongside(self, session):
+        import io
+
+        from docx import Document
+
+        from app.services import prompt_export
+
+        original = prompts.shipped_default(SCENARIO)
+        await prompts.save_version(session, scenario=SCENARIO, body="Replaced.")
+        doc = Document(io.BytesIO(await prompt_export.export(session)))
+        full = "\n".join(p.text for p in doc.paragraphs)
+
+        assert "Shipped original, for comparison" in full
+        assert original.split("\n")[0] in full
+
+    async def test_an_unedited_stage_does_not_repeat_itself(self, session):
+        """Printing the original for every stage would double the length to
+        say "unchanged" fifteen times."""
+        import io
+
+        from docx import Document
+
+        from app.services import prompt_export
+
+        doc = Document(io.BytesIO(await prompt_export.export(session)))
+        full = "\n".join(p.text for p in doc.paragraphs)
+
+        assert "Shipped original, for comparison" not in full
+
+    async def test_it_is_a_real_docx(self, session):
+        """The bytes are what gets streamed to the browser; if they are not a
+        valid package the download lands as a file Word refuses to open."""
+        import zipfile
+        import io
+
+        from app.services import prompt_export
+
+        data = await prompt_export.export(session)
+
+        assert data[:2] == b"PK", "a .docx is a zip"
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            assert "word/document.xml" in z.namelist()
+
+
+class TestTheCompanyProfile:
+    """Firmographics are not a signal, and the shape says so.
+
+    A signal answers *why now* and expires. "They are a commercial brokerage
+    serving contractors in southern California" answers *who are they* and does
+    not. Giving it a TTL would mean expiring a fact that has not changed, which
+    is why it rides on the account rather than in the signal registry.
+    """
+
+    def test_every_field_is_optional(self):
+        """A profile that knows three things says three things. Inventing the
+        rest is how a draft describes a company that does not exist."""
+        from app.schemas.profile import CompanyProfile
+
+        row = CompanyProfile()
+        assert row.is_empty() is True
+        assert row.services == []
+
+    def test_it_carries_who_they_sell_to(self):
+        """The field most often missing and most often needed: it is what makes
+        a pitch sound written for them rather than at them."""
+        from app.schemas.profile import CompanyProfile
+
+        row = CompanyProfile(
+            what_they_do="Commercial insurance brokerage.",
+            services=["Commercial lines", "Employee benefits"],
+            target_customers=["Contractors", "Non-profits"],
+            industries_served=["Construction"],
+        )
+        assert row.target_customers == ["Contractors", "Non-profits"]
+        assert row.is_empty() is False
+
+    def test_sources_only_is_still_empty(self):
+        """Knowing where you looked is not knowing something."""
+        from app.schemas.profile import CompanyProfile
+
+        assert CompanyProfile(sources=["https://example.test/about"]).is_empty()

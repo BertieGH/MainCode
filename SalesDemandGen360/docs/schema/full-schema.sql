@@ -1,9 +1,9 @@
--- Generated 2026-10-04 · PostgreSQL 17.9 · 55 tables.
+-- Generated 2026-10-05 · PostgreSQL 17.9 · 55 tables.
 --
 -- PostgreSQL database dump
 --
 
-\restrict eBkYB4lTzegPWgKGtZKedru48ZsgboobVq9YHrsscGmQGelERynvK1NTPQJCoCR
+\restrict xbOv2vOZkw6teRWlptEiQABrPmKBGbqO6qIK4oFVfAYBVo4H03Wa7r0vtajApxO
 
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
@@ -101,6 +101,7 @@ CREATE TABLE public.account (
     company_check jsonb,
     dormant_at timestamp with time zone,
     dormant_reason text,
+    profile jsonb,
     CONSTRAINT ck_account_disqualified_needs_a_reason CHECK (((status <> 'disqualified'::text) OR (disqualified_reason IS NOT NULL))),
     CONSTRAINT ck_account_enrichment_status_valid CHECK ((enrichment_status = ANY (ARRAY['not_started'::text, 'running'::text, 'complete'::text, 'partial'::text, 'failed'::text, 'skipped'::text]))),
     CONSTRAINT ck_account_research_status_valid CHECK ((research_status = ANY (ARRAY['not_started'::text, 'running'::text, 'complete'::text, 'partial'::text, 'failed'::text]))),
@@ -405,6 +406,7 @@ CREATE TABLE public.contact (
     do_not_contact boolean DEFAULT false NOT NULL,
     do_not_contact_reason text,
     do_not_contact_at timestamp with time zone,
+    profile jsonb,
     CONSTRAINT ck_contact_buying_role_valid CHECK ((buying_role = ANY (ARRAY['economic_buyer'::text, 'technical_buyer'::text, 'champion'::text, 'influencer'::text, 'blocker'::text]))),
     CONSTRAINT ck_contact_dnc_carries_a_reason CHECK (((NOT do_not_contact) OR (do_not_contact_reason IS NOT NULL))),
     CONSTRAINT ck_contact_email_provider_valid CHECK ((email_provider = ANY (ARRAY['apollo'::text, 'contactout'::text, 'manual'::text]))),
@@ -986,6 +988,7 @@ CREATE TABLE public.research_source (
     reuse_days integer,
     builtin boolean DEFAULT false NOT NULL,
     status text DEFAULT 'active'::text NOT NULL,
+    status_reason text,
     CONSTRAINT ck_research_source_kind_valid CHECK ((kind = ANY (ARRAY['search'::text, 'fetch'::text, 'provider'::text, 'manual'::text]))),
     CONSTRAINT ck_research_source_reuse_days_positive CHECK (((reuse_days IS NULL) OR (reuse_days > 0))),
     CONSTRAINT ck_research_source_scopes_not_empty CHECK ((jsonb_array_length(scopes) > 0)),
@@ -3152,5 +3155,5 @@ ALTER TABLE ONLY public.signal
 -- PostgreSQL database dump complete
 --
 
-\unrestrict eBkYB4lTzegPWgKGtZKedru48ZsgboobVq9YHrsscGmQGelERynvK1NTPQJCoCR
+\unrestrict xbOv2vOZkw6teRWlptEiQABrPmKBGbqO6qIK4oFVfAYBVo4H03Wa7r0vtajApxO
 

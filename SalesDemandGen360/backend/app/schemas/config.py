@@ -71,10 +71,38 @@ class IcpProfileIn(BaseModel):
     service_codes: list[str] = Field(min_length=1)
 
 
+#: Which buyer an ICP is for. Two, and only two: `tech_company` is an ISV, a
+#: SaaS business or an IT product company — software is what it sells —
+#: and `enterprise` is everything else, a non-technology business running
+#: internal IT. Insurance brokerages sit inside `enterprise` rather than beside
+#: it.
+ICP_TRACKS = ("enterprise", "tech_company")
+
+
 class IcpDefinitionIn(BaseModel):
     """A new *version* of an existing profile's definition."""
 
     definition: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def track_is_known(self) -> IcpDefinitionIn:
+        """Refuse a track nobody reads.
+
+        The definition is a free JSON document, so an unrecognised key is
+        normally harmless. `track` is not: the strategy and drafting prompts
+        branch on it, and a value they do not know falls through to "no track
+        stated" — which is the safe behaviour but silent. "enterprize" would
+        cost every draft on that list its register, with nothing anywhere
+        saying so.
+        """
+        track = self.definition.get("track")
+        if track is None:
+            return self
+        if track not in ICP_TRACKS:
+            raise ValueError(
+                f"track must be one of {', '.join(ICP_TRACKS)} — got {track!r}"
+            )
+        return self
 
 
 class IcpServicesIn(BaseModel):
@@ -799,6 +827,9 @@ class ResearchSourceOut(ORMModel):
     reuse_days: int | None
     builtin: bool
     status: str
+    #: Why it is not active. Shown beside the status, because that is where
+    #: someone stands when they decide whether to turn it back on.
+    status_reason: str | None = None
     #: How many active signal types name this source. Zero is not a fault —
     #: an ICP can read a source no type asked for — but it is worth seeing.
     claimed_by: int = 0

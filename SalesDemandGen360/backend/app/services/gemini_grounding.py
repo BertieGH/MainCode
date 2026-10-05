@@ -111,12 +111,28 @@ def redirect_links(node: Any) -> set[str]:
 
 
 def replace_links(node: Any, mapping: dict[str, str]) -> Any:
+    """Point every grounding link at the page it leads to.
+
+    A link that did not resolve is **dropped from a list** rather than left
+    standing. The redirect is a temporary address issued by the search API: it
+    expires, it names no site, and a reader who clicks it gets nothing. Keeping
+    one in a profile's `sources` stores a dead link that looks like a citation —
+    worse than three sources, because it is four that cannot all be checked.
+
+    Dropped only from lists, where removing an item is meaningful. A single
+    unresolved string field is left alone: emptying it would silently discard
+    whatever the field meant, and the caller is better placed to decide.
+    """
     if isinstance(node, str):
         return mapping.get(node, node)
     if isinstance(node, dict):
         return {k: replace_links(v, mapping) for k, v in node.items()}
     if isinstance(node, list):
-        return [replace_links(v, mapping) for v in node]
+        out = [replace_links(v, mapping) for v in node]
+        kept = [v for v in out if not (isinstance(v, str) and is_redirect(v))]
+        if len(kept) != len(out):
+            log.info("grounding.dropped_unresolved n=%d", len(out) - len(kept))
+        return kept
     return node
 
 

@@ -1957,3 +1957,902 @@ and the test's reasoning was extended rather than the list quietly re-sorted.
 `main.py`, `alembic c3f7b2e9a815`, `core/config.service.ts`, `settings/prompts.component.ts` (new),
 `shared/icon.component.ts`, `app.routes.ts`, `app.component.ts`, `tests/conftest.py`,
 `tests/test_prompt_config.py` (new, 27), `settings/prompts.component.spec.ts` (new, 16).
+
+## §58 — The prompt reference, as a document (2026-10-04)
+
+Asked for: every prompt, including the one that cannot be changed, in one downloadable Word file.
+
+Both halves exist — a **Download all as Word** button on the Prompts screen, and
+`backend/scripts/export_prompts.py` for when a shell is nearer than a browser. Both call
+`services/prompt_export.py`, because a document generated two ways becomes two documents.
+
+**The preamble is the reason this is worth having.** Every stage is sent `_COMMON` + body, so a
+reference containing only the bodies documents a system nobody runs — and it is exactly the part a
+reviewer would not notice was missing. It gets its own section, labelled as not editable. Tested
+directly rather than assumed.
+
+Three judgements in the document itself:
+
+* **The live text, not the shipped text.** Read from `prompt_template`, so an edit made in the UI is
+  in the next export. An export that showed the shipped defaults would be confidently wrong.
+* **The original alongside, only where something changed.** Printing it for all sixteen would double
+  the length to say "unchanged" fifteen times.
+* **Pipeline order, not alphabetical.** `instructions.STAGE`'s own order groups research, extraction,
+  qualification, strategy and content. The screen sorts alphabetically and scatters them; a document
+  read start to finish should not.
+
+Prompts are rendered monospaced and line for line. The line breaks are load-bearing — several blocks
+are lists the model reads item by item — and Word's default paragraph spacing turns them into
+something that reads differently from what is actually sent.
+
+**Route ordering is load-bearing.** `GET /prompts/export` is declared **before**
+`GET /prompts/{scenario}`; FastAPI matches in declaration order, so the other way round "export"
+arrives as a scenario name and the download 404s. Verified that `/prompts/evaluation` still resolves
+and `/prompts/not_a_stage` still 404s.
+
+The button is **not** behind the lock. Everything in the document is already readable on the screen;
+collecting it into a file changes how convenient it is to review, not who may see it. It fetches
+through `HttpClient` into a blob rather than pointing an `<a href>` at the route — one path in
+development and production, and a failure surfaces on the screen instead of replacing the app with
+a browser error page. The object URL is revoked immediately; the blob is a copy of the whole
+reference and the handle would hold it for the life of the tab.
+
+`python-docx` installed without trouble, which narrows the earlier diagnosis usefully: **PyPI is not
+blocked on this machine, only git push egress.** Added to `pyproject.toml` as a runtime dependency,
+not a script's — the API serves the document now.
+
+`prompt-reference.docx` is generated, so it is in `.gitignore`.
+
+`services/prompt_export.py` (new), `api/prompts.py`, `scripts/export_prompts.py` (new),
+`pyproject.toml`, `.gitignore`, `core/config.service.ts`, `settings/prompts.component.ts`,
+`shared/icon.component.ts`, `tests/test_prompt_config.py` (+5), `prompts.component.spec.ts` (+2).
+
+## §59 — The fast sweep gate (2026-10-04) · Phase 1
+
+One cheap, broad call before the per-family passes. Nothing found, nothing bought.
+
+**What paid for it.** Three contacts cost **138 model calls, 305k input tokens and 3m37s**, and
+produced three passages and one signal. Most of that was families reading pages that held nothing,
+for accounts with nothing to find.
+
+**`signal_scan` already existed and nothing called it.** Defined at `stages.py:699`, with its own
+prompt, its own `llm_config` row (`gemini-3.5-flash-lite`, high effort) and zero callers. The
+"Phase 1 fast sweep" asked for was a function already in the codebase, unwired.
+
+**The gate is skipped, never silent.** Every planned family still gets a coverage row saying it was
+not run and why — the rule this pipeline is built on is that recording only the successes turns a
+gap into apparent completeness. "We looked quickly and there was nothing" is a finding a rep can
+act on; a blank is not. The sweep gets its own coverage row under `fast_sweep`, so it reads
+differently from "this source was read and was empty".
+
+Four decisions that are not incidental:
+
+* **It fails open.** A sweep that raised has not established that there is nothing here, and
+  treating its failure as "nothing found" would skip a whole account on an infrastructure fault —
+  the expensive kind of wrong, because it looks exactly like a quiet prospect. This also makes the
+  90-second box safe: a sweep that overruns degrades to today's behaviour rather than wrongly
+  gating.
+* **Duplicates open the gate.** A sweep returning only passages already held has still established
+  the account has something to read. The gate asks "is this worth reading?", not "is this new?".
+  `SweepOutcome` carries `stored` and `found` separately for exactly this: coverage reports what was
+  written, the gate tests what was turned up.
+* **What the sweep finds is stored**, filed under `fast_sweep`. Discarding it would mean paying for
+  the call and then paying again for a family to find the same sentence.
+* **Opt-in, and switchable from the URL.** `run_sweep` is injected like the family runners, so every
+  existing caller behaves exactly as before. `POST /lists/{id}/run-research?fast_sweep=false` turns
+  it off — a query param rather than buried config, because the first thing anyone needs to do with
+  a gate is run the same list both ways and compare the ledger.
+
+**A no-op caught in my own change.** I first set `company_research: 180.0` in
+`STAGE_TIMEOUT_SECONDS` as the document's "2–3 minute" box. `TIMEOUT_SECONDS` is **already 180.0**,
+so it capped nothing while reading as a deliberate limit — and would have silently stopped tracking
+the default if that moved. Removed; only `signal_scan: 90.0` is genuinely new. A test
+(`test_an_unnamed_stage_keeps_the_long_default`) had encoded the old intent and failed, which is how
+it surfaced.
+
+`services/pipeline.py`, `services/gemini.py`, `api/lists.py`, `tests/test_research_pipeline.py` (+7).
+
+**Still to come:** Phase 2 (seven Enterprise IT signal types, deprecation deferred until after a
+measured run), Phase 3 (source mapping; both the `site:` operator route and the sub-path crawler,
+measured against each other), Phase 4 (LinkedIn via Google index — never fetching linkedin.com),
+Phase 5 (ICP track routing and the two buyer voices).
+
+## §60 — Seven Enterprise IT signal types (2026-10-04) · Phase 2
+
+The registry shipped built for technology companies. The book is 57 insurance brokerages, and the
+measurement said so plainly: of thirteen active types, **five had ever produced a signal and eight
+had produced nothing** — and the eight were the tech-company ones.
+
+Migration `d7a4e1c93b26` adds the Enterprise IT equivalents. Not speculative for this book: three of
+the eight stored signals were already acquisitions, filed under `mgt_change` and `partnership`
+because nothing better existed. `mgt_change`'s own description reads *"If there is Top Management
+change or Merger or Acquisition etc"*, which is exactly why they landed there.
+
+| type | kind | ttl | durability | weight |
+|---|---|---|---|---|
+| `m_and_a_integration` | event | 365 | **3650** | 2.00 |
+| `compliance_security_deadline` | event | 180 | 540 | 1.50 |
+| `leadership_vendor_review` | event | 90 | 270 | 1.50 |
+| `tech_debt_modernization` | theme | 365 | 1095 | 1.50 |
+| `digital_transformation_mandate` | theme | 365 | 1095 | 1.25 |
+| `hiring_bottleneck` | theme | 90 | 270 | 1.25 |
+| `vendor_consolidation` | event | 270 | 810 | 1.25 |
+
+**Only two carry a `search_instruction`, and they share a group.** The convention is that an
+instruction is an exception — every source read is interpreted against every type anyway, so words
+of its own earn their place only where a general sweep would reliably miss the fact. Giving all seven
+one would have added seven searches per account to a change made for efficiency.
+`compliance_security_deadline` and `tech_debt_modernization` qualify because their evidence lives
+where nothing currently looks: `company_site` is a **feed reader** and will never open `/security`.
+Grouped as `enterprise_it_estate`, verified to merge into one search carrying both.
+
+**A coupling worth knowing about: the research intake window widened from October 2023 to October
+2016.** `widest_durability` is the max across active types (§54 — a `news` document is read against
+every type, so the sweep cannot be narrowed to the types that named the source), and
+`m_and_a_integration` at 3650 days is now the widest. Setting one type's durability high widens what
+research reads for *everything*. That is correct — a 2018 document can legitimately yield an
+acquisition signal — and the per-type extraction gate still refuses stale signals for every other
+type, so the 2021 noise is caught one gate later rather than admitted. But it costs extraction calls
+to catch it there, and if the measured run shows research dredging, lowering that one number in the
+Prompts-adjacent signal-types screen narrows it again with no deploy.
+
+**Deprecation deliberately deferred.** The eight unproductive types stay active until a measured run
+exists to compare against — one of them may be right for the technology track, and the comparison is
+cheap to make once and impossible afterwards. That leaves **20 active types** in the interim, each
+interpreted against every document. Real cost, temporary.
+
+`leadership_vendor_review` overlaps `mgt_change` (company) and `role_change` (contact) on purpose,
+and its description says so. If both fire on the same evidence it is the narrower reading; if it
+never fires while they do, it is the one to drop. That is a question for the measured run.
+
+`alembic d7a4e1c93b26`, `docs/schema/full-schema.sql`.
+
+## §61 — Sources: the enterprise board and the page fallback (2026-10-04) · Phase 3
+
+Two readers that were looking in the wrong places, and a second route kept deliberately so the
+choice between them can be measured rather than argued.
+
+### Workday
+
+`job_board` produced **zero evidence across every run** and the reason was not that the accounts
+are not hiring. The reader knew Greenhouse, Lever and Ashby — three boards that between them host
+*startups*. A non-technology company of any size is on Workday, iCIMS or Taleo. Fifty-seven
+insurance brokerages were read by a reader that could not see their job boards.
+
+Workday is structurally unlike the other three and the differences are the work:
+
+* **Its API answers a POST, not a GET.** A search endpoint taking facets, an offset and a limit. The
+  wrong verb returns nothing, which reads exactly like a company with no open roles — so
+  `Board.post_body` exists to make the caller branch, and a test asserts the verb.
+* **Its address has three parts.** `acme.wd1.myworkdayjobs.com/en-US/External` is tenant, cluster
+  and site; `wd1` and `wd5` are different machines and neither can be guessed from a company name.
+  `Board` gained `cluster` and `site`, and the dedupe key gained the site — one tenant with
+  `External` and `Internal` boards has two, and they must not collapse into one.
+* **`postedOn` is prose.** "Posted 30+ Days Ago", not a date. Deliberately **not** parsed into
+  `opened`: inventing a date from "30+" would put a guess in the field every expiry calculation
+  trusts. It is kept in the excerpt instead, where it is the most useful sentence on the
+  posting — a role advertised for thirty days is the `hiring_bottleneck` signal, stated by the
+  employer. `startDate` is used when a tenant sends one, and only then.
+
+### The sub-path fallback
+
+`company_site` is a **feed reader**. `FEED_PATHS` is ten RSS/Atom locations and nothing else — so a
+compliance deadline, which lives on `/security` or `/trust` and is never in a feed even on a site
+that has one, could not be produced from it by any wording of any prompt.
+
+When no feed answers, `PAGE_PATHS` is now read as HTML: `/news`, `/newsroom`, `/press`,
+`/about/news`, `/security`, `/trust`, `/compliance`. A **fallback**, not the first choice — a feed
+is dated, bounded and meant to be read by a machine, where a page is none of those.
+
+Pages are stored **undated**. A page carries no publication date the way an entry does, and dating
+it from the fetch would stamp today on a company's entire history. The intake gate admits undated
+evidence precisely so this is possible (§54).
+
+**Both routes to these pages now exist and are distinguishable.** The other is a grounded search
+with `site:` operators, which costs a model call instead of four HTTP requests and produces evidence
+under the signal type's own family. The fallback writes `read_pages` into its coverage notes. Which
+is better is a query after the measured run, not an argument before it — which is how this was
+asked for.
+
+**A threshold that was wrong by inspection.** `MIN_PAGE_CHARS` started at 400 and a test fixture
+landed at 386, which looked like a fixture problem and was not. A script shell measures **zero**
+characters once tags are stripped, so the floor needs nowhere near 400 of headroom, while a terse
+but genuine trust page runs to about 380 — the threshold was discarding real pages to exclude
+emptiness that registers as nothing at all. Now 250.
+
+`services/job_boards.py`, `services/site_sweep.py`, `tests/test_job_boards.py` (+14).
+
+**Phase 3 remaining:** the `site:` operator instructions for the other signal types are config and
+can be written from the Prompts-adjacent signal-types screen without a deploy. Phase 4 (LinkedIn via
+the Google index) and Phase 5 (ICP track routing, two buyer voices) are untouched.
+
+## §62 — LinkedIn: the brief was already right (2026-10-04) · Phase 4
+
+Phase 4 was to rewrite `linkedin`'s search instruction with Google `site:` operators and unpause it.
+**The premise was wrong.** The brief already had them:
+
+> Search `site:linkedin.com/company/<slug>`, `site:linkedin.com/posts/<slug>` and
+> `site:linkedin.com/in/<slug>`, using the LinkedIn URL given when there is one. Quote only what the
+> search results show; never open a linkedin.com page.
+
+That is doc 1's recommendation, already implemented, word for word. Everything else it needs was in
+place too: `_account_facts` passes `linkedin_url`, `keep_own_linkedin` drops only a *definite*
+mismatch, and `gemini_grounding` resolves redirects with `follow_redirects=False` reading the
+`location` header — so unpausing would not have fetched linkedin.com.
+
+So rather than rewrite correct config, three live probes:
+
+| account | employees | evidence |
+|---|---|---|
+| Charity First Insurance Services | — | **0** |
+| NFP Property and Casualty Services | 7,700 | **0** |
+| Philadelphia Insurance Companies | 2,100 | **0** |
+
+The first returned the queries it had run, which are exactly the ones specified:
+
+```
+site:linkedin.com/company/charity-first-insurance
+site:linkedin.com "Charity First Insurance Services"
+```
+
+**Google's index holds almost nothing for these companies, and it is not a size effect** — a
+7,700-employee account returned as little as a twenty-person broker. Sixteen runs of zero were the
+system working correctly and reporting honestly. Re-enabling needs a different *retrieval route* — a
+SERP API queries Google directly, a different posture from Proxycurl, which scraped LinkedIn and was
+sued into shutdown — not a different instruction. It stays paused.
+
+**The real defect was that none of this was recorded where the decision gets made.** §53 paused the
+source on evidence; the database said only `paused`. Three sessions later the obvious next move
+looked like "the instruction must be wrong", and it cost three model calls to rediscover a
+conclusion already reached. `research_source.status_reason` (migration `e2b9f4c71d38`) now carries
+the why, surfaced on the Research screen beside the status under a `why` disclosure — read by
+someone about to turn a source back on, which is the only moment it matters.
+
+`alembic e2b9f4c71d38`, `models/config.py`, `schemas/config.py`, `core/config.service.ts`,
+`settings/research.component.ts`, `settings/signal-types.component.spec.ts`,
+`docs/schema/full-schema.sql`.
+
+## §63 — The buyer track (2026-10-04) · Phase 5
+
+An ICP now says which buyer it is for, and the argument follows from it. Two tracks and only two:
+`tech_company` is an ISV, SaaS or IT product company — software is what it sells — and `enterprise`
+is everything else, a non-technology business running internal IT. Insurance brokerages sit *inside*
+`enterprise` rather than beside it.
+
+**No new plumbing.** The track rides in the ICP's `definition` next to `sources` and
+`signals_that_matter`, because it is the same kind of statement — what this list is for — and
+`load_prefix` already puts the definition in the cached prefix. Verified end to end: the track
+reaches the assembled `strategy_synthesis` prefix, the instruction branches on it, and
+`prompt_version` comes back as 2 for stamping.
+
+`strategy_synthesis` and `outreach_drafting` gained the two registers. A CIO measured on nothing
+going wrong does not read the argument written for a CTO measured on what ships — risk, continuity
+and the cost of carrying what is fragile, against bandwidth and time to market. An ICP that states
+no track means neither is established, and both prompts say so explicitly: argue from the evidence
+rather than guess which buyer this is.
+
+**Both halves of each prompt were updated, and that is the point.** `instructions.STAGE` is the
+shipped baseline "Reset to shipped" restores; `prompt_template` is what actually runs (§57).
+Changing only the table would leave Reset quietly restoring the older text months later; changing
+only the code would leave the new words unused. Migration `f4c8d2a91e57` writes the new version
+*from the code*, so the two cannot disagree — and it **skips any scenario whose live body is past
+v1**, because someone edited that deliberately and a migration overwriting it would be the one way
+this feature could destroy a rep's work.
+
+**A typo had to fail loudly.** The definition is free-form JSON, so an unrecognised key is normally
+harmless — but the prompts *branch* on `track`, and a value they do not know falls through to "no
+track stated". Safe, and silent: `"enterprize"` would cost every draft on that list its register
+with nothing anywhere saying so. `ICP_TRACKS` is validated in `IcpDefinitionIn`; the rest of the
+document stays open.
+
+**Two bugs found while wiring the editor**, both the same shape — a new field kind that the
+read and write paths did not know about:
+
+* `compose()` had no `choice` branch, so a track was read in and **silently dropped on the way back
+  out**. Every save would have erased it.
+* `hydrate()` would have shown an unrecognised value as selected, displaying "enterprize" as though
+  it were one of the two — exactly the confusion the server-side validator exists to prevent. It now
+  falls through to passthrough, where the JSON view can still reach it.
+
+Radios rather than a dropdown: there are two, both need their explanation read, and a select hides
+the one not chosen.
+
+`alembic f4c8d2a91e57`, `services/instructions.py`, `schemas/config.py`,
+`settings/icp-editor.component.ts`, `tests/test_icp_profiles.py` (+4),
+`settings/icp-editor.component.spec.ts` (+4), `docs/schema/full-schema.sql`.
+
+**Phases 1–5 are complete.** What remains is the measured run: the same list through
+`?fast_sweep=true` and `?fast_sweep=false`, compared against the 138-call / 305k-token / 3m37s /
+1-signal baseline — and with it the two deferred decisions, deprecating the eight unproductive
+signal types and choosing between the `site:` operator route and the sub-path crawler.
+
+## §64 — Correcting §62: it is the grounding tool, not the index (2026-10-04)
+
+**§62's diagnosis was wrong**, and the error was reasoning from a sample that could not distinguish
+two explanations.
+
+Three company probes returned zero, and §62 concluded *"Google's index holds almost nothing for
+these companies, and it is not a size effect"*. Both halves of that sentence came from the same
+three brokerages. The half about size was sound — 7,700 employees returned as little as twenty. The
+half about *these companies* was not tested at all, because every probe was a brokerage.
+
+Asked directly whether LinkedIn post search was returning anything, two further probes settled it:
+
+| probe | evidence |
+|---|---|
+| Mark Raby @ Champion Risk — contact scope, `/in/` queries | 0 |
+| **Satya Nadella @ Microsoft** — the most indexed LinkedIn presence there is | **0** |
+| `news` family, same Microsoft account, same call shape | **2** — blogs.microsoft.com, thenextweb.com |
+
+The control is the whole argument. Grounding works; on the same account, in the same shape, a
+general search returns cited evidence and the LinkedIn search returns nothing. **Gemini Grounding
+with Google Search does not surface linkedin.com for anyone**, which is consistent with LinkedIn's
+robots.txt forbidding crawling and the grounding corpus respecting it.
+
+Also worth recording: the model resolves a truncated contact name itself. Given `Mark R` it searched
+`"Mark Raby"`. The three stored contacts carry abbreviated surnames, which would have been the
+obvious next suspect and is not the cause.
+
+**What changes.** The conclusion — leave it paused — is unchanged, and so is the recommendation of a
+SERP API, but the *reason* is now precise and actually strengthens it. "The index is thin" implied a
+SERP API would find little either. The truth is the opposite: Google's public index does carry
+LinkedIn profiles, and it is the grounding corpus specifically that excludes them. A SERP API reads
+the public index, so it is not a long shot — it is the one route that addresses the actual cause.
+
+Corrected in both places the wrong claim was written: `research_source.status_reason` in the
+database, and the `LINKEDIN_REASON` constant in migration `e2b9f4c71d38` so a fresh install gets the
+right text.
+
+**The lesson is about the probe, not LinkedIn.** Three samples from one population cannot tell
+"this population is unusual" from "this mechanism never works". A control outside the population
+costs one call and was the difference between a wrong answer and a right one.
+
+## §65 — The query document, tested (2026-10-04)
+
+Asked whether a set of proposed per-signal search strings return anything. Most of them do. The
+LinkedIn ones do not, and the split is clean.
+
+**Tested on a real account** (Champion Risk, 41 people) and then — applying §64's lesson — **against
+controls that certainly have the content**, so "the query does not work" could be told apart from
+"this company has none of that".
+
+| method | account | evidence | domains |
+|---|---|---|---|
+| careers sub-path | Champion Risk | **3** | championriskcareers.com, davidcareers.com, ziprecruiter.com |
+| financial wire | Brown & Brown | **1** | businesswire.com |
+| trust centre | Microsoft | **1** | learn.microsoft.com |
+| review sites | Salesforce | **3** | g2.com, capterra.com, trustpilot.com |
+| trust / wire / reviews | Champion Risk | 0 | — |
+| **`site:linkedin.com/...` x-ray** | Champion Risk | **0** | — |
+
+The three zeros on Champion Risk are **accurate findings, not query failures**: a 41-person
+brokerage has no SEC filings, no trust centre and no G2 listing. The controls prove the method
+works, which is the distinction §64 was written about.
+
+**`championriskcareers.com` is the find worth noting.** A careers site on a *separate domain* —
+which `job_boards` cannot reach, because it looks for an ATS on the account's own domain. That is a
+direct data point for the route comparison Phase 3 set up: the search route reaches careers content
+the crawler route structurally cannot.
+
+LinkedIn is unchanged and now confirmed a third way. The document also recommends Proxycurl
+endpoints (`nubela.co/proxycurl`); that company was sued by LinkedIn and shut down, so those calls
+have no server to reach.
+
+### Correcting §62 and §64 again: the size evidence was unsound
+
+Both entries say the LinkedIn result "is not a size effect", citing "a 7,700-employee account
+returned as little as a 20-person one". **Those employee counts do not exist in the database.** NFP
+Property and Casualty and Philadelphia Insurance both have `employee_count = NULL`; the largest
+account in the book is 42 people. An earlier probe printed 7700 and 2100 and I repeated the numbers
+without checking them against the column.
+
+The *conclusion* is unaffected, because it never rested on size: the Microsoft/Nadella control
+versus a working `news` search on the same account is what established that grounding excludes
+linkedin.com. But the size sentence should not be read as evidence — it was not measured, and two
+log entries carried it as though it had been.
+
+## §66 — Per-signal queries measured, and they lost (2026-10-04)
+
+A curated query per signal type was written and run against the real pipeline, both arms through
+the same extractor, on two real accounts. **The per-signal queries cost roughly twice as much and
+produced less.**
+
+| | Champion Risk | Piper Jordan |
+|---|---|---|
+| **Arm A** — families as configured, topic briefs | 7 calls · 4 evidence · 66s | 7 calls · 6 evidence · 69s |
+| **Arm B** — one curated query per signal type | 13 calls · 3 evidence · 92s | 13 calls · 2 evidence · 101s |
+| Signal candidates, A | `m_and_a_integration` | `leadership_vendor_review`, `mgt_change` |
+| Signal candidates, B | **none** | **none** |
+
+Arm B: about double the calls, half to a third of the evidence, 40–50% slower, and **not one signal
+candidate across both accounts** against Arm A's three.
+
+**Why, and it is not that the queries are wrong.** The same query shapes were measured earlier and
+worked: a wire search found a Brown & Brown acquisition on the first call, a trust-centre search
+found Microsoft's certifications, a review search found Salesforce complaints (§65). They work where
+the content exists. A 41-person brokerage has never issued a wire release, has no trust centre and
+no newsroom — so a query that demands `site:prnewswire.com` finds nothing, while a broad brief
+("Launches, partnerships, expansions, incidents") lets the model find whatever *is* there.
+
+**Narrow queries presuppose a footprint these accounts do not have.** That is the finding, and it
+inverts the earlier conclusion drawn from controls alone — §65's controls were Brown & Brown,
+Microsoft and Salesforce, none of which resembles this book. The same error as §62: measuring on a
+population that cannot distinguish the hypotheses.
+
+**A second finding, and possibly the more important one.** Both arms stored **zero** signals, but not
+because nothing was found. Arm A produced three candidates and the durability gate dropped every one
+as too old — a leadership change beyond its 270-day window, an acquisition beyond its 1000-day
+window. The signals are not missing because research is weak. They are missing because **nothing
+recent has happened at these companies**, and no query shape fixes that.
+
+**What this does not settle.** One query option per signal was run, usually the first; several
+primaries were `fetch` against own-site paths that small brokerages do not have. A fairer Arm B
+would try each option until one returns. That is worth doing before the queries are discarded — but
+it makes Arm B more expensive still, which is the opposite of the goal.
+
+Scripts kept: `scripts/fill_signal_queries.py` writes the queries into the curation CSV;
+`scripts/ab_query_test.py` runs the comparison. Both arms' evidence is stored under its own `run_id`
+on the real account — genuine research, kept rather than discarded (invariant 2).
+
+## §67 — Arm B with every option, and X-Ray measured per query (2026-10-04)
+
+§66 ran one option per signal and was unfair to Arm B: a miss blamed the signal for whichever
+retrieval path happened to be listed first. Re-run with full fallthrough — every option tried in
+turn, stopping at the first that returns — and with the `serp` LinkedIn X-Ray options **included**
+rather than skipped, plus the contact rows where `{person}` has a value.
+
+| | calls | evidence | signal candidates | seconds |
+|---|---:|---:|---|---:|
+| **Arm A** — families as configured | 7 | 7 | none this run | 54 |
+| **Arm B** — every option, fallthrough | **38** | 7 | `m_and_a_integration` | **277** |
+
+**Fallthrough works.** Arm B went from 3 evidence and no candidates (§66) to 7 evidence and one
+candidate. Five signals that found nothing on their first option found something on a later one —
+`m_and_a_integration` on its second (filings, after wires returned nothing).
+
+**It costs 5.4× the calls and 5× the time for the same evidence Arm A got in 7 calls.** Per unit of
+evidence, the configured families remain far cheaper.
+
+### LinkedIn X-Ray, measured per query
+
+```
+evidence by retrieval route, arm B:
+  grounded     6
+  fetch        1
+  serp         0   <- every LinkedIn X-Ray query
+```
+
+Seven X-Ray attempts across five signal types, including `site:linkedin.com/in "{person}"
+"{company}"` for a named real person at their real employer. **Zero evidence, seven out of seven**,
+one of them erroring outright. This is the fourth independent confirmation and the first at
+per-query granularity: it is not an aggregate claim about a corpus, it is seven specific queries
+returning nothing.
+
+`contact_profile_headline_change` has **only** X-Ray options, so it found nothing and structurally
+cannot — which settles that type.
+
+### The finding that changes something
+
+**Contact research works without LinkedIn.** `contact_content_activity` returned `serp:0` then
+`grounded:2` — the "spoken or written elsewhere" query (podcasts, panels, webinars, bylines) found
+two passages about a named person that X-Ray could not. Per-person research is not blocked on a SERP
+API after all; it is blocked on asking somewhere other than LinkedIn.
+
+### Still zero stored signals
+
+Both arms again stored nothing. Arm B's `m_and_a_integration` candidate was dropped as **beyond its
+1000-day durability**. The constraint on this book is unchanged and is not retrieval: the facts that
+exist are old.
+
+## §68 — The registry reconfigured from the curation sheet (2026-10-05)
+
+Two migrations, because one half was safe and the other needed the owner's word.
+
+### `a9c3e7f21b64` — labels, four sources, a SERP route, a profile
+
+**Labels and descriptions**, from the curation sheet. The description is what reaches the extraction
+prompt, so it is written as an instruction rather than a topic: "The company said, in its own words,
+that something is difficult — a manual process, a bottleneck, work that takes days… An inference is
+not this."
+
+**Four new sources, each with measured evidence behind it** — `press_wire_aggregators`,
+`regulatory_and_filings`, `careers_domain_direct`, `trust_security_portals`. Added *beside* the
+broad briefs, not replacing them: §66 and §67 measured that narrow place-shaped queries **lose** on
+this book, 5.4× the calls for the same evidence, because a 41-person brokerage has no newsroom to
+point a query at. The full twelve-source restructure was not done, and the measurement is the reason.
+
+**`linkedin_serp`, registered and paused.** The route is named so it stops being improvised, and
+carries its recency rule: keep only what falls inside the signal type's durability window, because
+an indexed post with no recoverable date is background rather than a trigger. Paused for want of a
+credential. Fetching linkedin.com directly remains never an option.
+
+**`account.profile`.** Proposed in the sheet as a `firmographic_baseline` signal type; it is account
+metadata instead. Nothing about a company's size or description says *now*, and giving it a TTL
+would mean expiring a fact that does not expire. The context builder reads it; the signal registry
+does not carry it.
+
+### `b4f8d1a27c95` — the keys themselves
+
+The first migration deliberately left keys alone: `signal.signal_type` carries a composite foreign
+key to `signal_type(key, scope)`, so renaming a key that has produced signals orphans their
+citations. The owner confirmed the nine stored signals were test data and asked for the keys.
+
+Nine renames applied — `partnership` → `strategic_partnership_alliance`, `funding` →
+`funding_growth_milestone`, `role_change` → `contact_role_change` and so on. `mgt_change` was
+**deleted rather than renamed**: it was doing two jobs at once, which is why three of its five
+signals were acquisitions, and the two narrower types that replace it already exist.
+
+**The evidence rows survive — all 80 of them.** Invariant 2 is not suspended by a reset: a passage
+that was read is still a passage that was read, it is simply no longer cited. Only the
+interpretations went, and interpretations are reproducible — the next extraction run reads the same
+evidence against the new registry.
+
+**Everything holding a key was remapped in the same transaction**, or the rename would have left the
+ICP pointing at names that no longer exist: `icp_profile_version.definition -> signals_that_matter`
+carried twelve keys, now eleven with `mgt_change` dropped and the rest renamed. Verified: zero
+dangling references.
+
+19 active types, 17 sources. Backend suite green, `ng build` exit 0, schema dump regenerated.
+
+## §69 — Correcting the LinkedIn date claim, and giving the profile a shape (2026-10-05)
+
+### A post does carry its date, and I said otherwise
+
+§68 registered `linkedin_serp` with the line *"an indexed post with no recoverable date is
+background, not a trigger"*, implying a SERP result cannot be aged. Challenged on it, and the
+challenge was right:
+
+```
+a post (activity id in URL)    -> 2025-07-16
+a company page                 -> None
+a person profile               -> None
+```
+
+A LinkedIn activity id is a 64-bit number whose top 41 bits are milliseconds since the epoch, so a
+**post carries its publication date inside its own URL**, exact to the day, with no page fetch.
+`services/linkedin.post_date` has decoded it since the module was written — the capability was
+already there and the migration I wrote described the system as if it were not.
+
+So the recency rule is **fully enforceable for posts**, which is what was asked for: a SERP API
+returns the URL, the URL yields the date, the durability window applies. It is company pages and
+personal profiles that carry no date — which is why `contact_profile_headline_change` can be
+retrieved but not aged, and why that type was always the weakest of the four. Corrected in the
+database and in migration `a9c3e7f21b64`.
+
+### `account.profile` now has a contract
+
+The column landed in §68 with no shape, which made it a place to put anything. `schemas/profile.py`
+defines it: what they do, services, **target customers**, industries served, size, locations,
+current focus, ownership, founded, sources.
+
+`target_customers` is the one worth naming. It is the field most often missing and most often
+needed, because who a company sells *to* is what makes a pitch sound written for them rather than at
+them. It is kept distinct from `industries_served`: one is a kind of buyer ("contractors",
+"non-profits"), the other a sector.
+
+Every field is optional and `is_empty()` tells "nothing established" from "not looked". A profile
+that knows three things says three things — inventing the rest is how a draft ends up describing a
+company that does not exist. `sources` alone still counts as empty: knowing where you looked is not
+knowing something.
+
+Exposed on `IntelligenceOut.profile`. **Still to do:** nothing fills it yet. The research stage that
+writes a profile is not built, so the column is live and empty.
+
+`schemas/profile.py` (new), `api/intelligence.py`, `alembic a9c3e7f21b64`,
+`tests/test_prompt_config.py` (+3).
+
+## §70 — The profile stages, and a dead link they exposed (2026-10-05)
+
+Two research stages that write standing descriptions rather than signals:
+`stages.company_profile` and `stages.contact_profile`, stored through
+`services/profiles.py` onto `account.profile` and the new `contact.profile`
+(migration `c8e2a4f71d03`).
+
+**Undated and ungated, both of them.** Everything else research stores is checked against a
+durability window. A description of a business has no date to check, and `linkedin.post_date`
+returns None for a `/in/` URL — which is the correct answer, not a gap. Applying a window would
+discard a standing fact for being old when it is simply still true. The dated events keep their own
+types: `contact_role_change` for a person, the signal registry for a company.
+
+**One person per call**, not three together. Company research shares a call across people because
+the question is the same; here each answer is a different person's role, and one response covering
+three invites the model to blur them — the wrong-person failure arriving by a new route.
+
+**Contact details are stripped on the way in.** The prompt forbids them and the contract has no
+field for them, but a model that writes an address into `summary` would have it stored and later
+quoted. `_without_contact_details` scrubs anything shaped like an email or a phone number and logs
+that it did.
+
+### What it produces
+
+Champion Risk, from its own site in one call:
+
+```
+target_customers: Transportation and logistics businesses · Moving and storage
+                  companies · Last-mile delivery · Relocation companies · Manufacturers
+current_focus:    Captive insurance programs for moving and storage companies
+```
+
+Piper Jordan returned `ownership: "Operating Subsidiary of Brown & Brown"` — which explains the
+Brown & Brown acquisition that had been sitting in the evidence as an unexplained `mgt_change`.
+
+This is richer than anything signal research has produced for either account, and it is the right
+shape for it: these companies have had little happen recently (§66, §67) but they are still
+describable.
+
+### The dead link it exposed
+
+The first run stored **two of four sources as unresolved `vertexaisearch` grounding redirects**.
+`ground()` replaces a link only where resolution succeeded; for an `EvidenceBatch` the unresolved
+ones are dropped with their passage, but for any other contract they were left standing.
+
+A redirect that did not resolve is not an address: it is a temporary link issued by the search API,
+it expires, it names no site, and a reader clicking it gets nothing. Four sources of which two are
+dead is worse than two, because a rep cannot tell which two.
+
+`replace_links` now **drops an unresolved redirect from a list**, where removing an item is
+meaningful, and leaves a lone string field alone, where emptying it would silently discard whatever
+the field meant. Re-run: three real URLs on the company's own domain, zero dead links.
+
+`schemas/profile.py`, `services/profiles.py` (new), `services/stages.py`,
+`services/instructions.py` (+2 stages), `services/gemini_grounding.py`, `models/account.py`,
+`api/intelligence.py`, `core/pipeline.service.ts`, `alembic c8e2a4f71d03`,
+`tests/test_gemini_grounding.py` (+4), `tests/test_prompt_config.py` (+3).
+
+**Not done:** nothing calls these stages in the pipeline yet — they are invoked directly — and no
+screen displays a profile. Both are small and deliberate next steps.
+
+## §71 — The profile stages wired into the pipeline (2026-10-05)
+
+`run_profile` is injected like the other runners and switchable from the URL:
+`POST /lists/{id}/run-research?profiles=false`. Called at two points, with the same runner —
+company after the CRM check, people after the contact families.
+
+**Outside the sweep gate, deliberately.** The gate (§59) exists to stop paying *per run* for
+accounts with nothing happening. A profile is paid **once per account** and reused on every run
+afterwards, so the economics the gate protects against do not apply to it — and a profile is most
+valuable on exactly the accounts the gate turns away. An account with no live trigger can still be
+written to if we know what it sells and who it sells to, and on this book (§66, §67) that is the
+common case rather than the exception. There is a test for this specifically: a gated run still
+writes a profile.
+
+**Once per account, once per person.** Skipped where one already exists, so `profiled` comes back
+`None` rather than `False` — absent because it was not tried, which reads differently from tried and
+found nothing.
+
+**People after the contact families, not before.** Those families can add people the account did not
+have, and a profile is worth having for everyone we end up approaching.
+
+**Failures are isolated at both levels.** A broken profiler does not cost the research run, and one
+person's failure does not leave the rest of the contacts undescribed — a provider stumbling over one
+name is not a reason to skip the other two.
+
+**No `run_id` on the profile runner.** A profile is not evidence and belongs to no run: it is the
+current best description, replaced wholesale, with nothing citing the previous one the way a draft
+cites a signal.
+
+`services/pipeline.py`, `api/lists.py`, `tests/test_research_pipeline.py` (+8).
+
+## §72 — Pruned what produced nothing, wired what was inert (2026-10-05)
+
+Measured over ten accounts researched the same afternoon, reading `llm_call` and
+`research_coverage` together:
+
+| family | calls | evidence | |
+|---|---:|---:|---|
+| `fast_sweep` | 13 | **25** | best producer |
+| `company_site` | 8 | **11** | best value — a fetch, no model call |
+| `reviews` | 8 | 4 | |
+| `news` | 11 | 3 | |
+| `hiring` | 8 | 2 | |
+| `funding` | 8 | **1** | technology-track |
+| `leadership` | 11 | **1** | |
+| `tech_stack` | 8 | **0** | technology-track |
+| `type:contact_role_change` | 6 | **0** | |
+
+**Nothing was stuck.** 97 calls, zero failures, zero timeouts, and roughly 0.1s of non-model time
+between consecutive calls — the overhead hypothesis was wrong and the ledger said so. The cost is
+call *count*, not call *health*: ten model calls per account, run one account at a time by
+`sequential-run.ts` and one family at a time by the pipeline.
+
+**The gate has never fired.** Zero families skipped across every run, because the sweep always finds
+something. It is still the single best producer at 25 evidence from 13 calls, so it stays — but it
+earns its keep as a *source*, not as the saving it was built to be (§59).
+
+### Applied
+
+`tech_stack` and `funding` pruned **from the ICP**, not the registry: sixteen calls between them for
+one piece of evidence, and both are technology-track sources being run against insurance
+brokerages. They remain available the day a technology ICP exists.
+
+`contact_role_change`'s `search_instruction` removed — six calls, nothing found. An instruction is
+the exception that earns an extra search per account, and this one did not.
+
+The four sources registered in `a9c3e7f21b64` were **never running**: no signal type named them in
+`produced_by`, so `build_plan` never planned them. Registered and inert, which was my omission.
+Wired to the types they serve.
+
+### The arithmetic, which did not come out where predicted
+
+I said "+3 against −3, net zero". It is not:
+
+```
+company scope   7 -> 8 search families   (+1)
+contact scope   5 -> 4 per person        (-1)
+```
+
+The `contact_role_change` saving lands on the *contact* pass, not the company one, so the company
+cost rose by one. Flat overall on an account with contacts, one call worse on an account without.
+
+That is the honest number. The justification is aim rather than volume: two sources returning one
+piece of evidence in sixteen calls are replaced by three aimed at places that returned evidence
+under test (§65). The next run is what says whether the aim was better — and if
+`press_wire_aggregators` and `regulatory_and_filings` come back empty on this book the way the
+narrow queries did in §66, they should go the same way as `tech_stack`.
+
+`alembic d1a7e9c45b82`, `docs/schema/full-schema.sql`.
+
+## §73 — `strategy_synthesis` max_tokens set below what a working call needs (2026-10-05)
+
+Reported from the screen: *"Gemini hit maxOutputTokens before finishing… retried at low thinking
+after the first ran out of room"*. The stage was failing 43% of the time (17 of 39 calls).
+
+The config history says it plainly:
+
+```
+v8   effort=medium  max_tokens=8000     <- the value §52 measured as working
+v9   effort=medium  max_tokens=2000     <- live, and failing
+```
+
+And what a *successful* call actually uses: **avg 684, p95 1316, max 3160** output tokens.
+
+**The ceiling was below the observed maximum of a succeeding call**, before counting thinking —
+which on Gemini is charged against the same budget. So a call that thought normally and produced a
+normal-length answer had nowhere to put it, and the quieter retry had no more room than the first
+attempt.
+
+§52 found that *lowering* `max_tokens` from 24,000 to 8,000 fixed this stage, because a tight
+ceiling makes a runaway fail early enough for the quieter retry to land. v9 took that one step
+further and crossed from "tight enough to catch runaways" into "too tight for legitimate work" —
+the same lever, past its useful range.
+
+Restored to 8,000 as **v10** through the versioned config rather than an UPDATE, so v9 stays in the
+history as the thing that was tried. That leaves 4,840 tokens of headroom above the largest
+successful answer, and is still three times tighter than the 24,000 that caused the original
+problem.
+
+**The error message steered toward the wrong lever here.** "Lower this stage's effort before raising
+max_tokens" is sound general advice — thinking does eat the budget — but in this case effort was
+already `medium` and the budget was simply below what the work needs. A message that named the
+observed output distribution ("successful calls here have used up to N tokens; the ceiling is M")
+would have pointed straight at it. Worth doing if this recurs.
+
+Nothing in code changed; this is configuration, recorded because the next person to see a
+`maxOutputTokens` error should check the ceiling against the ledger before lowering effort.
+
+## §74 — Strategy was arguing from a name and a postcode (2026-10-05)
+
+Reported as "something wrong on strategy building", with the observation that **Maria ran fine and
+Mark did not**. That difference is the whole diagnosis: Maria's thread cites a live signal, Mark's
+is a "pursue anyway" thread with none.
+
+Over 44 calls:
+
+```
+success: 26 calls, avg  8.8s
+failure: 18 calls, avg 35.6s     <- four times longer
+```
+
+A failure here is not a quick rejection. It is the model deliberating itself into exhausting its
+token budget looking for a trigger that does not exist — one call ran **53 seconds** before failing.
+
+### What it was actually given
+
+The prompt tells the model, for a thread with no live trigger, to *"make the case from the company's
+situation and the person's role"*. The payload held:
+
+```
+account:  account_id · name · domain · industry · employee_count · hq_country · hq_region · linkedin_url
+contact:  full_name · title · seniority · buying_role
+```
+
+There was no situation in it. Meanwhile **the material existed and was already stored** —
+`account.profile` for ten accounts and `contact.profile` for all three contacts, built by the stages
+added in §70. Strategy could see neither. Mark's profile holds his focus areas ("Insurance agency
+M&A deals", "Captives and alternative risk structures") and his decision scope; strategy was handed
+"Mark R · Chief Executive Officer" and asked to construct an argument.
+
+### Fixed in three places, none sufficient alone
+
+* `_account_facts` carries `account.profile`;
+* a new `_contact_facts` carries `contact.profile` — the four columns were all a thread ever got;
+* the prompt says the material is all there is, and says plainly **not to deliberate at length over
+  a thread with no trigger**: there is no hidden trigger to recover and a long search returns the
+  same answer as a short one. It also gives the model somewhere to go when both profiles are empty —
+  say so in one sentence, mark the thread low confidence — where previously no acceptable answer
+  existed except an invented one.
+
+`sources` is dropped from both profiles on the way into the prompt: URLs are for a rep checking a
+claim, nothing downstream reasons with them, and they are the longest field.
+
+Prompt written as `prompt_template` v3 from the code (migration `e5c9b3a71f48`), skipped if the live
+body is past v2 because an admin edited that deliberately.
+
+### Related: `linkedin_serp` brings none of this
+
+Asked whether the SERP route supplies the profile summary. It does not and cannot yet: **no client
+code exists, no credential is configured, and the source is paused.** §68 registered a named route,
+not a working one. Mark's profile came from ordinary grounded search against the company's own
+website — which is worth noting on its own, because it is the material LinkedIn was wanted for,
+obtained without it.
+
+`services/stages.py`, `services/instructions.py`, `alembic e5c9b3a71f48`,
+`tests/test_llm_call_sites.py` (+4).
+
+## §75 — An undescribed schema field swallowed the whole answer (2026-10-05)
+
+§74 gave strategy the material it was missing and the failures continued: *"still same issue. wasted
+50 seconds and nothing"*. The instinct that followed was right and is the reason this was found —
+**"I don't see the LLM taking more than 3 seconds to build strategy if all context is ready."** A
+successful call now runs 2.3s. So 50 seconds was never deliberation over thin context; something
+else was consuming the budget.
+
+### Three wrong hypotheses, in order
+
+1. **`max_tokens` too low.** Partly true and fixed as §73, but raising v9's 2,000 to 8,000 did not
+   stop the failures.
+2. **A thinking spiral.** Plausible after §74, and wrong: the failing calls reported
+   `thoughtsTokenCount: 0`. Nothing was being deliberated at all. Finding that out needed the
+   MAX_TOKENS error in `gemini.py` to report the thinking/answer split rather than just the ceiling
+   it hit — that one logging change was the decisive diagnostic and is worth keeping.
+3. **A malformed context package.** Checked directly against the live payload. It was clean.
+
+### What it was
+
+`account_angle` on `StrategyProposal` is a free string, and **the prompt never mentioned it**. The
+model found an unnamed, unbounded field in the schema and wrote its entire answer into it — **7,986
+output tokens** of prose — while leaving `threads` empty. One attempt was also refused with
+`RECITATION`: it had started reciting its own input back.
+
+`threads` being empty was *permitted*, because it was declared
+`Field(default_factory=list)`. A proposal with no threads satisfied the contract, parsed cleanly,
+and surfaced to the rep as "the model returned nothing for them" — which reads as a judgement about
+the person rather than a malformed answer.
+
+### Fixed in three places
+
+* **The schema floors it.** `threads: list[ProposedThread] = Field(min_length=1)`. `min_length`
+  reaches Gemini as `minItems`, which that API **accepts** — unlike `maxItems` and `maxLength`,
+  which answer HTTP 400 (measured, §-noted on the field itself). The floor is what makes the empty
+  answer unrepresentable rather than merely discouraged.
+* **The prompt describes the field.** `account_angle` is **one sentence**. Its length cannot be
+  enforced in the schema for the reason above, so the rule lives in the prompt — and the field now
+  exists in the prompt at all, which is the actual fix.
+* **A count, not an invitation.** `thread_count` goes into the payload and the prompt asks for
+  *exactly* that many threads.
+
+### The retry had to move with it
+
+`campaign_strategy` retried on "no threads came back". The schema now makes that unreachable, and
+two tests constructing `StrategyProposal(threads=[])` failed — correctly. The retry retargeted to
+the failure that remains representable: `answers_nobody()`, a proposal whose every thread names a
+`contact_id` nobody asked about. It satisfies the schema, is discarded, and would otherwise leave
+the rep with the same misleading "nothing for them". Both tests renamed to say what they now cover,
+with a `_about_a_stranger()` fixture in place of the empty list.
+
+New logging: `campaign_strategy.proposal` (asked / returned / ids) and
+`campaign_strategy.unknown_contact`.
+
+### Verified
+
+```
+INFO: llm.call scenario=strategy_synthesis effort=medium in=2849 out=440
+INFO: campaign_strategy.proposal ... asked=1 returned=1 ids=['298d5805-…']
+AT MEDIUM -> built: True | pursued: ['Mark R'] | excluded: 0
+```
+
+Green at low and medium effort; config left as the original `effort=medium, max_tokens=8000` (v12).
+Backend 1,765 pass, front end 348 pass, `ng build` exit 0.
+
+`schemas/strategy.py`, `services/campaign_strategy.py`, `services/gemini.py`,
+`services/instructions.py`, `services/stages.py`, `tests/test_campaign_strategy.py`.

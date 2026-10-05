@@ -112,8 +112,24 @@ class FakeClient:
         self.pages = pages
         self.fail = fail or set()
         self.asked: list[str] = []
+        self.posted: list[tuple[str, dict | None]] = []
 
     async def get(self, url: str):
+        self.asked.append(url)
+        if url in self.fail:
+            raise ConnectionError("timed out")
+        if url in self.pages:
+            return FakeResponse(200, self.pages[url])
+        return FakeResponse(404, "")
+
+    async def post(self, url: str, json=None):
+        """Workday's board answers a POST and nothing else.
+
+        Recorded separately from `asked` so a test can assert that a GET board
+        was never POSTed to, and vice versa — the two are not interchangeable
+        and a reader that sent the wrong verb would quietly find no roles.
+        """
+        self.posted.append((url, json))
         self.asked.append(url)
         if url in self.fail:
             raise ConnectionError("timed out")
@@ -210,8 +226,15 @@ class TestFindingTheBoard:
         http = bluewave(**{"https://bluewave.net/company/careers/": "<html>Join us</html>"})
         result = await job_boards.sweep_account(account(), http=http)
         assert result.batch.evidence == []
-        assert "no job board found on bluewave.net — looked for Greenhouse, Lever and Ashby" in result.misses[0]
-        assert not any(host in u for u in http.asked for host in ("greenhouse.io", "lever.co", "ashbyhq"))
+        assert (
+            "no job board found on bluewave.net — looked for "
+            "Greenhouse, Lever, Ashby and Workday" in result.misses[0]
+        )
+        assert not any(
+            host in u
+            for u in http.asked
+            for host in ("greenhouse.io", "lever.co", "ashbyhq", "myworkdayjobs")
+        )
 
     async def test_robots_is_honoured_on_the_site(self):
         http = bluewave(**{
@@ -409,3 +432,254 @@ class TestTheRunnerUsesTheRightReader:
         monkeypatch.setattr(sources, "by_key", by_key)
         with pytest.raises(RuntimeError, match="mystery_feed"):
             await pipeline.llm_family_runner(object())(account(), "mystery_feed")
+
+
+# --------------------------------------------------------------------------
+# Workday — the enterprise board
+# --------------------------------------------------------------------------
+#: A tenant's own host. The cluster (`wd1`) and the site (`External`) are both
+#: part of the address; neither can be guessed from the company name.
+WORKDAY_CAREERS = """<html><body>
+  <p>Search and apply for open roles.</p>
+  <a href="https://meridian.wd1.myworkdayjobs.com/en-US/External">View openings</a>
+</body></html>"""
+
+WORKDAY_API = "https://meridian.wd1.myworkdayjobs.com/wday/cxs/meridian/External/jobs"
+
+#: `postedOn` is prose, not a date — which is the point of the last test here.
+WORKDAY_JOBS = {
+    "total": 2,
+    "jobPostings": [
+        {
+            "title": "Senior Claims Systems Analyst",
+            "externalPath": "/job/Remote/Senior-Claims-Systems-Analyst_R-4471",
+            "locationsText": "Remote, United States",
+            "postedOn": "Posted 30+ Days Ago",
+            "bulletFields": ["R-4471", "Information Technology"],
+        },
+        {
+            "title": "Applied Epic Administrator",
+            "externalPath": "/job/Dallas/Applied-Epic-Administrator_R-4502",
+            "locationsText": "Dallas, TX",
+            "postedOn": "Posted Today",
+            "startDate": "2026-10-01",
+            "bulletFields": ["R-4502"],
+        },
+    ],
+}
+
+
+def workday(**over):
+    pages = {
+        "https://meridian.test/": (
+            '<html><body><a href="/careers">Careers</a></body></html>'
+        ),
+        "https://meridian.test/careers": WORKDAY_CAREERS,
+        WORKDAY_API: json.dumps(WORKDAY_JOBS),
+    }
+    pages.update(over)
+    return FakeClient(pages)
+
+
+class TestWorkday:
+    """The board 57 accounts were on while the reader knew three others.
+
+    Greenhouse, Lever and Ashby host startups. A non-technology company of any
+    size is on Workday, iCIMS or Taleo — which is why `job_board` produced zero
+    evidence across every run rather than "these companies are not hiring".
+    """
+
+    async def test_the_tenant_cluster_and_site_all_come_from_the_page(self):
+        boards = job_boards.boards_named(WORKDAY_CAREERS)
+
+        assert len(boards) == 1
+        board = boards[0]
+        assert (board.provider, board.token, board.cluster, board.site) == (
+            "workday", "meridian", "wd1", "External",
+        )
+
+    async def test_a_locale_segment_does_not_become_the_site_name(self):
+        """`/en-US/External` is the locale and then the site. Reading the first
+        path segment would address a board called "en-US", which answers
+        nothing and looks like a company that is not hiring."""
+        boards = job_boards.boards_named(
+            '<a href="https://acme.wd5.myworkdayjobs.com/en-US/External_Careers">jobs</a>'
+        )
+
+        assert boards[0].site == "External_Careers"
+        assert boards[0].cluster == "wd5"
+
+    async def test_the_api_url_is_built_from_all_three_parts(self):
+        board = job_boards.Board("workday", "meridian", False, "wd1", "External")
+
+        assert board.jobs_url() == WORKDAY_API
+
+    async def test_it_is_read_with_a_post_not_a_get(self):
+        """Workday's careers API is a search endpoint and returns nothing to a
+        GET. The wrong verb would read as a company with no open roles."""
+        http = workday()
+        result = await job_boards.sweep_account(account(domain="meridian.test"), http=http)
+
+        assert [u for u, _ in http.posted] == [WORKDAY_API]
+        assert result.batch.evidence, "no roles read from the Workday board"
+
+    async def test_the_search_body_asks_for_a_bounded_page(self):
+        http = workday()
+        await job_boards.sweep_account(account(domain="meridian.test"), http=http)
+        _, body = http.posted[0]
+
+        assert body["limit"] == job_boards.MAX_JOBS
+        assert body["offset"] == 0
+
+    async def test_the_roles_carry_their_title_place_and_posting_age(self):
+        http = workday()
+        result = await job_boards.sweep_account(account(domain="meridian.test"), http=http)
+        excerpts = "\n".join(e.excerpt for e in result.batch.evidence)
+
+        assert "Senior Claims Systems Analyst" in excerpts
+        assert "Applied Epic Administrator" in excerpts
+        assert "Remote, United States" in excerpts
+        # The whole hiring_bottleneck signal, stated by the employer.
+        assert "Posted 30+ Days Ago" in excerpts
+
+    async def test_posted_on_prose_is_never_parsed_into_a_date(self):
+        """"Posted 30+ Days Ago" is not a date, and inventing one would put a
+        guess in the field every expiry calculation trusts. A real `startDate`
+        is used; prose leaves `observed_at` null."""
+        http = workday()
+        result = await job_boards.sweep_account(account(domain="meridian.test"), http=http)
+        by_title = {
+            e.excerpt.split(" — ")[0].strip(): e for e in result.batch.evidence
+        }
+
+        assert by_title["Senior Claims Systems Analyst"].observed_at is None
+        assert by_title["Applied Epic Administrator"].observed_at == date(2026, 10, 1)
+
+    async def test_a_board_that_does_not_answer_is_a_finding(self):
+        http = workday(**{WORKDAY_API: None})
+        http.pages.pop(WORKDAY_API)
+        result = await job_boards.sweep_account(account(domain="meridian.test"), http=http)
+
+        assert result.batch.evidence == []
+        assert "does not answer" in result.misses[0]
+
+
+# --------------------------------------------------------------------------
+# The sub-path fallback — Route B
+# --------------------------------------------------------------------------
+NO_FEED_HOME = '<html><body><h1>Meridian</h1><p>Insurance brokerage.</p></body></html>'
+
+TRUST_PAGE = (
+    "<html><body><nav>Skip to main content</nav><h1>Trust and security</h1>"
+    "<p>Meridian completed its SOC 2 Type II audit in March 2026 and is "
+    "pursuing ISO 27001 certification, with the assessment scheduled to "
+    "conclude in the fourth quarter. Our HIPAA compliance programme covers "
+    "all employee benefits administration, and we publish an annual summary "
+    "of controls for broker partners and carriers who request one.</p>"
+    "<footer>© Meridian</footer></body></html>"
+)
+
+
+class TestTheSubPathFallback:
+    """Read the conventional pages when there is no feed.
+
+    `company_site` is a feed reader. A compliance deadline lives on `/security`
+    or `/trust` and is never in a feed even on a site that has one — which is
+    why no prompt wording could have produced a
+    `compliance_security_deadline` from it.
+
+    A fallback, not the first choice: a feed is dated, bounded and meant to be
+    read by a machine. The other route to these pages is a search with `site:`
+    operators; both exist so the comparison is evidence rather than argument.
+    """
+
+    async def test_pages_are_read_when_no_feed_answers(self):
+        http = FakeClient({
+            "https://meridian.test/": NO_FEED_HOME,
+            "https://meridian.test/trust": TRUST_PAGE,
+        })
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=http
+        )
+
+        assert result.batch.evidence, "no feed and no pages read"
+        assert "SOC 2 Type II" in result.batch.evidence[0].excerpt
+
+    async def test_the_route_is_named_so_the_two_can_be_compared(self):
+        """The whole point of keeping both. Without a marker, "which worked
+        better" is a question nobody can answer from the data."""
+        http = FakeClient({
+            "https://meridian.test/": NO_FEED_HOME,
+            "https://meridian.test/trust": TRUST_PAGE,
+        })
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=http
+        )
+
+        assert "read_pages" in result.notes
+
+    async def test_a_feed_still_wins_when_there_is_one(self):
+        """The fallback must not fire on a site that advertises a feed — it
+        would spend four requests to re-read what the feed already gave."""
+        feed = (
+            '<?xml version="1.0"?><rss version="2.0"><channel>'
+            "<item><title>Meridian acquires Lakeside Benefits</title>"
+            "<link>https://meridian.test/news/lakeside</link>"
+            "<pubDate>Mon, 15 Sep 2026 09:00:00 GMT</pubDate>"
+            "<description>The acquisition adds 40 staff.</description></item>"
+            "</channel></rss>"
+        )
+        http = FakeClient({
+            "https://meridian.test/": (
+                '<html><head><link rel="alternate" type="application/rss+xml" '
+                'href="/feed"></head><body>Meridian</body></html>'
+            ),
+            "https://meridian.test/feed": feed,
+            "https://meridian.test/trust": TRUST_PAGE,
+        })
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=http
+        )
+
+        assert result.batch.evidence, "the feed itself should have been read"
+        assert "read_pages" not in result.notes
+        assert not any("/trust" in u for u in http.asked)
+
+    async def test_a_script_shell_is_not_stored_as_evidence(self):
+        """Otherwise "Skip to main content" is filed as a fact about the
+        company, and cited in a draft."""
+        http = FakeClient({
+            "https://meridian.test/": NO_FEED_HOME,
+            "https://meridian.test/news": "<html><body><div id='root'></div></body></html>",
+        })
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=http
+        )
+
+        assert result.batch.evidence == []
+
+    async def test_a_page_is_left_undated(self):
+        """A page carries no publication date. Dating it from the fetch would
+        put today on a company's entire history."""
+        http = FakeClient({
+            "https://meridian.test/": NO_FEED_HOME,
+            "https://meridian.test/trust": TRUST_PAGE,
+        })
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=http
+        )
+
+        assert result.batch.evidence[0].observed_at is None
+
+    async def test_it_stops_at_the_cap(self):
+        """Each miss costs a timeout, and a site without these at the
+        conventional spellings does not have them."""
+        pages = {"https://meridian.test/": NO_FEED_HOME}
+        for path in site_sweep.PAGE_PATHS:
+            pages[f"https://meridian.test{path}"] = TRUST_PAGE
+        http = FakeClient(pages)
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=http
+        )
+
+        assert len(result.batch.evidence) == site_sweep.MAX_PAGES

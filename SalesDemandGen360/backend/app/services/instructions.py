@@ -105,6 +105,62 @@ For each person, record what you searched in `searched_for`, including the \
 people for whom nothing turned up. Nothing found for a person is a finding \
 about that person, and silence would read as never having looked.
 """,
+    "company_profile": """
+# Task: describe the company, not what has happened to it
+
+Establish what this company IS: what it sells, who it sells to, how big it is, \
+where it operates, what it is currently pushing.
+
+This is not signal research and the difference matters. A signal answers "why \
+now" and expires. "A commercial insurance brokerage serving contractors in \
+southern California" answers "who are they" and does not. Do not report an \
+announcement, a hire, an acquisition or a launch here — those are signals and \
+another stage reads them.
+
+- `target_customers` is the field that earns this stage. Who they SELL TO, in \
+the words they use: "contractors", "non-profits", "mid-market manufacturers". \
+It is what makes a later message sound written for them rather than at them, \
+and it is the one most often absent from a company's own homepage.
+- `services` is their lines of business, not their values.
+- `current_focus` is what they keep publishing about or say they are building. \
+It is the nearest thing here to a trigger and is still not one.
+- `size`, `founded` and `ownership` as STATED. "About 40 employees" is a fact; \
+a headcount you inferred from a team page is a guess wearing one.
+
+Leave a field empty rather than filling it. A profile that knows three things \
+and says three things is useful; one that invents the rest describes a company \
+that does not exist, and every later stage will believe it.
+
+Put the URLs you read in `sources`.
+""",
+    "contact_profile": """
+# Task: describe one person's standing role
+
+Establish who this person is at this company: what they own, how long they \
+have been there, what they talk about, what they appear able to decide.
+
+This is not a role change and not an activity. Those are dated events with \
+their own signal types. This is the standing description, stored without a \
+date because it does not have one — a profile page carries no publication \
+time, and inventing one would put a guess in a field every expiry calculation \
+trusts.
+
+- `responsibilities` is the field that earns this stage: the systems, teams, \
+budgets or lines named as theirs. It decides whether a message is addressed to \
+someone who could act on it.
+- `decision_scope` only when something said in public supports it. An \
+inference dressed as a fact is worse than silence here, because a rep will \
+pitch on it.
+- Be sure it is this person. The source must name them together with this \
+company. Someone else with the same name is worse than nothing.
+
+**Never produce an email address or a phone number, and never infer one from a \
+pattern.** Contact routes come from a verification provider with a status \
+attached.
+
+Leave a field empty rather than filling it, and put the URLs you read in \
+`sources`.
+""",
     "signal_scan": """
 # Task: a fast, broad sweep for anything worth a closer look
 
@@ -325,19 +381,57 @@ and it invalidates the entire premise of approaching more than one of them. A \
 CTO and a VP Finance do not feel the same problem, so do not hand them the same \
 sentence with the nouns changed. Identical hypotheses are rejected outright.
 
+The ICP carries a `track`, and it decides what counts as a good argument:
+
+- `enterprise` — a non-technology business running internal IT. The buyer is a \
+CIO, an IT director or a head of operations, and they are measured on nothing \
+going wrong. Argue risk and continuity: what is fragile, what it costs to keep \
+carrying, what a change does to the people already doing the work. Velocity \
+language reads as naive to someone whose job is that the renewals process does \
+not break.
+- `tech_company` — software is the product. The buyer is a CTO or VP \
+Engineering, measured on what ships. Argue bandwidth and time to market: the \
+roadmap that slips because hiring lagged.
+
+An ICP that states no track means neither is established. Make the case from \
+the evidence and the person's role, rather than guessing which buyer this is.
+
 `trigger_signal_ids` must name live signals. A thread pitching on an expired \
 trigger reads as automation that did not check, which is worse than silence.
 
-Return **one thread for every entry in `threads_to_argue`**, carrying that \
-entry's `contact_id` unchanged. Who is approached was decided before you were \
-asked; returning fewer threads than you were given is not a judgement about \
-merit, it is an incomplete answer, and the people it silently drops are the \
-ones a rep chose deliberately.
+`account_angle` is **one sentence** — the single read the threads hang off, in \
+your own words. It is not a summary of what you were given, and nothing should \
+be copied into it from the context or the profiles. A long `account_angle` is \
+the failure mode this stage actually has: the field is a plain string with no \
+length the schema can enforce, and filling it instead of writing threads has \
+produced thousands of tokens of restated context, an empty `threads` list, and \
+answers refused outright for reciting their own input.
+
+Return **exactly `thread_count` threads — no more and no fewer** — one for \
+every entry in `threads_to_argue`, carrying that entry's `contact_id` \
+unchanged. Write those, then stop.
+
+Both directions are failures and both have happened. Returning fewer is an \
+incomplete answer, not a judgement about merit, and the people it silently \
+drops are the ones a rep chose deliberately. Returning more does not add \
+anyone — a thread for a `contact_id` that was not given is discarded — it just \
+writes until the output budget runs out and the whole answer is lost, \
+including the threads that were right.
 
 Every thread is about the one service given, for the ICP given. A thread marked \
 `may_cite_no_live_signal` is one a rep chose to approach with nothing live to \
 cite: leave its `trigger_signal_ids` empty rather than inventing a trigger, and \
 make the case from the company's situation and the person's role instead.
+
+For those threads the material is already in front of you and you are not \
+expected to find more. `account.profile` says what the company sells, who it \
+sells to and what it is currently pushing; `contact.profile` says what this \
+person owns and writes about. Argue from those. **Do not deliberate at length \
+over a thread with no trigger** — there is no hidden trigger to recover, and a \
+long search for one produces the same answer as a short one. If the two \
+profiles are empty as well, say so in `problem_hypothesis` in a sentence and \
+give the thread low `confidence`. An honest thin argument a rep can see through \
+is worth more than a confident invented one.
 """,
     # ------------------------------------------------------------------ drafting
     "outreach_drafting": """
@@ -346,6 +440,14 @@ make the case from the company's situation and the person's role instead.
 You are writing every touch in the sequence together, so the arc can build \
 rather than restate itself. Match the writing samples' voice: they are the \
 reference, not a style to improve on.
+
+The ICP's `track` sets the register underneath that voice. `enterprise` — a \
+non-technology business running internal IT: professional, concrete about risk \
+and continuity, no urgency theatre. This reader has been sold to badly for \
+years and reads governance language as competence. `tech_company` — software \
+is the product: peer to peer, specific, their stack named correctly or not \
+named at all. Where the ICP states no track, write plainly and let the \
+evidence carry it.
 
 Each step carries the name it has in La Growth Machine where it has one.
 Read it: names like “Not Accepted - Email” and “Accepted - DM” describe two

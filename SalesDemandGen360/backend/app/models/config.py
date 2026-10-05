@@ -808,6 +808,12 @@ class ResearchSource(Base):
     status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'active'")
     )
+    #: Why it is not active, for whoever is deciding whether to turn it back
+    #: on. A status with no reason beside it invites someone to re-enable a
+    #: source on the assumption its instruction was wrong — which is what
+    #: nearly happened to `linkedin`, three sessions and three model calls
+    #: after it was paused on sixteen runs of evidence.
+    status_reason: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         CheckConstraint(

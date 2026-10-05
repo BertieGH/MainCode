@@ -276,6 +276,13 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
               <div class="row-sub" *ngIf="f.status !== 'active'" style="color:var(--warn);">
                 {{ f.status }}
               </div>
+              <!-- Beside the status, not in a tooltip: this is read by someone
+                   about to turn the source back on, and the reason is the
+                   whole input to that decision. -->
+              <details class="why" *ngIf="f.status !== 'active' && f.status_reason">
+                <summary class="row-sub">why</summary>
+                <p class="row-sub">{{ f.status_reason }}</p>
+              </details>
             </td>
             <td>
               <span class="badge" *ngFor="let s of f.scopes"
@@ -350,6 +357,8 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
       .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: .84rem; }
       td.brief { white-space: normal; max-width: 300px; }
       .retired-row { opacity: .6; }
+      .why > summary { cursor: pointer; color: var(--accent); }
+      .why p { margin: 4px 0 0; max-width: 48ch; }
       .cell-input { width: 100%; padding: 4px 7px; font-size: .8rem; }
     `,
   ],

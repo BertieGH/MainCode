@@ -34,7 +34,7 @@ import { IconComponent } from '../shared/icon.component';
  * reads.
  */
 
-type FactorKind = 'chips' | 'range' | 'text' | 'personas' | 'sources';
+type FactorKind = 'chips' | 'range' | 'text' | 'personas' | 'sources' | 'choice';
 
 /**
  * The buying roles a persona can carry. The same closed set as
@@ -94,6 +94,8 @@ interface Factor {
    * show for it. Typing freely here can only express a wish.
    */
   optionsFrom?: 'signal-types';
+  /** For `choice`: the closed set, each with the words that explain it. */
+  options?: { key: string; label: string; hint: string }[];
 }
 
 /**
@@ -104,6 +106,33 @@ interface Factor {
  * reading it. Anything else can still be added through the JSON view.
  */
 const FACTORS: Factor[] = [
+  {
+    // First, because it decides how everything below it is argued — and
+    // because it is the one factor the prompts branch on rather than read.
+    key: 'track',
+    label: 'Buyer track',
+    kind: 'choice',
+    hint:
+      'Which buyer this list is for. Strategy and drafting change register ' +
+      'on it: a CIO measured on nothing going wrong does not read the ' +
+      'argument written for a CTO measured on what ships.',
+    options: [
+      {
+        key: 'enterprise',
+        label: 'Enterprise IT',
+        hint:
+          'A non-technology business running internal IT — the argument is ' +
+          'risk, continuity and the cost of carrying what is fragile.',
+      },
+      {
+        key: 'tech_company',
+        label: 'Technology company',
+        hint:
+          'An ISV, SaaS or IT product company — software is what it sells, ' +
+          'and the argument is bandwidth and time to market.',
+      },
+    ],
+  },
   {
     key: 'industries',
     label: 'Industries',
@@ -413,6 +442,25 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
           <textarea class="field" rows="2" [(ngModel)]="texts[f.key]" (ngModelChange)="emit()"
                     [attr.aria-label]="f.label"></textarea>
         </div>
+
+        <!-- One value from a closed set. Radios rather than a select: there
+             are two, both need their explanation read, and a dropdown hides
+             the one not chosen. -->
+        <div *ngIf="f.kind === 'choice'" class="choices">
+          <label class="choice" *ngFor="let o of f.options || []"
+                 [class.choice-on]="texts[f.key] === o.key">
+            <input type="radio" [name]="f.key" [value]="o.key"
+                   [checked]="texts[f.key] === o.key"
+                   (change)="pickChoice(f.key, o.key)">
+            <span>
+              <strong>{{ o.label }}</strong>
+              <em class="row-sub" style="display:block;font-style:normal;">{{ o.hint }}</em>
+            </span>
+          </label>
+          <button class="linkish" *ngIf="texts[f.key]" (click)="pickChoice(f.key, '')">
+            Clear — neither
+          </button>
+        </div>
       </div>
 
       <!-- Anything this form cannot represent. Shown rather than hidden,
@@ -454,6 +502,15 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
       .icp { display: flex; flex-direction: column; gap: 16px; }
       .fac { display: grid; grid-template-columns: 210px 1fr; gap: 14px;
              align-items: start; }
+      .choices { display: flex; flex-direction: column; gap: 8px; }
+      .choice { display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
+                border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+                max-width: 52ch; }
+      .choice-on { border-color: var(--accent); background: var(--surface-2, #f6f7f6); }
+      .choice input { margin-top: 3px; }
+      .linkish { background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
+                 font-size: .8rem; color: var(--accent); text-decoration: underline;
+                 align-self: flex-start; }
       .lbl { display: flex; flex-direction: column; gap: 2px; }
       .lbl strong { font-size: .84rem; }
       .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;
@@ -571,6 +628,20 @@ export class IcpEditorComponent implements OnInit {
   newSources = signal<string[]>([]);
   /** Why each source is in, from the last assembly. Cleared by nothing. */
   private reasons: Record<string, string> = {};
+
+  /**
+   * Set a single-choice factor, or clear it.
+   *
+   * Cleared to `''`, which `emit()` already drops the way it drops an empty
+   * text field — so "neither" leaves the key absent rather than present and
+   * empty. The prompts read a missing track as "not established" and fall back
+   * to arguing from the evidence; a key holding `""` would be a third state
+   * nothing is written to handle.
+   */
+  pickChoice(key: string, value: string): void {
+    this.texts[key] = value;
+    this.emit();
+  }
 
   toggleSource(key: string): void {
     const on = this.chips['sources'] ?? [];
@@ -967,6 +1038,16 @@ export class IcpEditorComponent implements OnInit {
         this.texts[key] = value;
         continue;
       }
+      if (factor?.kind === 'choice' && typeof value === 'string') {
+        // A value outside the closed set falls through to passthrough rather
+        // than being shown as selected — the form would otherwise display
+        // "enterprize" as if it were one of the two, which is the confusion
+        // the server-side validator exists to prevent.
+        if ((factor.options || []).some((o) => o.key === value)) {
+          this.texts[key] = value;
+          continue;
+        }
+      }
       if (factor?.kind === 'range' && typeof value === 'string') {
         const band = parseBand(value);
         if (band) {
@@ -995,7 +1076,10 @@ export class IcpEditorComponent implements OnInit {
         // says "no industries qualify", the other says "industry is not a
         // constraint". Absent is what an empty control means.
         if (list.length) out[factor.key] = list;
-      } else if (factor.kind === 'text') {
+      } else if (factor.kind === 'text' || factor.kind === 'choice') {
+        // A cleared choice leaves the key absent, not present and empty. The
+        // prompts read a missing track as "not established"; `""` would be a
+        // third state nothing handles.
         const text = (this.texts[factor.key] ?? '').trim();
         if (text) out[factor.key] = text;
       } else if (factor.kind === 'range') {

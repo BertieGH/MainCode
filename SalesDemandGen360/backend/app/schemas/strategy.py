@@ -61,13 +61,23 @@ class StrategyProposal(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    #: Deliberately unbounded here. A `max_length` looks like the way to stop
-    #: a derailed call writing threads until the output budget runs out, and it
-    #: reaches Gemini as `maxItems`, which that API answers with **HTTP 400** —
-    #: tried against the live model, measured, reverted. `minItems` is accepted
-    #: and `maxItems` is not, whatever the subset documents.
-    threads: list[ProposedThread] = Field(default_factory=list)
-    #: The one-line account-level read the threads hang off.
+    #: Unbounded above, floored below. A `max_length` looks like the way to
+    #: stop a derailed call writing threads until the output budget runs out,
+    #: and it reaches Gemini as `maxItems`, which that API answers with
+    #: **HTTP 400** — tried against the live model, measured, reverted.
+    #:
+    #: `minItems` *is* accepted, and `min_length=1` is what sends it. That
+    #: floor is load-bearing: with a `default_factory` the model could satisfy
+    #: the contract by returning no threads at all, and it did — repeatedly,
+    #: writing its whole answer into `account_angle` and leaving this empty.
+    #: A rep then saw "the model returned nothing for them", which reads as a
+    #: judgement about the person rather than a malformed answer. The schema
+    #: now refuses it, so the repair path gets a chance instead.
+    threads: list[ProposedThread] = Field(min_length=1)
+    #: The one-line account-level read the threads hang off. **One sentence.**
+    #: Its length cannot be enforced here — `maxLength` draws the same HTTP 400
+    #: as `maxItems` — so the prompt carries that rule, and this is the field
+    #: that runs away when it does not.
     account_angle: str | None = None
 
     @model_validator(mode="after")

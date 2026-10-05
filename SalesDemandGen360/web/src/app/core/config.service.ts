@@ -104,6 +104,12 @@ export interface ResearchSource {
   /** Shipped with the product: its key and kind cannot change. */
   builtin: boolean;
   status: string;
+  /**
+   * Why it is not active. Shown beside the status, because that is where
+   * someone stands when deciding whether to turn it back on — and a paused
+   * source with no reason invites re-enabling it on a guess.
+   */
+  status_reason: string | null;
   /** Active signal types naming it. Zero is allowed — an ICP may add its own. */
   claimed_by: number;
   /** Reads attempted lately, and evidence rows they produced. */
@@ -407,6 +413,16 @@ export class ConfigService {
   }
   listPrompts(): Observable<PromptSummary[]> {
     return this.http.get<PromptSummary[]>(`${this.base}/prompts`);
+  }
+  /**
+   * The whole reference as a Word document.
+   *
+   * A blob rather than a plain link to the URL: the proxy and the dev server
+   * sit between the app and the API, and an `<a href>` straight at the route
+   * bypasses both in development. Fetching it keeps one path in dev and prod.
+   */
+  exportPrompts(): Observable<Blob> {
+    return this.http.get(`${this.base}/prompts/export`, { responseType: 'blob' });
   }
   readPrompt(scenario: string): Observable<PromptDetail> {
     return this.http.get<PromptDetail>(`${this.base}/prompts/${scenario}`);

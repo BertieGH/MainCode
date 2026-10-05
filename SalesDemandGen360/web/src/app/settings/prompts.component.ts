@@ -30,12 +30,22 @@ import { apiError } from '../shared/api-error';
   standalone: true,
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-      <h2 style="font-size:1.15rem;">Prompts</h2>
-      <button class="act-btn" (click)="help.set(!help())"
-              [attr.aria-expanded]="help()" aria-controls="prompts-help"
-              title="What this screen changes, and what it cannot change">
-        <app-icon name="info" [size]="15" />
+    <div class="head">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <h2 style="font-size:1.15rem;">Prompts</h2>
+        <button class="act-btn" (click)="help.set(!help())"
+                [attr.aria-expanded]="help()" aria-controls="prompts-help"
+                title="What this screen changes, and what it cannot change">
+          <app-icon name="info" [size]="15" />
+        </button>
+      </div>
+      <!-- Not behind the lock. Everything in the document is already on this
+           screen; collecting it into a file changes how convenient it is to
+           review, not who may see it. -->
+      <button class="btn" (click)="download()" [disabled]="downloading()"
+              title="Every stage plus the fixed preamble, as one Word document">
+        <app-icon name="download" [size]="14" />
+        {{ downloading() ? 'Preparing…' : 'Download all as Word' }}
       </button>
     </div>
 
@@ -247,6 +257,9 @@ import { apiError } from '../shared/api-error';
   `,
   styles: [
     `
+      .head { display: flex; justify-content: space-between; align-items: center;
+              gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+      .head .btn { display: inline-flex; align-items: center; gap: 6px; }
       .lock { border-style: dashed; }
       .lock-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
       .lock-row .field { max-width: 220px; }
@@ -274,6 +287,7 @@ export class PromptsComponent implements OnInit {
   versions = signal<PromptVersion[]>([]);
   loading = signal(true);
   busy = signal(false);
+  downloading = signal(false);
   error = signal<string | null>(null);
   help = signal(false);
 
@@ -371,6 +385,33 @@ export class PromptsComponent implements OnInit {
 
   lock(): void {
     this.token.set(null);
+  }
+
+  download(): void {
+    this.downloading.set(true);
+    this.error.set(null);
+    this.api.exportPrompts().subscribe({
+      next: (blob) => {
+        // Through an object URL rather than a link straight at the route: the
+        // request then goes through the same client, proxy and error handling
+        // as everything else, so a failure surfaces on the screen instead of
+        // replacing the app with a browser error page.
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'prompt-reference.docx';
+        a.click();
+        // Revoked straight away. The blob is a copy of the whole reference
+        // held in memory, and leaving the handle alive keeps it there for the
+        // life of the tab.
+        URL.revokeObjectURL(url);
+        this.downloading.set(false);
+      },
+      error: (err) => {
+        this.error.set(apiError(err, 'Could not build the document.'));
+        this.downloading.set(false);
+      },
+    });
   }
 
   open(scenario: string): void {
