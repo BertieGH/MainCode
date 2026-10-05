@@ -29,10 +29,22 @@ CANDIDATE = {
 
 
 class _Account:
-    def __init__(self, name="Northwind", domain="northwind.example"):
+    """Fully populated by default.
+
+    Every field matters: `source_trial.ACCOUNT_INPUTS` reports the empty ones,
+    and a half-filled stub makes every verdict read "the sample is missing
+    things" — which is right about that account and misleading about the test.
+    """
+
+    def __init__(self, name="Northwind", domain="northwind.example", **blank):
         self.id = uuid.uuid4()
         self.name = name
         self.domain = domain
+        self.linkedin_url = "https://www.linkedin.com/company/northwind"
+        self.industry = "Insurance"
+        self.hq_country = "US"
+        for field_name, value in blank.items():
+            setattr(self, field_name, value)
 
 
 def _batch(n=1) -> EvidenceBatch:
@@ -170,6 +182,67 @@ class TestTheVerdict:
         )
         assert report.dry == 2
         assert "do not store" in report.verdict
+
+    async def test_an_empty_account_is_not_blamed_on_the_wording(self, monkeypatch):
+        """A company with no stored website finds nothing for every source.
+
+        Saying "do not store this, change the wording" there sends somebody to
+        rewrite a brief that was never the problem, which is the dead end this
+        whole panel exists to avoid.
+        """
+        async def empty(session, *, account, family, candidate=None, client=None):
+            return _Result(EvidenceBatch(not_found=["nothing to search with"]))
+
+        monkeypatch.setattr("app.services.stages.research_family", empty, raising=True)
+        starved = _Account("Nameless", domain="", linkedin_url="")
+        report = await source_trial.try_source(
+            _SessionReturning([starved]), candidate=CANDIDATE, account_ids=[starved.id]
+        )
+        assert report.trials[0].missing == ["its website", "its LinkedIn page"]
+        assert "may not be the wording" in report.verdict
+        assert "do not store" not in report.verdict
+
+    async def test_an_ab_reports_both_sides_from_one_call(self, monkeypatch):
+        """Both wordings against the same account on the same day. Two separate
+        runs are not a comparison — §74 saw the same request return a sound
+        answer on 411 tokens and nothing usable on 790, minutes apart."""
+        seen: list[str] = []
+
+        async def by_wording(session, *, account, family, candidate=None, client=None):
+            seen.append(candidate["description"])
+            n = 2 if "wires" in candidate["description"] else 0
+            return _Result(_batch(n) if n else EvidenceBatch(not_found=["nothing"]))
+
+        monkeypatch.setattr("app.services.stages.research_family", by_wording, raising=True)
+        account = _Account()
+        report = await source_trial.try_source(
+            _SessionReturning([account]),
+            candidate=CANDIDATE,
+            account_ids=[account.id],
+            description_b="Trade publications and the wires.",
+        )
+
+        assert seen == [CANDIDATE["description"], "Trade publications and the wires."]
+        assert len(report.side("A")) == 1 and len(report.side("B")) == 1
+        assert report.accounts == 1, "one account, tried twice"
+        assert "B found 2, A found 0" in report.verdict
+
+    async def test_an_ab_halves_the_account_ceiling(self, monkeypatch):
+        """The cap is on calls, not rows: running both wordings everywhere would
+        otherwise double what a trial costs."""
+        async def one(session, *, account, family, candidate=None, client=None):
+            return _Result(_batch(1))
+
+        monkeypatch.setattr("app.services.stages.research_family", one, raising=True)
+        many = [_Account(f"A{i}") for i in range(source_trial.MAX_ACCOUNTS + 4)]
+        report = await source_trial.try_source(
+            _SessionReturning(many),
+            candidate=CANDIDATE,
+            account_ids=[a.id for a in many],
+            description_b="A different wording.",
+        )
+        assert report.accounts == source_trial.MAX_ACCOUNTS // 2
+        assert len(report.trials) == source_trial.MAX_ACCOUNTS
 
     async def test_the_sample_is_capped(self, monkeypatch):
         """A trial is a sample, not a run. An uncapped list would let a test

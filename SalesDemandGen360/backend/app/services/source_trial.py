@@ -45,7 +45,23 @@ TESTABLE = ("search", "fetch")
 #: Hard ceiling on accounts per trial. A trial is a sample, not a run: six
 #: grounded searches is already enough to see whether the wording works, and an
 #: unbounded list would let a "test" cost more than the thing being tested.
+#:
+#: Halved when a B variant is given, because an A/B runs both against every
+#: account and the ceiling is on calls, not on rows.
 MAX_ACCOUNTS = 6
+
+#: What a source can need from the account before it can search for it at all,
+#: and the field that carries it. Reported per account so "found nothing" can
+#: be told apart from "we had nothing to search with" — a brokerage with no
+#: stored domain returns nothing for every source, and that is a fact about the
+#: row rather than about the wording somebody is trying to tune.
+ACCOUNT_INPUTS = {
+    "name": "the company name",
+    "domain": "its website",
+    "linkedin_url": "its LinkedIn page",
+    "industry": "its industry",
+    "hq_country": "its country",
+}
 
 
 @dataclass
@@ -60,6 +76,12 @@ class AccountTrial:
     input_tokens: int = 0
     output_tokens: int = 0
     error: str | None = None
+    #: Which variant produced this — "A" or "B". Always "A" when no B was given.
+    variant: str = "A"
+    #: Account fields that are empty, named in plain words. A source searching
+    #: for a company with no stored website may legitimately find nothing, and
+    #: without this the empty result reads as a verdict on the brief.
+    missing: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -73,10 +95,22 @@ class TrialReport:
     candidate: dict
     route: str
     trials: list[AccountTrial] = field(default_factory=list)
+    #: The search logic, exactly as sent: the editable `company_research`
+    #: template and the rendered payload. Shown rather than summarised, so the
+    #: brief can be tuned against what actually runs — and so it can be pasted
+    #: into a model elsewhere and argued with.
+    prompt: str = ""
+    payload: dict = field(default_factory=dict)
+    #: Set when a B variant ran. The comparison is the point of an A/B: the same
+    #: accounts, the same prompt, one field different.
+    variant_b: str | None = None
+
+    def side(self, variant: str) -> list[AccountTrial]:
+        return [t for t in self.trials if t.variant == variant]
 
     @property
     def accounts(self) -> int:
-        return len(self.trials)
+        return len({t.account_id for t in self.trials})
 
     @property
     def found(self) -> int:
@@ -109,9 +143,24 @@ class TrialReport:
         """One line a person can act on, in the shape the audit uses."""
         if not self.trials:
             return "no accounts to try"
-        if self.failed == self.accounts:
+        if self.variant_b is not None:
+            a = sum(len(t.found) for t in self.side("A"))
+            b = sum(len(t.found) for t in self.side("B"))
+            if a == b:
+                return (
+                    f"A and B both found {a} across {self.accounts} accounts - "
+                    "nothing to choose between them on this sample"
+                )
+            return f"B found {b}, A found {a}, across {self.accounts} accounts"
+        if self.failed == len(self.trials):
             return f"FAILED at every account ({self.accounts}) - the route or the query is wrong"
         if not self.found:
+            starved = sorted({m for t in self.trials for m in t.missing})
+            if starved:
+                return (
+                    f"nothing at any of {self.accounts} accounts - but the sample is "
+                    f"missing {', '.join(starved)}, so this may not be the wording"
+                )
             return (
                 f"nothing at any of {self.accounts} accounts - do not store this "
                 "without changing the wording"
@@ -131,6 +180,7 @@ async def try_source(
     *,
     candidate: dict,
     account_ids: list[uuid.UUID],
+    description_b: str | None = None,
     client=None,
 ) -> TrialReport:
     """Run `candidate` against a few real accounts without storing anything.
@@ -139,6 +189,14 @@ async def try_source(
     `description`, `scopes`, `kind`. The description is the load-bearing part:
     it is what the research prompt reads as "what to read this source for", so
     a trial is mostly a test of that wording.
+
+    `description_b` runs a second wording against **the same accounts in the
+    same call**. That is what makes it an A/B rather than two trials: the
+    prompt, the model, the account and the day are held still and one field
+    moves, so a difference in what comes back is attributable to the wording.
+    Comparing two separate runs minutes apart is not — the same request
+    returned one sound answer on 411 tokens and nothing usable on 790, minutes
+    apart (§74).
     """
     route = (candidate.get("kind") or "search").strip()
     if route not in TESTABLE:
@@ -149,7 +207,10 @@ async def try_source(
             "checked that it works."
         )
 
-    wanted = account_ids[:MAX_ACCOUNTS]
+    # The ceiling is on calls. An A/B runs both wordings at every account, so
+    # the row budget halves rather than the cost doubling.
+    ceiling = MAX_ACCOUNTS // 2 if description_b else MAX_ACCOUNTS
+    wanted = account_ids[:ceiling]
     accounts = list(
         (await session.execute(select(Account).where(Account.id.in_(wanted)))).scalars()
     )
@@ -158,17 +219,66 @@ async def try_source(
     by_id = {a.id: a for a in accounts}
     ordered = [by_id[i] for i in wanted if i in by_id]
 
-    report = TrialReport(candidate=candidate, route=route)
+    report = TrialReport(candidate=candidate, route=route, variant_b=description_b)
+    variants = [("A", candidate)]
+    if description_b:
+        variants.append(("B", {**candidate, "description": description_b}))
+
     for account in ordered:
-        report.trials.append(await _one(session, account, candidate, route, client))
+        for name, definition in variants:
+            trial = await _one(session, account, definition, route, client)
+            trial.variant = name
+            report.trials.append(trial)
+
+    # The logic itself, captured once from the first account. Built by the same
+    # function the real call uses, so what is shown cannot drift from what runs.
+    #
+    # Guarded, because this is a display aid and the trial results above are the
+    # answer. A failure here means somebody cannot read the prompt; letting it
+    # propagate would mean they also lose the findings they just paid for.
+    if ordered and route == "search":
+        try:
+            from app.services import stages
+
+            prefix, payload = await stages.research_request(
+                session, account=ordered[0], family=candidate.get("key") or "candidate",
+                candidate=candidate,
+            )
+            report.prompt = _text_of(prefix)
+            report.payload = payload
+        except Exception as exc:  # noqa: BLE001 — never fail a trial over this
+            log.warning(
+                "source_trial.capture_failed key=%s %s: %s",
+                candidate.get("key"), type(exc).__name__, exc,
+            )
 
     log.info(
-        "source_trial.done key=%s route=%s accounts=%d found=%d dry=%d failed=%d "
-        "in=%d out=%d",
-        candidate.get("key"), route, report.accounts, report.found, report.dry,
-        report.failed, report.input_tokens, report.output_tokens,
+        "source_trial.done key=%s route=%s accounts=%d variants=%d found=%d dry=%d "
+        "failed=%d in=%d out=%d",
+        candidate.get("key"), route, report.accounts, len(variants), report.found,
+        report.dry, report.failed, report.input_tokens, report.output_tokens,
     )
     return report
+
+
+def _text_of(prefix) -> str:
+    """The prompt as text, whatever shape `load_prefix` returned.
+
+    It carries a system body and may carry tool declarations; only the body is
+    worth showing, and a caller tuning a brief should not have to care which
+    container it arrived in.
+    """
+    if isinstance(prefix, str):
+        return prefix
+    for attr in ("system", "body", "text"):
+        value = getattr(prefix, attr, None)
+        if isinstance(value, str):
+            return value
+    if isinstance(prefix, dict):
+        for attr in ("system", "body", "text"):
+            if isinstance(prefix.get(attr), str):
+                return prefix[attr]
+    return str(prefix)
 
 
 async def _one(
@@ -176,7 +286,14 @@ async def _one(
 ) -> AccountTrial:
     from app.services import site_sweep, stages
 
-    trial = AccountTrial(account_id=account.id, account_name=account.name or "")
+    trial = AccountTrial(
+        account_id=account.id,
+        account_name=account.name or "",
+        missing=[
+            words for attr, words in ACCOUNT_INPUTS.items()
+            if not str(getattr(account, attr, "") or "").strip()
+        ],
+    )
     started = time.monotonic()
     try:
         if route == "fetch":

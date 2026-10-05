@@ -826,6 +826,10 @@ class SourceTrialIn(BaseModel):
     kind: Literal["search", "fetch"] = "search"
     #: Which accounts to sample. At least one, and the service caps the list.
     account_ids: list[uuid.UUID] = Field(min_length=1)
+    #: A second wording to run against **the same accounts in the same call**.
+    #: That is what makes it an A/B: the prompt, model, account and day are held
+    #: still and one field moves, so a difference is attributable to the words.
+    description_b: str | None = Field(default=None, min_length=1, max_length=600)
 
 
 class AccountTrialOut(ORMModel):
@@ -839,6 +843,12 @@ class AccountTrialOut(ORMModel):
     input_tokens: int
     output_tokens: int
     error: str | None = None
+    #: "A" or "B". Always "A" when no second wording was given.
+    variant: str = "A"
+    #: Account fields that were empty, in plain words. An account with no stored
+    #: website finds nothing for every source, and without this the empty result
+    #: reads as a verdict on the brief instead of on the row.
+    missing: list[str] = []
 
 
 class SourceTrialOut(ORMModel):
@@ -846,6 +856,13 @@ class SourceTrialOut(ORMModel):
 
     candidate: dict
     route: str
+    #: The search logic as sent: the editable `company_research` template, and
+    #: the rendered payload. Shown so a brief can be tuned against what runs —
+    #: and so it can be pasted into a model elsewhere and argued with.
+    prompt: str = ""
+    payload: dict = {}
+    #: Echoed when an A/B ran, so the screen can label the two columns.
+    variant_b: str | None = None
     accounts: int
     found: int
     #: Accounts where it ran cleanly and found nothing — the number that decides

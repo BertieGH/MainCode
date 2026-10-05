@@ -89,6 +89,63 @@ export interface SignalType {
  * a source key nothing runs reports as a permanent coverage gap on a prospect
  * who may be perfectly well covered.
  */
+export interface SourceTrialRequest {
+  key: string;
+  label: string;
+  description: string;
+  scopes: ('company' | 'contact')[];
+  /** Only these two can be trialled; a provider or a manual route has no client to run. */
+  kind: 'search' | 'fetch';
+  account_ids: string[];
+  /** A second wording, run against the same accounts in the same call. */
+  description_b?: string | null;
+}
+
+/** One passage a trial turned up. Shown in full — a count cannot tell you
+ *  whether what came back is worth paying for. */
+export interface TrialFinding {
+  source_url?: string;
+  source_name?: string | null;
+  title?: string | null;
+  excerpt?: string;
+  observed_at?: string | null;
+}
+
+export interface AccountTrial {
+  account_id: string;
+  account_name: string;
+  found: TrialFinding[];
+  not_found: string[];
+  duration_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  error: string | null;
+  /** `A` or `B`. Always `A` when no second wording was given. */
+  variant: string;
+  /** Account fields that were empty, in plain words — "its website". An account
+   *  with nothing to search by finds nothing for every source. */
+  missing: string[];
+}
+
+export interface SourceTrial {
+  route: string;
+  /** The system prompt as sent — the editable `company_research` template. */
+  prompt: string;
+  /** The user payload as sent, for this account and this source. */
+  payload: Record<string, unknown>;
+  /** The B wording, when an A/B ran. */
+  variant_b: string | null;
+  accounts: number;
+  found: number;
+  /** Ran cleanly and found nothing. The number that decides whether to store it. */
+  dry: number;
+  failed: number;
+  input_tokens: number;
+  output_tokens: number;
+  verdict: string;
+  trials: AccountTrial[];
+}
+
 export interface ResearchSource {
   id: string;
   key: string;
@@ -486,6 +543,19 @@ export class ConfigService {
 
   createResearchSource(body: unknown): Observable<ResearchSource> {
     return this.http.post<ResearchSource>(`${this.base}/research-sources`, body);
+  }
+
+  /**
+   * Run a candidate source against a few real accounts without storing it.
+   *
+   * The whole point of the Try button: a source starts costing a read per
+   * account the moment it is saved, and whether it earns that is otherwise
+   * only visible afterwards. Nothing is written — no evidence, no coverage, no
+   * signals — but the model calls are real, which is why the server caps the
+   * sample.
+   */
+  tryResearchSource(body: SourceTrialRequest): Observable<SourceTrial> {
+    return this.http.post<SourceTrial>(`${this.base}/research-sources/try`, body);
   }
 
   updateResearchSource(key: string, changes: unknown): Observable<ResearchSource> {

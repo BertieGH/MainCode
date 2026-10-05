@@ -453,6 +453,38 @@ async def research_family(
     what the real call returns before a source starts costing a read per
     account. The caller is responsible for not storing what comes back.
     """
+    prefix, payload = await research_request(
+        session, account=account, family=family, candidate=candidate
+    )
+    return await _run(
+        session,
+        "company_research",
+        prefix=prefix,
+        user_content=stable_json(payload),
+        output_model=EvidenceBatch,
+        client=client,
+    )
+
+
+async def research_request(
+    session: AsyncSession,
+    *,
+    account: Account,
+    family: str,
+    candidate: dict | None = None,
+) -> tuple[Any, dict]:
+    """The exact prompt and payload `research_family` is about to send.
+
+    Split out so the search logic can be **shown** rather than described. The
+    Try panel displays what comes back from here, which is why it is the same
+    function the real call uses and not a reconstruction: a reconstruction
+    drifts, and somebody tuning a brief against a stale copy of the prompt is
+    worse off than somebody tuning it blind.
+
+    Returns `(prefix, payload)` — the system side, which is the editable
+    `company_research` template, and the user side, which is this account and
+    this source rendered as JSON.
+    """
     known = next(
         (
             row
@@ -497,14 +529,7 @@ async def research_family(
             await durability.research_cutoff(session)
         ),
     }
-    return await _run(
-        session,
-        "company_research",
-        prefix=prefix,
-        user_content=stable_json(payload),
-        output_model=EvidenceBatch,
-        client=client,
-    )
+    return prefix, payload
 
 
 async def suggest_type_sources(

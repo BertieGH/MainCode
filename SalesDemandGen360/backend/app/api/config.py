@@ -1445,10 +1445,13 @@ async def try_research_source(
     """
     from app.services import source_trial
 
-    candidate = payload.model_dump(exclude={"account_ids"})
+    candidate = payload.model_dump(exclude={"account_ids", "description_b"})
     try:
         report = await source_trial.try_source(
-            session, candidate=candidate, account_ids=payload.account_ids
+            session,
+            candidate=candidate,
+            account_ids=payload.account_ids,
+            description_b=payload.description_b,
         )
     except source_trial.NotTestable as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1459,6 +1462,9 @@ async def try_research_source(
     return SourceTrialOut(
         candidate=report.candidate,
         route=report.route,
+        prompt=report.prompt,
+        payload=report.payload,
+        variant_b=report.variant_b,
         accounts=report.accounts,
         found=report.found,
         dry=report.dry,
@@ -1476,6 +1482,8 @@ async def try_research_source(
                 input_tokens=t.input_tokens,
                 output_tokens=t.output_tokens,
                 error=t.error,
+                variant=t.variant,
+                missing=t.missing,
             )
             for t in report.trials
         ],

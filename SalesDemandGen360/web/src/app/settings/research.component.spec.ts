@@ -232,4 +232,66 @@ describe('ResearchComponent', () => {
       expect(cmp.orphanCount()).toBe(0);
     });
   });
+
+  describe('trying a source before storing it', () => {
+    /* The reason this exists: a source costs a read per account from the
+       moment it is saved, and whether it earns that used to be visible only
+       afterwards. `job_board` took 26 attempts across the book to establish
+       that it finds nothing. */
+
+    const fill = () => {
+      // The Try panel lives inside the Add-source form, so the form has to be
+      // open for any of it to be in the DOM at all.
+      cmp.adding.set(true);
+      cmp.draft.key = 'trade_press';
+      cmp.draft.label = 'Trade press';
+      cmp.draft.description = 'Sector publications and the wires.';
+      cmp.draft.scope = 'both';
+      cmp.trialAccountIds = ['a1', 'a2'];
+    };
+
+    it('sends the draft as it would be stored, and both scopes', () => {
+      serve();
+      fill();
+      cmp.tryIt();
+      const req = http.expectOne('/api/config/research-sources/try');
+      expect(req.request.body.key).toBe('trade_press');
+      expect(req.request.body.description).toBe('Sector publications and the wires.');
+      expect(req.request.body.scopes).toEqual(['company', 'contact']);
+      expect(req.request.body.account_ids).toEqual(['a1', 'a2']);
+      // Only a search is creatable on this screen, so only a search is tried.
+      expect(req.request.body.kind).toBe('search');
+      req.flush({
+        route: 'search', accounts: 2, found: 1, dry: 1, failed: 0,
+        input_tokens: 500, output_tokens: 40, verdict: '1 passage across 2 accounts',
+        trials: [],
+      });
+      expect(cmp.trying()).toBeFalse();
+      expect(cmp.trial()?.found).toBe(1);
+    });
+
+    it('says do not store it when nothing came back', () => {
+      serve();
+      fill();
+      cmp.tryIt();
+      http.expectOne('/api/config/research-sources/try').flush({
+        route: 'search', accounts: 3, found: 0, dry: 3, failed: 0,
+        input_tokens: 600, output_tokens: 20,
+        verdict: 'nothing at any of 3 accounts - do not store this without changing the wording',
+        trials: [],
+      });
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('Do not store this yet');
+    });
+
+    it('reports a failed trial rather than leaving the button spinning', () => {
+      serve();
+      fill();
+      cmp.tryIt();
+      http.expectOne('/api/config/research-sources/try')
+        .flush({ detail: 'no SERP credential' }, { status: 422, statusText: 'Unprocessable' });
+      expect(cmp.trying()).toBeFalse();
+      expect(cmp.trialError()).toContain('SERP');
+    });
+  });
 });

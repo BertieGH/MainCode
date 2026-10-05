@@ -3155,3 +3155,69 @@ Backend 1,776 pass; front end 348 pass; `ng build` exit 0.
 `services/source_trial.py` (new), `scripts/trial_loci.py` (new), `scripts/audit_sources.py`,
 `services/query_families.py`, `services/stages.py`, `api/config.py`, `schemas/config.py`,
 `alembic c1f7e3b89d24`, and five test modules.
+
+## §79 — The Try panel: the logic shown, the inputs named, the A/B in one call (2026-10-05)
+
+§78 built the trial engine and left no way to drive it — `trial_loci.py` had its candidates
+hardcoded in Python and the endpoint had no UI. Three gaps, all fair:
+
+### 1. The search logic was not exposed
+
+Only the *brief* was editable. The thing it feeds — the `company_research` template plus the
+rendered payload — was invisible, so a brief could only be tuned blind.
+
+`stages.research_request` is now split out of `research_family`, and `research_family` calls it.
+**That is the point of the split:** the Try panel shows what comes back from the same function the
+real call uses, so what is displayed cannot drift from what runs. A reconstruction would drift, and
+somebody tuning against a stale copy of the prompt is worse off than somebody tuning blind.
+
+The panel prints the instructions (5,030 characters) and the payload verbatim, to be copied into any
+model and argued with, and says where each part is editable: the instructions under Settings →
+Prompts, the brief as the `source.read_for` line.
+
+Capturing it is wrapped in `try/except`. It is a display aid and the findings are the answer — a
+failure there must not cost somebody the results they just paid for.
+
+### 2. Nothing said what inputs a source needs
+
+"Found nothing" and "we had nothing to search with" looked identical. An account with no stored
+website returns nothing for every source, and reading that as a verdict on the wording sends somebody
+to rewrite a brief that was never the problem.
+
+`ACCOUNT_INPUTS` names the five fields in plain words, and each account's empty ones are reported:
+*"this account has no website — a source needing one of those would find nothing here whatever the
+brief says."* The verdict changes with it: when the whole sample is starved it says **"this may not be
+the wording"** instead of "do not store this".
+
+### 3. No way to A/B
+
+`description_b` runs a second wording **against the same accounts in the same call**. That is what
+makes it a comparison: the prompt, the model, the account and the day are held still and one field
+moves. Two runs minutes apart are not — §74 saw the same request return a sound answer on 411 output
+tokens and nothing usable on 790, minutes apart.
+
+The account ceiling halves when a B is given, because the cap is on calls rather than rows.
+
+Verified live against Agentero, one account, both wordings:
+
+```
+A and B both found 2 across 1 accounts - nothing to choose between them on this sample
+  A  found=2  Rainbow Announces Partnership With Agentero / ...compliance with Producerflow
+  B  found=2  Agentero launches Producerflow... / How Agentero is revolutionising...
+```
+
+Equal counts, different articles — which is the honest reading the verdict gives rather than
+declaring a winner from one account.
+
+### Two fixture faults found by its own tests, worth recording
+
+* `_Account` in `tests/test_source_trial.py` had only a name and a domain, so the new missing-inputs
+  branch fired on every test and changed every verdict. The stub is now fully populated and the
+  starved case has a test of its own. The failure was correct and the fixture was wrong.
+* The front-end spec set the draft fields but never opened the Add-source form, so the panel was not
+  in the DOM at all. Fixture again, not a defect.
+
+Backend 1,782 pass; front end 351 pass; `ng build` exit 0.
+
+`services/stages.py`, `services/source_trial.py`, `api/config.py`, `schemas/config.py`,
+`core/config.service.ts`, `settings/research.component.ts`, two spec modules.

@@ -3,8 +3,9 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import {
-  ConfigService, IcpProfile, ResearchSource, ScoringConfig, SignalType,
+  ConfigService, IcpProfile, ResearchSource, ScoringConfig, SignalType, SourceTrial,
 } from '../core/config.service';
+import { ListsService } from '../core/lists.service';
 import { IconComponent } from '../shared/icon.component';
 import { apiError } from '../shared/api-error';
 
@@ -248,12 +249,136 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
           </span>
         </label>
       </div>
+      <!-- Try it before you store it. A source costs a read per account from
+           the moment it is saved, and the old way of finding out whether it
+           earns that was 26 attempts across the book. -->
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px;">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <strong style="font-size:.9rem;">Try it first</strong>
+          <span class="row-sub" style="flex:1;min-width:30ch;">
+            Runs the real search against the accounts you pick and shows what came back.
+            Nothing is stored — but the model calls are real, so keep the sample small.
+          </span>
+        </div>
+
+        <label style="display:block;margin-top:10px;">Try against
+          <select class="field" multiple size="5" [(ngModel)]="trialAccountIds"
+                  style="min-height:auto;">
+            <option *ngFor="let a of trialAccounts()" [value]="a.id">
+              {{ a.name }}{{ a.domain ? ' — ' + a.domain : '' }}
+            </option>
+          </select>
+          <span class="row-sub">
+            Pick two or three, and pick <em>different kinds</em> — a source that works for a
+            technology company often returns nothing for a small broker, and that is the
+            thing worth knowing before you save it.
+          </span>
+        </label>
+
+        <!-- A/B. Both wordings run against the same accounts in the same call:
+             two separate runs are not a comparison, because the same request
+             can return a sound answer once and nothing the next time. -->
+        <label style="display:block;margin-top:10px;">
+          <span style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" [(ngModel)]="abTest">
+            <span>Compare a second wording (A/B)</span>
+          </span>
+          <textarea class="field" rows="2" *ngIf="abTest" [(ngModel)]="descriptionB"
+                    placeholder="The same place, described differently."></textarea>
+          <span class="row-sub" *ngIf="abTest">
+            Both run against the same accounts on the same day, so a difference is down to the
+            words rather than to the weather. Halves the accounts, to keep the cost the same.
+          </span>
+        </label>
+
+        <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn" (click)="tryIt()"
+                  [disabled]="trying() || !draftValid() || !trialAccountIds.length
+                              || (abTest && !descriptionB.trim())">
+            {{ trying() ? 'Running…' : (abTest ? 'Run A/B' : 'Try it') }}
+          </button>
+          <button class="btn" *ngIf="trial()?.prompt" (click)="showLogic.set(!showLogic())">
+            {{ showLogic() ? 'Hide the search logic' : 'Show the search logic' }}
+          </button>
+          <span class="row-sub" *ngIf="!trialAccountIds.length">Pick at least one account.</span>
+          <span class="row-sub" *ngIf="trialError()" style="color:var(--danger);">
+            {{ trialError() }}
+          </span>
+        </div>
+
+        <!-- The logic, exactly as sent. Built by the same function the real call
+             uses, so what is shown here cannot drift from what runs. -->
+        <div class="card" *ngIf="showLogic() && trial() as t" style="margin-top:10px;">
+          <p class="row-sub" style="margin:0 0 8px;">
+            This is what was sent, verbatim — copy it into any model to argue with it. The
+            instructions are the <strong>company_research</strong> template, editable under
+            Settings → Prompts; the brief above is the <code>source.read_for</code> line in the
+            payload.
+          </p>
+          <strong style="font-size:.85rem;">Instructions</strong>
+          <pre class="pre-wrap">{{ t.prompt }}</pre>
+          <strong style="font-size:.85rem;">Payload for {{ firstTrialName() }}</strong>
+          <pre class="pre-wrap">{{ t.payload | json }}</pre>
+        </div>
+
+        <div class="card" *ngIf="trial() as t" style="margin-top:12px;background:var(--bg-subtle);">
+          <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;">
+            <strong style="font-size:.9rem;"
+                    [style.color]="t.found ? 'var(--ok)' : 'var(--danger)'">
+              {{ t.found ? 'Worth storing' : 'Do not store this yet' }}
+            </strong>
+            <span class="row-sub">{{ t.verdict }}</span>
+          </div>
+          <p class="row-sub" style="margin:6px 0 10px;">
+            {{ t.input_tokens + t.output_tokens }} tokens across {{ t.accounts }} account(s).
+          </p>
+
+          <div *ngFor="let a of t.trials" style="margin-bottom:10px;">
+            <div style="font-size:.88rem;font-weight:600;">
+              <span *ngIf="t.variant_b" class="pill">{{ a.variant }}</span>
+              {{ a.account_name }}
+              <span class="row-sub" style="font-weight:400;">
+                — {{ a.error ? 'failed' : a.found.length + ' found' }} · {{ a.duration_ms }}ms
+              </span>
+            </div>
+            <p class="row-sub" *ngIf="a.error" style="color:var(--danger);">{{ a.error }}</p>
+            <!-- What this account could not be searched by. An account with no
+                 website finds nothing for every source, so saying so here stops
+                 somebody rewriting a brief that was never the problem. -->
+            <p class="row-sub" *ngIf="a.missing.length" style="margin:2px 0 0;">
+              this account has no {{ a.missing.join(', no ') }} — a source needing one of those
+              would find nothing here whatever the brief says
+            </p>
+            <ul style="margin:4px 0 0;padding-left:18px;">
+              <li *ngFor="let f of a.found" class="row-sub" style="margin-bottom:3px;">
+                <span style="font-variant-numeric:tabular-nums;">
+                  {{ a.found.length ? (f.observed_at || 'undated') : '' }}
+                </span>
+                — {{ f.title || f.excerpt }}
+                <a *ngIf="f.source_url" [href]="f.source_url" target="_blank"
+                   rel="noopener noreferrer">open</a>
+              </li>
+            </ul>
+            <!-- What it searched and could not establish. "We looked and there
+                 is nothing" is a fact about the account; the same answer at
+                 every account is a fact about the source. -->
+            <p class="row-sub" *ngIf="!a.found.length && a.not_found.length"
+               style="margin:2px 0 0;">
+              looked for: {{ a.not_found.join('; ') }}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex;gap:10px;align-items:center;margin-top:12px;">
         <button class="btn btn-primary" (click)="addSource()"
                 [disabled]="savingSource() || !draftValid()">
           {{ savingSource() ? 'Adding…' : 'Add source' }}
         </button>
         <span class="row-sub" *ngIf="!draftValid()">A key, a name and a brief are needed.</span>
+        <span class="row-sub" *ngIf="trial() && !trial()!.found">
+          Trialled and found nothing — change the brief and try again rather than storing it.
+        </span>
       </div>
     </div>
 
@@ -351,6 +476,18 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
     `
       .sec-head { display: flex; justify-content: space-between; align-items: center;
                   gap: 16px; margin-bottom: 4px; }
+      /* The search logic, shown verbatim so it can be copied into a model and
+         argued with. Scrolls rather than stretching the page: the research
+         template runs to a few hundred lines. */
+      .pre-wrap { white-space: pre-wrap; word-break: break-word; margin: 4px 0 12px;
+                  font-size: .78rem; font-family: 'IBM Plex Mono', monospace;
+                  max-height: 280px; overflow: auto; padding: 8px;
+                  background: var(--bg-subtle); border: 1px solid var(--line);
+                  border-radius: 4px; }
+      .pill { display: inline-block; min-width: 1.4em; text-align: center;
+              padding: 0 5px; margin-right: 4px; border-radius: 3px;
+              background: var(--bg-subtle); border: 1px solid var(--line);
+              font-family: 'IBM Plex Mono', monospace; font-size: .72rem; }
       .cell { width: 74px; padding: 4px 7px; font-size: .8rem;
               font-family: 'IBM Plex Mono', monospace; text-align: right; }
       .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -365,6 +502,7 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
 })
 export class ResearchComponent implements OnInit {
   private api = inject(ConfigService);
+  private lists = inject(ListsService);
 
   readonly dimensions = DIMENSIONS;
 
@@ -401,6 +539,24 @@ export class ResearchComponent implements OnInit {
     reuse_days: null as number | null,
     support_only: false,
   };
+
+  /** Accounts offered to the Try button. A handful, not the whole book — a
+   *  trial is a sample and the server caps it anyway. */
+  trialAccounts = signal<{ id: string; name: string; domain: string | null }[]>([]);
+  trialAccountIds: string[] = [];
+  trying = signal(false);
+  trial = signal<SourceTrial | null>(null);
+  trialError = signal<string | null>(null);
+  showLogic = signal(false);
+  abTest = false;
+  descriptionB = '';
+
+  /** Whose payload the logic panel is showing — it is captured once, from the
+   *  first account tried, because the instructions are identical for all of
+   *  them and only the account block differs. */
+  firstTrialName(): string {
+    return this.trial()?.trials[0]?.account_name ?? 'this account';
+  }
   icpIndustries = signal<string[]>([]);
   loading = signal(true);
   saving = signal(false);
@@ -635,6 +791,39 @@ export class ResearchComponent implements OnInit {
       });
   }
 
+  /** The scopes the draft claims, in the shape the API wants. */
+  private draftScopes(): ('company' | 'contact')[] {
+    return this.draft.scope === 'both' ? ['company', 'contact'] : [this.draft.scope];
+  }
+
+  tryIt(): void {
+    this.trying.set(true);
+    this.trialError.set(null);
+    this.trial.set(null);
+    this.api
+      .tryResearchSource({
+        key: this.draft.key.trim(),
+        label: this.draft.label.trim(),
+        description: this.draft.description.trim(),
+        scopes: this.draftScopes(),
+        // Only a search is creatable on this screen, so only a search is
+        // trialled. A fetch or a provider needs code behind it.
+        kind: 'search',
+        account_ids: this.trialAccountIds,
+        description_b: this.abTest && this.descriptionB.trim() ? this.descriptionB.trim() : null,
+      })
+      .subscribe({
+        next: (t) => {
+          this.trial.set(t);
+          this.trying.set(false);
+        },
+        error: (e) => {
+          this.trialError.set(apiError(e, 'Could not run the trial.'));
+          this.trying.set(false);
+        },
+      });
+  }
+
   private load(): void {
     this.loading.set(true);
     this.api.researchSources().subscribe({
@@ -648,6 +837,19 @@ export class ResearchComponent implements OnInit {
       },
     });
     this.api.signalTypes().subscribe({ next: (t) => this.types.set(t) });
+    // Accounts for the Try button. Only those with a domain: a search brief is
+    // built around the company, and an account nobody has resolved yet would
+    // make a trial fail for a reason that has nothing to do with the source.
+    this.lists.accounts({ field: 'name', direction: 'asc' }).subscribe({
+      next: (rows) =>
+        this.trialAccounts.set(
+          rows
+            .filter((a) => (a.domain || '').trim())
+            .slice(0, 40)
+            .map((a) => ({ id: a.id, name: a.name, domain: a.domain ?? null })),
+        ),
+      error: () => undefined,
+    });
     this.api.researchSettings().subscribe({
       next: (s) => {
         this.reuseDays = this.reuseSaved = s.freshness_days;
