@@ -3221,3 +3221,86 @@ Backend 1,782 pass; front end 351 pass; `ng build` exit 0.
 
 `services/stages.py`, `services/source_trial.py`, `api/config.py`, `schemas/config.py`,
 `core/config.service.ts`, `settings/research.component.ts`, two spec modules.
+
+## §80 — Step 4: eight of fifteen signal types could not fire (2026-10-05)
+
+Step 4 was meant to be tidying overlaps. The first query made it something else.
+
+### The gate
+
+`ListPlan.type_keys` returns the active ICP's `signals_that_matter`, and its own docstring says what
+that is for: **"Every signal type the ICPs care about — what extraction may return."** `pipeline`
+passes it as `signal_type_keys` and extraction is restricted to it. So a type absent from that list
+**cannot produce a signal**, however well configured, whatever sources it claims, however much
+evidence exists.
+
+The list named eight types. One of them, `public_pain_statement`, **no longer exists**. The registry
+held fifteen. So:
+
+```
+eligible          7   funding_growth_milestone, engineering_team_expansion, contact_role_change,
+                      product_launch, strategic_partnership_alliance, tech_stack_expansion,
+                      contact_profile
+INERT             8   compliance_security_deadline, digital_transformation_mandate,
+                      hiring_bottleneck, leadership_change_executive, m_and_a_integration,
+                      tech_debt_modernization, vendor_consolidation, contact_content_activity
+dangling          1   public_pain_statement
+```
+
+**All seven Enterprise IT types from `d7a4e1c93b26` are in the inert list.** They were added in §60
+specifically because the book is insurance brokerages and the shipped registry was built for
+technology companies. They have been unable to produce a signal since the day they were created.
+
+§76 recorded them as "never had a run" and treated the zero as youth. That was the charitable reading
+and it was wrong about the mechanism: they could not have produced a signal if every run in the book
+had gone perfectly.
+
+**The gate itself is not the bug.** It is deliberate and already covered by
+`test_only_the_icps_signal_types_may_be_extracted` — research should not extract a type nobody looked
+for. The bug is that nothing said the list had fallen behind the registry. The only visible symptom
+was a zero in the Signals column, which looks exactly like a type that is simply not firing.
+
+Fixed in three places, because data alone would rot again:
+
+* the active ICP names all fifteen (v11, through `PUT` so the version chain stays intact; the
+  dangling key dropped);
+* `SignalTypeOut.extractable` carries the answer, computed from the active ICPs;
+* the Signal types screen shows a **not extractable** badge beside the status, so the next gap
+  announces itself instead of looking like a quiet type.
+
+`None` is kept distinct from the empty set throughout: an ICP that has accepted no signal list does
+not narrow extraction at all, so reporting every type as unreachable there would be the opposite of
+the truth.
+
+### Then the overlaps, which were the actual task
+
+A description is not documentation — it is what extraction reads to decide which type a passage
+belongs to. Two pairs were colliding on the same sentence, which makes the choice between them a coin
+toss:
+
+* **`engineering_team_expansion` and `hiring_bottleneck` both offered "several related roles open at
+  once".** They are opposite readings of one careers page: roles opening because the company is
+  growing, against roles that will not fill.
+* **`tech_debt_modernization` and `digital_transformation_mandate` both offered "move to cloud".**
+
+Resolved by giving each an anchor and **naming its sibling**, rather than by deleting words — the
+phrase still appears in both, but now only alongside the discriminator:
+
+| pair | the discriminator |
+|---|---|
+| expansion / bottleneck | duration and repetition. Several roles at once is expansion; re-posted or long-open is the bottleneck |
+| debt / mandate | debt is anchored on the **old system being named**, mandate on the **programme being declared**. Tie-break stated: prefer the system, because a system is a fact and a programme is a plan |
+| partnership / launch | a **second named party** |
+| stack expansion | adoption only; migration is debt, supplier reduction is consolidation |
+| leadership change / contact role change | overlaps **on purpose**; this was true before and written nowhere. Seat changed vs person we track, and both firing on one passage is acceptable |
+
+A description that says only what a type *is* leaves the extractor to infer the boundary. Naming the
+neighbour makes the boundary the thing it reads.
+
+Carried as `d8b3f1c62a95`, generated from the live rows so the file and the database cannot disagree,
+with no downgrade: restoring the colliding wording would reinstate the coin toss.
+
+Backend 1,789 pass; front end 351 pass; `ng build` exit 0.
+
+`api/config.py`, `schemas/config.py`, `alembic d8b3f1c62a95`, ICP Default v11,
+`settings/signal-types.component.ts`, `core/config.service.ts`, `tests/test_research_config.py` (+2).

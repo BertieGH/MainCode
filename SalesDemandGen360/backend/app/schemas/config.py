@@ -949,3 +949,12 @@ class SignalTypeOut(ORMModel):
     #: How many signals cite this type. Zero means deleting it destroys no
     #: history, which is the only condition under which deletion is allowed.
     signal_count: int = 0
+    #: False when no active ICP names this type in `signals_that_matter`.
+    #:
+    #: That list is what `ListPlan.type_keys` returns, and it is **what
+    #: extraction may return** — so a type missing from it cannot produce a
+    #: signal however well it is configured and whatever sources it claims.
+    #: Eight of fifteen types were in that state and nothing said so: all seven
+    #: Enterprise IT types added for this book in §60, inert from the day they
+    #: were created, reported only as "never produced anything".
+    extractable: bool = True

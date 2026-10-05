@@ -7,6 +7,7 @@ applies, which is a working state rather than a missing one.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -129,3 +130,89 @@ class TestResumingASourceClearsWhyItWasStopped:
         assert r.status_code == 200, r.text
         assert r.json()["label"] == "Trade press"
         assert r.json()["key"] == "trade_press"
+
+
+class TestASignalTypeThatCannotFireSaysSo:
+    """A type missing from the active ICP's `signals_that_matter` cannot produce
+    a signal, however well it is configured.
+
+    That list is what `ListPlan.type_keys` returns and it is what extraction is
+    restricted to — deliberately, and already tested in
+    `test_research_route.py`. The defect was never the gate; it was that nothing
+    said the list had fallen behind the registry. Eight of fifteen types were in
+    that state, including all seven Enterprise IT types added for this book, and
+    they reported only as "never produced anything".
+    """
+
+    TYPES = "/api/config/signal-types"
+
+    async def _icp(self, names: list[str] | None) -> None:
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        async with engine.begin() as conn:
+            profile = (
+                await conn.execute(text("SELECT id FROM icp_profile LIMIT 1"))
+            ).scalar_one_or_none()
+            if profile is None:
+                profile = (
+                    await conn.execute(
+                        text(
+                            "INSERT INTO icp_profile (name, description) "
+                            "VALUES ('T', 'T') RETURNING id"
+                        )
+                    )
+                ).scalar_one()
+            await conn.execute(
+                text("DELETE FROM icp_profile_version WHERE icp_profile_id = :p")
+                .bindparams(p=profile)
+            )
+            definition = {} if names is None else {"signals_that_matter": names}
+            await conn.execute(
+                text(
+                    "INSERT INTO icp_profile_version "
+                    "(icp_profile_id, definition, version, is_active) "
+                    "VALUES (:p, CAST(:d AS jsonb), 1, true)"
+                ).bindparams(p=profile, d=json.dumps(definition))
+            )
+        await engine.dispose()
+
+    async def _types(self, *keys: str) -> None:
+        """Signal types are not seeded into the test database, so make them."""
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        async with engine.begin() as conn:
+            for key in keys:
+                await conn.execute(
+                    text(
+                        "INSERT INTO signal_type "
+                        "(key, label, description, scope, default_ttl_days, weight, "
+                        " produced_by, kind, status) "
+                        "VALUES (:k, :k, 'what lives there', 'company', 90, 1.0, "
+                        "        ARRAY['company_site'], 'event', 'active') "
+                        "ON CONFLICT (key) DO NOTHING"
+                    ).bindparams(k=key)
+                )
+        await engine.dispose()
+
+    async def test_a_type_the_icp_does_not_name_is_flagged(self, api):
+        await self._types("named_by_the_icp", "left_out_of_the_icp")
+        await self._icp(["named_by_the_icp"])
+
+        by_key = {r["key"]: r for r in (await api.get(self.TYPES)).json()}
+        assert by_key["named_by_the_icp"]["extractable"] is True
+        assert by_key["left_out_of_the_icp"]["extractable"] is False, (
+            "a type the ICP leaves out should say it cannot fire"
+        )
+
+    async def test_an_icp_naming_no_signals_narrows_nothing(self, api):
+        """None is not the empty set. An ICP that has accepted no list does not
+        restrict extraction, so reporting every type as unreachable would be the
+        opposite of the truth."""
+        await self._types("named_by_the_icp", "left_out_of_the_icp")
+        await self._icp(None)
+        rows = (await api.get(self.TYPES)).json()
+        assert rows and all(r["extractable"] is True for r in rows)

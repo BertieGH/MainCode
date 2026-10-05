@@ -345,6 +345,17 @@ function sameKeys(a: string[], b: string[]): boolean {
                       [title]="t.status === 'paused' && t.paused_at
                         ? ('Paused ' + (t.paused_at | date:'MMM d, y'))
                         : ''">{{ t.status }}</span>
+                <!-- Active and still unable to fire. The ICP's "signals that
+                     matter" is what extraction is restricted to, so a type it
+                     does not name produces nothing however well it is set up.
+                     Eight of fifteen were in that state and the only clue was
+                     a zero in the Signals column. -->
+                <span class="badge badge-warn" *ngIf="t.extractable === false"
+                      title="No active ICP lists this under “signals that matter”, and
+                             extraction is restricted to that list — so this type cannot
+                             produce a signal. Add it under Org profile.">
+                  not extractable
+                </span>
               </td>
               <td class="actcol">
                 <!-- Icon-only, so each carries its own accessible name and a

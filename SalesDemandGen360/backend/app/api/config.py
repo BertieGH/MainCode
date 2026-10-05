@@ -1685,7 +1685,9 @@ async def list_signal_types(
     if excluded:
         stmt = stmt.where(SignalType.status.notin_(excluded))
     rows = list((await session.execute(stmt)).scalars())
-    return _annotate(rows, await _signal_counts(session))
+    return _annotate(
+        rows, await _signal_counts(session), await _wanted_types(session)
+    )
 
 
 @router.post("/signal-types/suggest-groups", response_model=SearchGroupSuggestions)
@@ -1776,13 +1778,44 @@ async def _signal_counts(session: AsyncSession) -> dict[str, int]:
     return {key: n for key, n in rows}
 
 
-def _annotate(rows: list[SignalType], counts: dict[str, int]) -> list[SignalType]:
+def _annotate(
+    rows: list[SignalType],
+    counts: dict[str, int],
+    wanted: set[str] | None = None,
+) -> list[SignalType]:
     for row in rows:
         row.signal_count = counts.get(row.key, 0)
         # Resolved here so the screen reads one number whether or not the type
         # overrides the default, and never has to carry the multiple itself.
         row.durability_effective_days = durability_of(row)
+        # `wanted is None` means nobody asked — leave the optimistic default
+        # rather than claiming every type is unreachable.
+        if wanted is not None:
+            row.extractable = row.key in wanted
     return rows
+
+
+async def _wanted_types(session: AsyncSession) -> set[str] | None:
+    """Every type the active ICPs name, or None when they name none.
+
+    None is not the empty set. An ICP that has accepted no signal list does not
+    narrow extraction at all, so every type is reachable — reporting them all as
+    unreachable would be the opposite of the truth.
+    """
+    rows = (
+        await session.execute(
+            select(IcpProfileVersion.definition).where(
+                IcpProfileVersion.is_active.is_(True)
+            )
+        )
+    ).scalars()
+    named = {
+        key
+        for definition in rows
+        for key in ((definition or {}).get("signals_that_matter") or [])
+        if isinstance(key, str)
+    }
+    return named or None
 
 
 async def _get_signal_type(session: AsyncSession, key: str) -> SignalType:

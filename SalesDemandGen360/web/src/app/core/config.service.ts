@@ -70,7 +70,16 @@ export interface SignalType {
   paused_at: string | null;
   deprecated_at: string | null;
   /** Signals citing this type. Zero means it can be deleted outright. */
-  signal_count: number;  /** What to look for. Runs as its own search when no family is claimed. */
+  signal_count: number;
+  /**
+   * False when no active ICP lists this under "signals that matter".
+   *
+   * Extraction is restricted to that list, so a type missing from it cannot
+   * produce a signal however well it is configured. Eight of fifteen were in
+   * that state and the only clue was a zero in the Signals column.
+   */
+  extractable?: boolean;
+  /** What to look for. Runs as its own search when no family is claimed. */
   search_instruction: string | null;
   /** Types sharing a label are searched once, together. */
   search_group: string | null;
