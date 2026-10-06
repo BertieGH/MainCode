@@ -59,13 +59,28 @@ FEED_PATHS = (
     "/feed", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml",
     "/blog/feed", "/blog/rss.xml", "/news/feed", "/blog/index.xml",
 )
-#: Read as HTML when no feed answers. The first four are where a company puts
-#: announcements; the last three are where it states compliance obligations,
-#: which no feed ever carries — the reason a feed reader could not produce a
-#: `compliance_security_deadline` however the prompt was written.
+#: Read as HTML when no feed answers. Two kinds, **interleaved on purpose**:
+#: announcements and open roles. The loop stops at `MAX_PAGES`, so grouping by
+#: kind meant the second kind was never reached on a site that had the first —
+#: four announcement pages would fill the budget and `/careers` never be tried.
+#:
+#: Careers pages are here because **`ats_boards` is paused at 26 attempts and
+#: no evidence**: a twenty-person broker runs no Greenhouse board, but it has a
+#: careers page. This fetch already runs for every account and costs no model
+#: call, so the roles it exposes — and the stack named in them — arrive free.
+#: A job advert asking for a legacy skill is evidence the system still runs.
+#:
+#: `/security`, `/trust` and `/compliance` were read here and are **dropped at
+#: the owner's instruction**. They existed for `compliance_security_deadline`,
+#: which has produced nothing on this book, and each miss costs an eight-second
+#: timeout on every account that has no such page — which is most of them. The
+#: type is not orphaned: it keeps `trade_press`, `regulators_and_registers` and
+#: its own search instruction, which can still ask a search engine for those
+#: paths without us fetching them blind.
 PAGE_PATHS = (
-    "/news", "/newsroom", "/press", "/about/news",
-    "/security", "/trust", "/compliance",
+    "/news", "/careers",
+    "/newsroom", "/jobs",
+    "/press", "/about/news",
 )
 #: Kept per account from the fallback. Each miss costs a timeout.
 MAX_PAGES = 4

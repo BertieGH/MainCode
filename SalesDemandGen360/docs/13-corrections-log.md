@@ -3375,3 +3375,80 @@ Backend 1,789 pass; front end 351 pass; `ng build` exit 0.
 
 `services/research.py`, `schemas/config.py`, `alembic e4a9c7d13b60`,
 `settings/icp-editor.component.ts`, `settings/signal-types.component.ts`, two spec modules.
+
+## §82 — The careers page was already being walked past (2026-10-05)
+
+Asked whether news was wired properly, whether a waterfall was possible, and whether to try RSS
+first — then handed a document of suggestions for reaching companies in the $10M–$50M band.
+
+**Two of the three efficiency suggestions were already built.** RSS-first is `company_site`, which
+tries ten feed paths before any HTML. The waterfall is `run_sweep`: one broad sweep gates the
+account, and if it finds nothing every planned family is skipped with a coverage row saying why.
+Worth stating rather than re-implementing.
+
+### What was actually missing
+
+`ats_boards` is paused at **26 attempts across 57 accounts and no evidence** — a twenty-person
+broker runs no Greenhouse board. But it has a `/careers` page, and `company_site` — a `fetch`,
+costing no model call, and the only source on this book that reliably produces anything — was
+reading `/news` and `/security` and **walking straight past it**.
+
+So the cheapest answer to "who are they hiring, and what platform are they hiring around" was
+already running and was not being asked. Confirmed live on the first brokerage tried: Beach &
+O'Neill returns `news, careers, newsroom, jobs`.
+
+`PAGE_PATHS` now **interleaves** kinds rather than grouping them. The loop stops at `MAX_PAGES`, so
+grouping meant a site with four news pages never reached the second kind at all — which is how
+`/security` was being starved before anybody noticed.
+
+`/security`, `/trust` and `/compliance` are **dropped** at the owner's instruction.
+`compliance_security_deadline` produced nothing on this book and each miss cost an eight-second
+timeout on every account without such a page. It keeps `trade_press`, `regulators_and_registers`
+and its own search instruction, so it is narrowed rather than orphaned.
+
+`engineering_team_expansion` gains `company_site`. It named `ats_boards`, `trade_press` and
+`company_data_providers` — a paused source and two that ignore companies this size — so on this book
+it had no live route to the one page that lists its evidence.
+
+### Local business journals: tested, rejected
+
+The document proposed widening `trade_press` to regional press for companies national wires ignore.
+A/B'd through the Try panel against three accounts, same day, one field moved:
+
+```
+A (national wires)  3 passages — all PR Newswire
+B (+ local press)   2 passages — a regional paper reprint and a trade blog
+```
+
+Both brokerages returned nothing either way. B traded a wire citation for a reprint of the same
+story. **Not applied** — and this is the second time the harness has paid for itself by refusing
+something plausible.
+
+### Aggregated LinkedIn tenure shifts: not obtainable this way
+
+Asked whether Google X-Ray could give department-level hiring velocity. It cannot, and the reason is
+structural: a `/in` profile **carries no date in the index**. Only `/posts` yields one, from the
+activity id's top 41 bits. X-Ray can establish that a Senior Engineer exists at a company; it cannot
+establish that they arrived in March, and the arrival is the entire signal.
+
+**The signal is reachable from a different direction, and it generalises.** For a company that
+announces nothing, the signal is not an event but a *change in a static page* — and a change needs
+us to have looked before. Three engineering roles appearing on `/careers` between March and June is
+department-level hiring velocity, from a page now fetched for free, with no credential and no
+terms-of-service exposure.
+
+**The data model already supports it.** `evidence.source_hash` is keyed on URL and title and is
+documented "deliberately not unique", so every observation of one page shares it. `excerpt_hash` is
+keyed on URL and normalised text, so a page whose contents changed stores a new row rather than
+deduplicating away. The grouping key and the version key both exist already. Nothing computes the
+diff.
+
+Three things would be needed: re-reading on a cadence rather than skipping inside the freshness
+window, a step turning two observations of one `source_hash` into a change passage, and a signal
+type whose evidence is that diff. One mechanism — **a date we supply, where the source gives none** —
+would cover hiring velocity, leadership change, infrastructure change and headcount drift. Recorded
+here as the shape of the answer; not built.
+
+Backend 1,789 pass.
+
+`services/site_sweep.py`, `alembic f2c8b4e71a93`, `tests/test_job_boards.py`.

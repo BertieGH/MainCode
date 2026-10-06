@@ -569,13 +569,14 @@ class TestWorkday:
 # --------------------------------------------------------------------------
 NO_FEED_HOME = '<html><body><h1>Meridian</h1><p>Insurance brokerage.</p></body></html>'
 
-TRUST_PAGE = (
-    "<html><body><nav>Skip to main content</nav><h1>Trust and security</h1>"
-    "<p>Meridian completed its SOC 2 Type II audit in March 2026 and is "
-    "pursuing ISO 27001 certification, with the assessment scheduled to "
-    "conclude in the fourth quarter. Our HIPAA compliance programme covers "
-    "all employee benefits administration, and we publish an annual summary "
-    "of controls for broker partners and carriers who request one.</p>"
+CAREERS_PAGE = (
+    "<html><body><nav>Skip to main content</nav><h1>Careers at Meridian</h1>"
+    "<p>We are hiring a Senior Benefits Analyst, a Client Service Manager and "
+    "two Account Executives across our Portland and Boise offices. The "
+    "Benefits Analyst role requires three years on Applied Epic and comfort "
+    "moving historical policy data out of it; experience with Vertafore AMS360 "
+    "is an advantage. All roles are hybrid and report to the Director of "
+    "Operations.</p>"
     "<footer>© Meridian</footer></body></html>"
 )
 
@@ -583,10 +584,16 @@ TRUST_PAGE = (
 class TestTheSubPathFallback:
     """Read the conventional pages when there is no feed.
 
-    `company_site` is a feed reader. A compliance deadline lives on `/security`
-    or `/trust` and is never in a feed even on a site that has one — which is
-    why no prompt wording could have produced a
-    `compliance_security_deadline` from it.
+    `company_site` is a feed reader, and the pages that matter most to a small
+    company are never in a feed. Open roles are the clearest case: a
+    twenty-person broker runs no applicant-tracking board — `ats_boards` is
+    paused at 26 attempts and no evidence — but it has a `/careers` page, and
+    that page names both the roles and the platform they are hiring around.
+
+    `/security`, `/trust` and `/compliance` were read here too, for
+    `compliance_security_deadline`. Dropped: that type produced nothing on this
+    book and each miss cost an eight-second timeout on every account without
+    such a page. It keeps its other routes.
 
     A fallback, not the first choice: a feed is dated, bounded and meant to be
     read by a machine. The other route to these pages is a search with `site:`
@@ -596,21 +603,24 @@ class TestTheSubPathFallback:
     async def test_pages_are_read_when_no_feed_answers(self):
         http = FakeClient({
             "https://meridian.test/": NO_FEED_HOME,
-            "https://meridian.test/trust": TRUST_PAGE,
+            "https://meridian.test/careers": CAREERS_PAGE,
         })
         result = await site_sweep.sweep_account(
             account(domain="meridian.test"), http=http
         )
 
         assert result.batch.evidence, "no feed and no pages read"
-        assert "SOC 2 Type II" in result.batch.evidence[0].excerpt
+        # The platform named in a job advert, which is the thing this page is
+        # read for: a role asking for three years on Applied Epic is evidence
+        # that system is still running, and no feed would ever have carried it.
+        assert "Applied Epic" in result.batch.evidence[0].excerpt
 
     async def test_the_route_is_named_so_the_two_can_be_compared(self):
         """The whole point of keeping both. Without a marker, "which worked
         better" is a question nobody can answer from the data."""
         http = FakeClient({
             "https://meridian.test/": NO_FEED_HOME,
-            "https://meridian.test/trust": TRUST_PAGE,
+            "https://meridian.test/careers": CAREERS_PAGE,
         })
         result = await site_sweep.sweep_account(
             account(domain="meridian.test"), http=http
@@ -635,7 +645,7 @@ class TestTheSubPathFallback:
                 'href="/feed"></head><body>Meridian</body></html>'
             ),
             "https://meridian.test/feed": feed,
-            "https://meridian.test/trust": TRUST_PAGE,
+            "https://meridian.test/careers": CAREERS_PAGE,
         })
         result = await site_sweep.sweep_account(
             account(domain="meridian.test"), http=http
@@ -643,7 +653,7 @@ class TestTheSubPathFallback:
 
         assert result.batch.evidence, "the feed itself should have been read"
         assert "read_pages" not in result.notes
-        assert not any("/trust" in u for u in http.asked)
+        assert not any("/careers" in u for u in http.asked)
 
     async def test_a_script_shell_is_not_stored_as_evidence(self):
         """Otherwise "Skip to main content" is filed as a fact about the
@@ -663,7 +673,7 @@ class TestTheSubPathFallback:
         put today on a company's entire history."""
         http = FakeClient({
             "https://meridian.test/": NO_FEED_HOME,
-            "https://meridian.test/trust": TRUST_PAGE,
+            "https://meridian.test/careers": CAREERS_PAGE,
         })
         result = await site_sweep.sweep_account(
             account(domain="meridian.test"), http=http
@@ -676,7 +686,7 @@ class TestTheSubPathFallback:
         conventional spellings does not have them."""
         pages = {"https://meridian.test/": NO_FEED_HOME}
         for path in site_sweep.PAGE_PATHS:
-            pages[f"https://meridian.test{path}"] = TRUST_PAGE
+            pages[f"https://meridian.test{path}"] = CAREERS_PAGE
         http = FakeClient(pages)
         result = await site_sweep.sweep_account(
             account(domain="meridian.test"), http=http
