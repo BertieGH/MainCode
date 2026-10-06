@@ -3636,3 +3636,72 @@ Backend 1,799 pass; front end 351 pass; `ng build` exit 0.
 
 `api/config.py`, `core/config.service.ts`, `settings/icp-editor.component.ts`,
 `tests/test_research_config.py` (+3), `settings/icp-editor.component.spec.ts`.
+
+## §86 — The data desert was a column-mapping miss (2026-10-06)
+
+Given an Apollo account export to test a vendor against, and the file answered a bigger question than
+the one it was handed over for.
+
+**Apollo's coverage of this book, as exported:**
+
+```
+# Employees            57/57  100%
+Company Linkedin Url   57/57  100%
+Industry               57/57  100%
+Technologies           54/57   94%
+Founded Year           52/57   91%
+Annual Revenue         26/57   45%
+Latest Funding          5/57    8%
+Total Funding           2/57    3%
+```
+
+**Then: importing that file silently drops three of them.** `suggest_mapping` matches exactly on the
+lowered header, and three of Apollo's own names were in no alias list:
+
+```
+MISS employee_count  ← '# Employees'      (57/57 populated)
+MISS hq_country      ← 'Company Country'
+MISS hq_region       ← 'Company State'
+```
+
+§83 reported that 49 of 57 accounts carried no headcount and read it as the data desert — the premise
+of three days of work on where to find facts about small companies. **It was not a desert.** The file
+had all 57. The import dropped them on a column name, and resolution later *paid Apollo per account*
+to recover eight of the numbers already sitting in the file.
+
+Silent is what made it expensive. A dropped headcount reads downstream as a company nobody could
+size, which is indistinguishable from one Apollo has never heard of, because `sizing.band_for`
+refuses to guess by design (§-noted: "an account imported with no headcount is not small; it is
+unmeasured"). So the whole book scored on base weights and looked like an absence of data rather than
+an absence of mapping.
+
+Aliases widened, and a regression test added under the headers Apollo actually emits.
+
+### What it does to the vendor question
+
+It mostly answers it. The case for NinjaPear rested on its Employee Count endpoint; **Apollo already
+has a headcount for every account on this book.** There is no coverage gap to fill, and the
+comparison needed no API key and no credits to settle.
+
+The funding gap is real — 3% — but it is not a data gap either. `funding_growth_milestone`'s own
+description says *"For technology companies; a brokerage does not raise rounds."* Three per cent is
+the truth about the book, and no vendor improves on the truth.
+
+The $10–50M band is ten companies of 15–38 staff, which is also the answer to what "mid-market" means
+here in headcount terms.
+
+### Still open, and now the only live question
+
+`Technologies` is populated for 54 of 57 and carries real signal — **Adobe ColdFusion** on one
+account, alongside Salesforce, DocuSign, Atlassian and KnowBe4 — mixed in with web boilerplate
+(Viewport Meta, Open Graph, HSTS) that is noise. `tech_debt_modernization` and
+`tech_stack_expansion` currently look for exactly this through `company_data_providers`, which has
+never run. The column has no mapping and no column to map to; separating the signal from the
+boilerplate is the work, and it is worth doing before paying anybody for stack detection.
+
+And the SERP question is untouched: whether Google's index holds anything for the *people* at a
+twenty-five person brokerage. `scripts/trial_serp.py` is written and waits on a token.
+
+Backend 1,802 pass.
+
+`services/csv_import.py`, `tests/test_contact_import.py` (+3).

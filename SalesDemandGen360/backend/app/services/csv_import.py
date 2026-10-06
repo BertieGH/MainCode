@@ -33,13 +33,26 @@ ACCOUNT_ALIASES: dict[str, tuple[str, ...]] = {
              "organization"),
     "domain": ("domain", "website", "url", "company domain", "web"),
     "industry": ("industry", "sector", "vertical"),
-    "employee_count": ("employees", "employee count", "headcount", "size", "employee_count"),
-    "hq_country": ("country", "hq country", "location country"),
-    "hq_region": ("region", "state", "hq region", "province"),
+    # `# employees`, `company country` and `company state` are what an **Apollo
+    # account export** calls these, and matching is exact on the lowered
+    # header — so a real export of 57 accounts imported with no headcount at
+    # all, no country and no region, in silence. Resolution then paid Apollo
+    # per account for numbers that were already in the file.
+    #
+    # Silent is the problem. A dropped column reads downstream as a company
+    # nobody could size, which is indistinguishable from one Apollo has never
+    # heard of — and `sizing.band_for` deliberately refuses to guess, so the
+    # whole book scored on base weights and looked like a data desert.
+    "employee_count": ("employees", "employee count", "headcount", "size", "employee_count",
+                       "# employees", "number of employees", "num employees",
+                       "employee range", "company size"),
+    "hq_country": ("country", "hq country", "location country", "company country"),
+    "hq_region": ("region", "state", "hq region", "province", "company state",
+                  "company region"),
     # Deliberately company-scoped. A bare "linkedin" column is claimed by the
     # contact mapping below — see `classify_linkedin`.
     "linkedin_url": ("company linkedin", "company linkedin url", "organization linkedin"),
-    "funding_stage": ("funding", "funding stage", "stage"),
+    "funding_stage": ("funding", "funding stage", "stage", "latest funding"),
 }
 
 #: Person columns. Their presence is what makes a file contact-grain.

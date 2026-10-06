@@ -366,3 +366,53 @@ class TestFiveContactsForOneCompany:
         )
         report = await self._run(session, list_id, rows)
         assert report.counts.get("skipped_no_contact") == 1
+
+
+class TestAnApolloAccountExportImportsWholly:
+    """A real Apollo export, under the names Apollo actually uses.
+
+    Matching is exact on the lowered header, and three of Apollo's names were
+    in no alias list: `# Employees`, `Company Country`, `Company State`. So a
+    57-account export imported with **no headcount at all**, no country and no
+    region — in silence. Resolution then paid Apollo per account for numbers
+    that were already in the file, recovering eight of fifty-seven.
+
+    Silent is what made it expensive. A dropped headcount reads downstream as a
+    company nobody could size, which is indistinguishable from one Apollo has
+    never heard of — `sizing.band_for` refuses to guess, by design — so the
+    book scored on base weights and looked like a data desert rather than a
+    mapping miss.
+    """
+
+    HEADERS = [
+        "Company Name", "Company Name for Emails", "Account Stage", "Lists",
+        "# Employees", "Industry", "Account Owner", "Website",
+        "Company Linkedin Url", "Company City", "Company State",
+        "Company Country", "Technologies", "Total Funding", "Latest Funding",
+        "Annual Revenue", "Founded Year",
+    ]
+
+    def test_every_account_field_the_export_carries_is_mapped(self):
+        mapping = suggest_mapping(self.HEADERS)
+        assert mapping["name"] == "Company Name"
+        assert mapping["domain"] == "Website"
+        assert mapping["industry"] == "Industry"
+        assert mapping["employee_count"] == "# Employees"
+        assert mapping["hq_country"] == "Company Country"
+        assert mapping["hq_region"] == "Company State"
+        assert mapping["linkedin_url"] == "Company Linkedin Url"
+
+    def test_it_is_still_read_as_a_company_file(self):
+        """No person columns, so the grain must not flip. `Company Name for
+        Emails` is the kind of header that looks person-shaped and is not."""
+        mapping = suggest_mapping(self.HEADERS)
+        assert mapping.get("email") is None
+        assert mapping.get("first_name") is None
+        # The company LinkedIn column must stay on the account, never the
+        # person — the bug this module already guards against.
+        assert mapping["linkedin_url"] == "Company Linkedin Url"
+
+    def test_the_headcount_column_is_claimed_by_nothing_else(self):
+        mapping = suggest_mapping(self.HEADERS)
+        claimed = [f for f, col in mapping.items() if col == "# Employees"]
+        assert claimed == ["employee_count"], claimed
