@@ -122,27 +122,34 @@ describe('IcpEditorComponent', () => {
       expect(cmp.derivedSources().map((s) => s.key)).toEqual(['hiring']);
     });
 
-    it('unticking one excludes it without touching the signal type', () => {
-      /* The one thing the old list was good for: dropping a source that costs
-         more than it returns on this book, while the type keeps claiming it so
-         another ICP still gets it. */
+    it('reports what each place has returned for this ICP', () => {
+      /* The tick that switched a source off is gone. Whether a place earns its
+         keep differs by ICP and the signal list cannot say — so the panel
+         carries the numbers instead of a knob, and tuning happens by dropping
+         a signal or, through the API, an exclusion. */
       withSources({ signals_that_matter: ['funding', 'engineering_scaling'] });
-      cmp.toggleSource('hiring');
-      expect((emitted as Record<string, unknown>)['sources_excluded']).toEqual(['hiring']);
-      expect(cmp.isExcluded('hiring')).toBe(true);
-      expect(cmp.readSources().map((s) => s.key)).toEqual(['news']);
-      // Still derived, so it stays on screen with its tick cleared rather than
-      // vanishing — otherwise there is no way to put it back.
-      expect(cmp.derivedSources().map((s) => s.key)).toEqual(['news', 'hiring']);
+      expect(cmp.perfFor('news')).toBeNull();
+      cmp.performance.set([{
+        key: 'news', label: 'News', status: 'active', excluded: false,
+        expected_by: ['funding'], accounts: 4, evidence: 9, ran: 3, empty: 1,
+        failed: 0, last_read: null,
+      }]);
+      expect(cmp.perfFor('news')?.evidence).toBe(9);
+      expect(cmp.perfFor('hiring')).toBeNull();
     });
 
-    it('is omitted rather than written as an empty list', () => {
-      /* Absent means "nothing switched off". `[]` would say the same thing in
-         a way that looks like a decision somebody made. */
-      withSources({ signals_that_matter: ['funding'] });
-      cmp.toggleSource('news');
-      cmp.toggleSource('news');
-      expect('sources_excluded' in (emitted as Record<string, unknown>)).toBe(false);
+    it('still reads an exclusion the API holds, without offering to set one', () => {
+      /* `sources_excluded` survives in the backend and the screen honours it —
+         it just no longer writes it. A place switched off elsewhere must not
+         silently look live here. */
+      withSources({
+        signals_that_matter: ['funding', 'engineering_scaling'],
+        sources_excluded: ['hiring'],
+      });
+      expect(cmp.isExcluded('hiring')).toBe(true);
+      expect(cmp.readSources().map((s) => s.key)).toEqual(['news']);
+      // And it is still listed, so a reader can see why it is not being read.
+      expect(cmp.derivedSources().map((s) => s.key)).toEqual(['news', 'hiring']);
     });
 
     it('counts the exception searches on top of the sources', () => {

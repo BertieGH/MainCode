@@ -3574,3 +3574,65 @@ the suite passes while testing a registry production does not have.
 Backend 1,796 pass; front end 351 pass; `ng build` exit 0.
 
 `alembic b3d7f05e91c4`, `services/query_families.py`, `settings/icp-editor.component.ts`.
+
+## §85 — The deny tick becomes a feedback panel (2026-10-05)
+
+*"Do I need ICP-wise deny source? The signal type is linked to source, so if I include a signal that
+should use the source it is designed to look [in]."* Then, a minute later: *"if not, the search may
+not be perfect."*
+
+Both halves are right, and together they rule out the two simple answers.
+
+**Removing the deny outright is wrong**, for the reason the second message gives: a source can be
+right for a signal and wrong for a *book*. `tech_debt_modernization` reading a technology directory
+earns its call at a software company and returns nothing at a twenty-person broker. The signal list
+cannot express that — it is per-type, and this is per-ICP.
+
+**Keeping it as a tick was also wrong**, and measurably so. Asked what any single exclusion would do
+to the current registry:
+
+```
+denying company_data_providers  → strands funding_growth_milestone, tech_stack_expansion
+denying trade_press             → strands leadership_change_executive
+```
+
+A chosen signal with nothing left to read it from is §80 again — configured, selected, and unable to
+produce anything — reintroduced per ICP and invisible. Worse, the exclusion's own motivating example
+now inverts: `d1a7e9c45b82` dropped `funding` and `tech_stack` for cost, and those two merged into
+`company_data_providers`, so making that same decision today would strand the only two types that
+had ever produced a signal.
+
+### What it is instead
+
+The tick is gone from the screen. In its place, an accordion: every derived source, what it has
+actually returned **for the accounts on this ICP's lists**, and the signal types that expect it.
+
+A knob was a blunt answer to a question nobody had the evidence for. Whether a place earns its keep
+differs by ICP, and only that ICP's numbers can say — so the panel carries the numbers and the
+tuning happens where the consequence is visible: drop the signal, or set `sources_excluded` through
+the API, which still honours it.
+
+`GET /config/icp-profiles/{id}/source-performance` joins coverage to the ICP through
+`account_list_member` and `account_list_icp`. Read from coverage rather than evidence, for the reason
+`sources.health` gives: the interesting case is a source that was read and gave nothing, which no
+evidence row can express. A source tried five times across the ICP with nothing to show says so in
+words, because that is the moment to drop a signal.
+
+### The guard stays, where it is enforced
+
+`PUT /icp-profiles/{id}` refuses an exclusion that would strand a chosen signal, naming it:
+
+```
+this would leave funding_growth_milestone, tech_stack_expansion with no source it can be
+found in, so the signal could never fire. Drop the signal instead, or leave one of its
+places on.
+```
+
+Only *live* sources count — a type whose remainder is paused is stranded just as surely as one with
+none left. The UI's copy of that check went with the tick: duplicating a rule in the place that no
+longer offers the action is how the two drift.
+
+Backend 1,799 pass; front end 351 pass; `ng build` exit 0.
+
+`api/config.py`, `core/config.service.ts`, `settings/icp-editor.component.ts`,
+`tests/test_research_config.py` (+3), `settings/icp-editor.component.spec.ts`.

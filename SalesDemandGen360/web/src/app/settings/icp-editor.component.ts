@@ -4,7 +4,9 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { ConfigService, ResearchSource, SignalType } from '../core/config.service';
+import {
+  ConfigService, IcpSourcePerformance, ResearchSource, SignalType,
+} from '../core/config.service';
 import { IconComponent } from '../shared/icon.component';
 
 /**
@@ -375,18 +377,20 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
              question — and the planner let it win, which is how a source three
              types claimed never ran while one nothing claimed ran anyway. The
              ticks here *subtract*. -->
+        <!-- Read-only, on purpose. Sources are derived from the signals above,
+             so there is nothing to choose here — and whether a place earns its
+             keep differs by ICP, which only its own numbers can answer. This
+             replaced a tick that switched a source off: a knob was a blunt
+             answer to a question nobody had the evidence for. The capability
+             survives in the API for when the evidence says to use it. -->
         <div *ngIf="f.kind === 'sources'" class="chips-wrap">
           <div class="sec-head" style="margin-bottom:8px;">
             <span class="row-sub">
               <ng-container *ngIf="derivedSources().length; else noSignals">
-                <strong>{{ readSources().length }}</strong> of
-                {{ derivedSources().length }} read per account
+                <strong>{{ derivedSources().length }}</strong>
+                place{{ derivedSources().length === 1 ? '' : 's' }} read per account
                 <span *ngIf="extraSearches()"> · {{ extraSearches() }} extra
                   search{{ extraSearches() === 1 ? '' : 'es' }} from exceptions</span>
-                <!-- An ICP naming no signals does not narrow research, it
-                     widens it: the planner reads "none chosen" as "every active
-                     type". The list below is then true and looks like a choice
-                     nobody made, so it says which it is. -->
                 <em *ngIf="!signalsChosen()" style="display:block;font-style:normal;">
                   No signals chosen above, so this is every active type — research would
                   read all of these. Choose signals to narrow it.
@@ -398,29 +402,42 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
             </span>
           </div>
 
-          <div class="fam-grid">
-            <label class="fam" *ngFor="let src of derivedSources()"
-                   [class.fam-on]="!isExcluded(src.key)"
-                   [title]="src.description">
-              <input type="checkbox"
-                     [checked]="!isExcluded(src.key)"
-                     (change)="toggleSource(src.key)">
-              <span>
-                {{ src.label }}
-                <em class="row-sub" style="display:block;font-style:normal;">
-                  <ng-container *ngIf="sourceReason(src.key) as r">{{ r }}</ng-container>
-                </em>
+          <details class="src" *ngFor="let src of derivedSources()">
+            <summary>
+              <span class="src-name">{{ src.label }}</span>
+              <span class="row-sub src-fig" *ngIf="perfFor(src.key) as p">
+                <ng-container *ngIf="p.accounts; else unread">
+                  {{ p.evidence }} passage{{ p.evidence === 1 ? '' : 's' }} ·
+                  {{ p.accounts }} account{{ p.accounts === 1 ? '' : 's' }} ·
+                  {{ p.empty }} empty<span *ngIf="p.failed"> · {{ p.failed }} failed</span>
+                </ng-container>
+                <ng-template #unread>not read yet</ng-template>
               </span>
-            </label>
-          </div>
-
-          <p class="row-sub" style="margin-top:8px;">
-            Untick one to stop paying for it on this ICP without removing it from the signal
-            type — which is how <code>funding</code> and <code>tech_stack</code> were dropped
-            for a book of brokerages, sixteen calls for one passage, while staying available
-            to a technology ICP.
-          </p>
-
+              <span class="badge badge-warn" *ngIf="src.status !== 'active'">{{ src.status }}</span>
+              <span class="badge badge-neutral" *ngIf="isExcluded(src.key)">off for this ICP</span>
+            </summary>
+            <div class="src-body">
+              <p class="row-sub" style="margin:0 0 6px;">{{ src.description }}</p>
+              <p class="row-sub" style="margin:0;">
+                Read because <strong>{{ sourceReason(src.key) || 'a signal above names it' }}</strong>.
+              </p>
+              <p class="row-sub" *ngIf="perfFor(src.key) as p" style="margin:6px 0 0;">
+                <ng-container *ngIf="p.accounts; else nothingYet">
+                  Read at {{ p.accounts }} account{{ p.accounts === 1 ? '' : 's' }} on this
+                  ICP's lists: {{ p.ran }} returned something, {{ p.empty }} looked and found
+                  nothing<span *ngIf="p.failed">, {{ p.failed }} failed</span>.
+                  <span *ngIf="!p.evidence && p.ran + p.empty >= 5">
+                    Tried enough to judge and produced nothing — worth dropping the signal that
+                    expects it, or changing what that signal looks for.
+                  </span>
+                </ng-container>
+                <ng-template #nothingYet>
+                  Nothing read here yet for this ICP. The numbers appear once its lists are
+                  researched, and they are what says whether this place is worth the call.
+                </ng-template>
+              </p>
+            </div>
+          </details>
         </div>
 
         <!-- range -->
@@ -508,6 +525,17 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
          list to work through; a row reads as the choice it is, and the two
          descriptions can be compared without scanning past one to reach the
          other. Wraps back to a column when there is no width for it. */
+      /* A source reads as a row you can open, not a box you tick. The summary
+         carries the figure that decides whether it is earning its place; the
+         body carries why it is read at all. */
+      .src { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; }
+      .src > summary { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+                       padding: 7px 10px; cursor: pointer; font-size: .86rem; }
+      .src > summary::marker { color: var(--muted, #888); }
+      .src[open] > summary { border-bottom: 1px solid var(--line); }
+      .src-name { font-weight: 600; }
+      .src-fig { margin-left: auto; font-variant-numeric: tabular-nums; }
+      .src-body { padding: 9px 10px; }
       .choices { display: flex; flex-wrap: wrap; gap: 8px; }
       .choice { display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
                 border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
@@ -628,6 +656,9 @@ export class IcpEditorComponent implements OnInit {
   @Input() profileId: string | null = null;
 
   allSources = signal<ResearchSource[]>([]);
+  /** Measured per ICP, because whether a place earns its keep differs by
+   *  book — and only its own numbers can say so. */
+  performance = signal<IcpSourcePerformance[]>([]);
   signalTypes = signal<SignalType[]>([]);
 
   /**
@@ -686,13 +717,9 @@ export class IcpEditorComponent implements OnInit {
     return (this.chips['sources_excluded'] ?? []).includes(key);
   }
 
-  /** The tick means "read this", so toggling it writes the *exclusion*. */
-  toggleSource(key: string): void {
-    const off = this.chips['sources_excluded'] ?? [];
-    this.chips['sources_excluded'] = off.includes(key)
-      ? off.filter((k) => k !== key)
-      : [...off, key];
-    this.emit();
+  /** What this source has returned for this ICP, once anything has been read. */
+  perfFor(key: string): IcpSourcePerformance | null {
+    return this.performance().find((p) => p.key === key) ?? null;
   }
 
   /**
@@ -754,9 +781,20 @@ export class IcpEditorComponent implements OnInit {
       error: () => this.signalTypesFailed.set(true),
     });
     this.api.researchSources().subscribe({
-      next: (rows) => this.allSources.set(rows.filter((r) => r.status === 'active')),
+      // Paused rows are kept: a signal may still name one, and the panel says
+      // so rather than leaving a place a reader can see in the registry but
+      // not here.
+      next: (rows) => this.allSources.set(rows),
       error: () => undefined,
     });
+    if (this.profileId) {
+      this.api.icpSourcePerformance(this.profileId).subscribe({
+        // Silent on failure. It is a panel of numbers beside an editor that
+        // must keep working without them.
+        next: (rows) => this.performance.set(rows),
+        error: () => undefined,
+      });
+    }
   }
 
   /** A known type's scope. A type that arrives without one reads as company. */

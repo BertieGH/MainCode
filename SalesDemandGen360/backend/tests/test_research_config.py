@@ -216,3 +216,102 @@ class TestASignalTypeThatCannotFireSaysSo:
         await self._icp(None)
         rows = (await api.get(self.TYPES)).json()
         assert rows and all(r["extractable"] is True for r in rows)
+
+
+class TestAnExclusionCannotStrandASignal:
+    """Excluding a source is the one way to say "this place is wrong for *this*
+    book" — reading a technology directory is worth paying for at a software
+    company and worthless at a twenty-person broker, and the signal list cannot
+    express that.
+
+    What it must not do is switch off the last place a chosen signal has. That
+    is §80 reintroduced per ICP and invisible: a type configured, selected, and
+    unable to produce anything. Refused rather than warned, because the state
+    has no use — if the signal is unwanted here, the signal is what to drop,
+    and then its sources are not derived at all.
+    """
+
+    ICPS = "/api/config/icp-profiles"
+
+    async def _setup(self, *, produced_by: dict[str, list[str]]) -> str:
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        async with engine.begin() as conn:
+            for key, sources in produced_by.items():
+                await conn.execute(
+                    text(
+                        "INSERT INTO signal_type (key, label, description, scope, "
+                        " default_ttl_days, weight, produced_by, kind, status) "
+                        "VALUES (:k, :k, 'x', 'company', 90, 1.0, :p, 'event', 'active') "
+                        "ON CONFLICT (key) DO UPDATE SET produced_by = EXCLUDED.produced_by"
+                    ).bindparams(k=key, p=sources)
+                )
+            profile = (
+                await conn.execute(text("SELECT id FROM icp_profile LIMIT 1"))
+            ).scalar_one_or_none() or (
+                await conn.execute(
+                    text(
+                        "INSERT INTO icp_profile (name, description) "
+                        "VALUES ('T','T') RETURNING id"
+                    )
+                )
+            ).scalar_one()
+        await engine.dispose()
+        return str(profile)
+
+    async def test_the_last_live_source_cannot_be_switched_off(self, api):
+        profile = await self._setup(produced_by={"only_one_place": ["company_site"]})
+        r = await api.put(
+            f"{self.ICPS}/{profile}",
+            json={"definition": {
+                "signals_that_matter": ["only_one_place"],
+                "sources_excluded": ["company_site"],
+            }},
+        )
+        assert r.status_code == 422, r.text
+        assert "only_one_place" in r.json()["detail"]
+        assert "could never fire" in r.json()["detail"]
+
+    async def test_a_source_the_signal_can_do_without_is_allowed(self):
+        """The whole point of keeping exclusions. A type with somewhere else to
+        look loses a place it was not getting value from, and keeps firing."""
+        # Exercised through the service rather than the fixture's client so the
+        # two signal types below cannot collide with another test's registry.
+        from app.api.config import _stranded_by_exclusions
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        await self._setup(produced_by={"two_places": ["company_site", "trade_press"]})
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            stranded = await _stranded_by_exclusions(
+                session,
+                {"signals_that_matter": ["two_places"], "sources_excluded": ["company_site"]},
+            )
+        await engine.dispose()
+        assert stranded == set()
+
+    async def test_a_paused_remainder_does_not_count_as_somewhere_to_look(self):
+        """A type whose only other source is paused is stranded just as surely
+        as one with none left — so the check reads live sources, not claimed."""
+        from app.api.config import _stranded_by_exclusions
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        await self._setup(produced_by={"other_is_paused": ["company_site", "ats_boards"]})
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE research_source SET status='paused' WHERE key='ats_boards'")
+            )
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            stranded = await _stranded_by_exclusions(
+                session,
+                {
+                    "signals_that_matter": ["other_is_paused"],
+                    "sources_excluded": ["company_site"],
+                },
+            )
+        await engine.dispose()
+        assert stranded == {"other_is_paused"}

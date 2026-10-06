@@ -286,6 +286,16 @@ async def put_icp_definition(
     if profile is None:
         raise HTTPException(404, "no such ICP")
 
+    stranded = await _stranded_by_exclusions(session, payload.definition)
+    if stranded:
+        raise HTTPException(
+            422,
+            "this would leave "
+            + ", ".join(sorted(stranded))
+            + " with no source it can be found in, so the signal could never fire. "
+            "Drop the signal instead, or leave one of its places on.",
+        )
+
     current = (
         await session.execute(
             select(func.max(IcpProfileVersion.version)).where(
@@ -1793,6 +1803,155 @@ def _annotate(
         if wanted is not None:
             row.extractable = row.key in wanted
     return rows
+
+
+@router.get("/icp-profiles/{profile_id}/source-performance")
+async def icp_source_performance(
+    profile_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
+    """What each source has actually returned for the accounts on this ICP.
+
+    The ICP decides which signals matter; the signals decide which places get
+    read. What neither says is whether a place is *earning* it here — and that
+    answer differs by ICP, which is the whole reason it is worth asking. A
+    technology directory is worth paying for at a software company and
+    worthless at a twenty-person broker, and only the numbers for *this* book
+    can say so.
+
+    Read, never written. It replaces a tick that switched a source off: a knob
+    is a blunt answer to a question nobody had the evidence for, and the
+    evidence is the better answer. Tuning still happens — by dropping a signal,
+    or through `sources_excluded`, which the API still honours.
+
+    Coverage rather than evidence, for the reason `sources.health` gives: the
+    interesting case is the source that was read and gave nothing, which no
+    evidence row can express.
+    """
+    version = (
+        await session.execute(
+            select(IcpProfileVersion).where(
+                IcpProfileVersion.icp_profile_id == profile_id,
+                IcpProfileVersion.is_active.is_(True),
+            )
+        )
+    ).scalars().first()
+    definition = (version.definition if version else None) or {}
+    wanted = {
+        k for k in (definition.get("signals_that_matter") or []) if isinstance(k, str)
+    }
+    excluded = {
+        k for k in (definition.get("sources_excluded") or []) if isinstance(k, str)
+    }
+
+    types = list(
+        (
+            await session.execute(select(SignalType).where(SignalType.status == "active"))
+        ).scalars()
+    )
+    in_play = [t for t in types if not wanted or t.key in wanted]
+    expects: dict[str, list[str]] = {}
+    for row in in_play:
+        for key in row.produced_by or []:
+            expects.setdefault(key, []).append(row.key)
+
+    # Accounts reached through this ICP's lists. An account on no list the ICP
+    # is worked for has nothing to say about it.
+    measured = (
+        await session.execute(
+            text(
+                "SELECT c.family, "
+                "       COUNT(DISTINCT c.account_id) AS accounts, "
+                "       COALESCE(SUM(c.evidence_count), 0) AS evidence, "
+                "       COUNT(*) FILTER (WHERE c.status = 'ran') AS ran, "
+                "       COUNT(*) FILTER (WHERE c.status = 'empty') AS empty, "
+                "       COUNT(*) FILTER (WHERE c.status = 'failed') AS failed, "
+                "       MAX(c.created_at) AS last_read "
+                "  FROM research_coverage c "
+                "  JOIN account_list_member m ON m.account_id = c.account_id "
+                "  JOIN account_list_icp l ON l.list_id = m.list_id "
+                " WHERE l.icp_profile_id = :icp "
+                " GROUP BY c.family"
+            ).bindparams(icp=profile_id)
+        )
+    ).mappings().all()
+    by_family = {row["family"]: row for row in measured}
+
+    registry = {s.key: s for s in await source_service.all_sources(session)}
+    out = []
+    for key in sorted(expects):
+        source = registry.get(key)
+        seen = by_family.get(key)
+        out.append(
+            {
+                "key": key,
+                "label": source.label if source else key,
+                "status": source.status if source else "unknown",
+                "excluded": key in excluded,
+                "expected_by": sorted(expects[key]),
+                "accounts": int(seen["accounts"]) if seen else 0,
+                "evidence": int(seen["evidence"]) if seen else 0,
+                "ran": int(seen["ran"]) if seen else 0,
+                "empty": int(seen["empty"]) if seen else 0,
+                "failed": int(seen["failed"]) if seen else 0,
+                "last_read": seen["last_read"] if seen else None,
+            }
+        )
+    return out
+
+
+async def _stranded_by_exclusions(session: AsyncSession, definition: dict) -> set[str]:
+    """Signal types this definition would leave with nowhere to be found.
+
+    Excluding a source is the one way to say "this place is wrong for *this*
+    book" — `tech_debt_modernization` reading BuiltWith is worth paying for at
+    a software company and worthless at a twenty-person broker, and the signal
+    list cannot express that.
+
+    What it must not do is switch off the last place a chosen signal has. That
+    is §80 again, reintroduced per ICP and invisible: a type configured,
+    selected, and unable to produce anything. Refused rather than warned,
+    because the state has no use — if the signal is not wanted here, the signal
+    is what to drop, and then its sources are not derived at all.
+
+    Only *live* sources count. A type whose remaining source is paused is
+    stranded just as surely as one with none left.
+    """
+    excluded = {
+        key
+        for key in (definition.get("sources_excluded") or [])
+        if isinstance(key, str)
+    }
+    if not excluded:
+        return set()
+
+    live = {
+        row.key
+        for row in (
+            await session.execute(
+                select(ResearchSource).where(ResearchSource.status == "active")
+            )
+        ).scalars()
+    }
+    wanted = {
+        key
+        for key in (definition.get("signals_that_matter") or [])
+        if isinstance(key, str)
+    }
+    types = (
+        await session.execute(select(SignalType).where(SignalType.status == "active"))
+    ).scalars()
+
+    stranded = set()
+    for row in types:
+        # An empty `signals_that_matter` means every active type, which is what
+        # the planner does with it — so the check has to agree or it would pass
+        # a definition the planner then breaks.
+        if wanted and row.key not in wanted:
+            continue
+        claimed = set(row.produced_by or ())
+        if claimed and not (claimed & live) - excluded:
+            stranded.add(row.key)
+    return stranded
 
 
 async def _wanted_types(session: AsyncSession) -> set[str] | None:

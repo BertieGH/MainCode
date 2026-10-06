@@ -155,6 +155,25 @@ export interface SourceTrial {
   trials: AccountTrial[];
 }
 
+/** What one source has returned for the accounts on one ICP. */
+export interface IcpSourcePerformance {
+  key: string;
+  label: string;
+  status: string;
+  /** Switched off for this ICP. Still settable through the API; no longer a
+   *  control on the screen, because the numbers are the better answer. */
+  excluded: boolean;
+  /** The signal types that say their fact lives here. */
+  expected_by: string[];
+  accounts: number;
+  evidence: number;
+  ran: number;
+  /** Read and gave nothing — the case no evidence row can express. */
+  empty: number;
+  failed: number;
+  last_read: string | null;
+}
+
 export interface ResearchSource {
   id: string;
   key: string;
@@ -563,6 +582,18 @@ export class ConfigService {
    * signals — but the model calls are real, which is why the server caps the
    * sample.
    */
+  /**
+   * What each source has actually returned for this ICP's accounts.
+   *
+   * Read-only. It replaced a tick that switched a source off: whether a place
+   * earns its keep differs by ICP, and only the numbers for that book can say.
+   */
+  icpSourcePerformance(profileId: string): Observable<IcpSourcePerformance[]> {
+    return this.http.get<IcpSourcePerformance[]>(
+      `${this.base}/icp-profiles/${profileId}/source-performance`,
+    );
+  }
+
   tryResearchSource(body: SourceTrialRequest): Observable<SourceTrial> {
     return this.http.post<SourceTrial>(`${this.base}/research-sources/try`, body);
   }
