@@ -120,13 +120,29 @@ async def build_plan(
     scope: str | None = None,
     type_keys: set[str] | frozenset[str] | None = None,
     source_keys: set[str] | frozenset[str] | None = None,
+    exclude: set[str] | frozenset[str] = frozenset(),
 ) -> ResearchPlan:
-    """Derive the plan from the active registry, and from the ICP's sources.
+    """Derive the plan from the active registry and the chosen signal types.
 
-    `source_keys` is the ICP's accepted source set and takes precedence: those
-    sources run whether or not a signal type named them, because the ICP is
-    where a person decided what is worth reading. Without it the plan falls
-    back to the union of what the types claim.
+    **Normally the sources are derived**, as the union of `produced_by` across
+    the types in play, minus `exclude`. One list instead of two: a source is
+    read because a signal type says its fact lives there, which is the only
+    reason there has ever been.
+
+    The second list used to be the ICP's own, and it took precedence. That is
+    two gates with nothing reconciling them, and both directions failed within
+    one week — `linkedin_serp` was claimed by three types and never ran because
+    the ICP omitted it (§77), while `reviews` ran with no type claiming it at
+    all. Deriving makes both unrepresentable.
+
+    `exclude` keeps the one thing the second list was good for: cost control
+    per ICP. `d1a7e9c45b82` dropped `funding` and `tech_stack` for a book of
+    brokerages — sixteen calls for one passage — while keeping the types, so
+    they return the day a technology ICP exists. Subtracting says that without
+    letting the two lists disagree about what exists.
+
+    `source_keys` still forces an exact set, for callers that want to plan one
+    named source rather than an ICP's worth.
 
     Paused and deprecated types are excluded either way: pausing a type is
     meant to stop it being extracted, and running research for a source nothing
@@ -159,10 +175,11 @@ async def build_plan(
             key = f"{GROUP_SEARCH}{group}" if group else f"{TYPE_SEARCH}{st.key}"
             owned.setdefault(key, []).append(st)
 
-    # The ICP's sources run whether or not a type named them; sources a type
-    # named but the ICP left out do not. An ICP that says nothing keeps the old
-    # behaviour, which is the union of what the types claim.
-    planned_keys = set(source_keys) if source_keys is not None else set(feeds)
+    # Derived from what the types claim, less anything switched off. An
+    # explicit `source_keys` still wins, for callers planning one named source.
+    planned_keys = (set(source_keys) if source_keys is not None else set(feeds)) - set(
+        exclude
+    )
 
     # Sorted so two runs with the same registry produce the same plan. Set
     # iteration order would make the prompt built from this non-deterministic,
@@ -458,8 +475,10 @@ class ListPlan:
     icp_version_ids: list[str] = field(default_factory=list)
     #: Every signal type the ICPs care about — what extraction may return.
     wanted_types: tuple[str, ...] = ()
-    #: The sources the ICPs accepted, before scope split them into two plans.
-    #: Kept whole so a rep can be told what the list is set up to read.
+    #: Every source this list will actually read, across both scopes — derived
+    #: from the chosen signal types and then filtered by status, kind and
+    #: scope. Kept whole so a rep can be told what the list is set up to read,
+    #: and it is now the planned set rather than a wish list somebody ticked.
     source_keys: tuple[str, ...] = ()
     #: (name, definition) per ICP — what fit is computed against.
     icps: tuple[tuple[str, dict], ...] = ()
@@ -543,21 +562,22 @@ async def plan_for_list(session: AsyncSession, list_id: uuid.UUID) -> ListPlan:
         for key in (d.get("signals_that_matter") or [])
         if isinstance(key, str)
     }
-    chosen_sources = {
+    # Switched off for this ICP, not removed from the registry. The old
+    # `sources` key was an independent *inclusion* list that overrode what the
+    # types claimed; it is no longer read, because two lists with nothing
+    # reconciling them failed in both directions inside a week (§77, §81).
+    excluded = {
         key
         for d in definitions
-        for key in (d.get("sources") or [])
+        for key in (d.get("sources_excluded") or [])
         if isinstance(key, str)
     }
     keys = wanted or None
-    # `None` rather than an empty set: no ICP has accepted a source list yet,
-    # which is a different thing from one having accepted an empty one.
-    sources = chosen_sources or None
     company = await build_plan(
-        session, scope="company", type_keys=keys, source_keys=sources
+        session, scope="company", type_keys=keys, exclude=excluded
     )
     contact = await build_plan(
-        session, scope="contact", type_keys=keys, source_keys=sources
+        session, scope="contact", type_keys=keys, exclude=excluded
     )
     return ListPlan(
         company=company,
@@ -565,7 +585,11 @@ async def plan_for_list(session: AsyncSession, list_id: uuid.UUID) -> ListPlan:
         targets=target_personas(*definitions),
         icp_version_ids=[str(v.id) for v in versions],
         wanted_types=tuple(sorted(wanted)),
-        source_keys=tuple(sorted(chosen_sources)),
+        # What will actually be read, derived — rather than what somebody once
+        # ticked. Previously set from the ICP's own list and never read back.
+        source_keys=tuple(
+            sorted({f.family for f in (*company.families, *contact.families)})
+        ),
         icps=tuple(
             (names.get(v.icp_profile_id, "ICP"), v.definition or {}) for v in versions
         ),

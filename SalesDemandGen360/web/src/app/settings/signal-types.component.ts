@@ -164,18 +164,40 @@ function sameKeys(a: string[], b: string[]): boolean {
             <div class="fam-grid">
               <label class="fam" *ngFor="let f of sourcesFor(g.scope)"
                      [class.fam-on]="draft.produced_by.includes(f.key)"
+                     [class.fam-suggested]="suggested().has(f.key)"
                      [title]="f.description">
                 <input type="checkbox"
                        [checked]="draft.produced_by.includes(f.key)"
                        (change)="toggleFamily(f.key)">
                 <span>
                   {{ f.label }}
+                  <!-- Marked, not filtered. Every source stays listed so a rep
+                       can pick one the model did not think of, and the mark
+                       says which were its idea rather than theirs. -->
+                  <em *ngIf="suggested().has(f.key)" class="row-sub"
+                      style="display:block;font-style:normal;color:var(--accent);">
+                    suggested
+                  </em>
                   <em *ngIf="f.support_only" class="row-sub" style="display:block;font-style:normal;">
                     supports only — cannot create a signal alone
+                  </em>
+                  <!-- Shown rather than hidden. A type may already claim it,
+                       and hiding it left the chip on the row with no checkbox
+                       to untick. -->
+                  <em *ngIf="f.status !== 'active'" class="row-sub"
+                      style="display:block;font-style:normal;">
+                    {{ f.status }} — can be claimed, but will not run until resumed
                   </em>
                 </span>
               </label>
             </div>
+            <p class="row-sub" *ngIf="sourcesOutOfScope(g.scope).length" style="margin:6px 0 0;">
+              {{ sourcesFor(g.scope).length }} of
+              {{ sourcesFor(g.scope).length + sourcesOutOfScope(g.scope).length }} sources —
+              {{ sourcesOutOfScope(g.scope).join(', ') }}
+              {{ sourcesOutOfScope(g.scope).length === 1 ? 'reads' : 'read' }} the other scope
+              and {{ sourcesOutOfScope(g.scope).length === 1 ? 'is' : 'are' }} not offered here.
+            </p>
             <p class="row-sub" *ngIf="suggestWhy()" style="margin:8px 0 0;">
               {{ suggestWhy() }}
             </p>
@@ -463,6 +485,10 @@ function sameKeys(a: string[], b: string[]): boolean {
                               style="display:block;font-style:normal;">
                             supports only — cannot create a signal alone
                           </em>
+                          <em *ngIf="f.status !== 'active'" class="row-sub"
+                              style="display:block;font-style:normal;">
+                            {{ f.status }} — can be claimed, but will not run until resumed
+                          </em>
                         </span>
                       </label>
                     </div>
@@ -509,6 +535,10 @@ function sameKeys(a: string[], b: string[]): boolean {
                         border-radius: 7px; padding: 8px 10px; cursor: pointer; }
       .form-grid .fam input { margin-top: 2px; flex: none; }
       .fam-on { border-color: var(--accent); background: var(--accent-soft, transparent); }
+      /* A dashed edge for "the model proposed this", distinct from the solid
+         edge of "this is ticked". The two are independent: a suggestion can be
+         unticked, and anything else can be ticked without being suggested. */
+      .fam-suggested { border-style: dashed; border-color: var(--accent); }
       .cell-input { width: 82px; padding: 4px 7px; font-size: .8rem;
                     font-family: 'IBM Plex Mono', monospace; }
       /* The label is prose, not a figure — it gets room and the body font. */
@@ -558,6 +588,16 @@ export class SignalTypesComponent implements OnInit {
   suggestWhy = signal('');
   /** Places the model named that the registry does not have. Shown, not added. */
   newSources = signal<string[]>([]);
+  /**
+   * Which sources the last suggestion proposed.
+   *
+   * Separate from the ticks, and the picker still lists **every** source: a
+   * suggestion is a starting point about an unfamiliar registry, not a filter.
+   * Showing only what was suggested would hide the source a rep knows is right,
+   * and ticking without marking leaves them unable to tell their own choices
+   * from the model's — or to judge how good its last answer was.
+   */
+  suggested = signal<Set<string>>(new Set());
   draft = {
     key: '',
     label: '',
@@ -590,7 +630,13 @@ export class SignalTypesComponent implements OnInit {
   ngOnInit(): void {
     this.load();
     this.api.researchSources().subscribe({
-      next: (f) => this.sources.set(f.filter((r) => r.status === 'active')),
+      // Paused ones are kept. They used to be filtered out here, which left a
+      // picker shorter than the registry for no stated reason — and a type
+      // already claiming a paused source showed the chip with no checkbox to
+      // untick. `ats_boards` is paused and three types name it. Deprecated
+      // rows are excluded by the endpoint, which is the right place: those are
+      // gone, these are off.
+      next: (f) => this.sources.set(f),
       // A missing registry must not silently render an empty picker that looks
       // like "no sources apply".
       error: () => this.error.set('Could not load research sources.'),
@@ -599,6 +645,21 @@ export class SignalTypesComponent implements OnInit {
 
   sourcesFor(scope: Scope): ResearchSource[] {
     return this.sources().filter((f) => f.scopes.includes(scope));
+  }
+
+  /**
+   * The ones this scope cannot use, named rather than merely absent.
+   *
+   * A picker showing eight of nine with no explanation makes a reader count
+   * and wonder what is missing. `enrichment` looks up people, so it never
+   * appears for a company signal; the ATS and filing sources are the mirror
+   * image. Saying which turns a silent gap into a stated rule.
+   */
+  sourcesOutOfScope(scope: Scope): string[] {
+    return this.sources()
+      .filter((f) => !f.scopes.includes(scope))
+      .map((f) => f.label)
+      .sort();
   }
 
   briefFor(key: string): string {
@@ -627,6 +688,11 @@ export class SignalTypesComponent implements OnInit {
         next: (r) => {
           this.asking.set(false);
           this.draft.produced_by = r.sources;
+          // Recorded separately from the ticks so the two stay distinguishable.
+          // The suggestion is a proposal about an unfamiliar registry; ticking
+          // without saying which were the model's idea leaves a rep unable to
+          // tell their own choices from its, and unable to judge it next time.
+          this.suggested.set(new Set(r.sources));
           // Only offered into an empty box. Overwriting words a rep typed
           // would be the model editing them rather than helping.
           if (r.search_instruction && !this.draft.search_instruction.trim()) {
@@ -863,6 +929,11 @@ export class SignalTypesComponent implements OnInit {
       key: '', label: '', description: '', default_ttl_days: 90, weight: 1.0, produced_by: [],
       search_instruction: '', search_group: '', kind: 'event',
     };
+    // The marks belong to the draft that was asked about. Left behind, they
+    // would claim the model proposed something for a type it never saw.
+    this.suggested.set(new Set());
+    this.suggestWhy.set('');
+    this.newSources.set([]);
   }
 
   /** Group labels already in use, for the picker. */

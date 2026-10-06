@@ -180,15 +180,19 @@ const FACTORS: Factor[] = [
     optionsFrom: 'signal-types',
   },
   {
-    key: 'sources',
+    // Stores the *exclusions*. The places themselves are derived from the
+    // signals above, because each signal type already names where its fact
+    // lives and a second list could only ever contradict the first.
+    key: 'sources_excluded',
     label: 'Where to look',
     kind: 'sources',
     hint:
-      'The places research reads for every account on this ICP\'s lists. The same ' +
-      'set for all of them, which is what makes two accounts comparable: "nothing ' +
-      'found at Apex" is then a fact about Apex rather than about what somebody ' +
-      'decided to look for that day. Everything a source returns is read against ' +
-      'every signal above, so this decides what gets opened, not what gets found.',
+      'Derived from the signals above — each one names where its fact lives. The same ' +
+      'set runs for every account on the lists this ICP is worked for, which is what makes ' +
+      'two accounts ' +
+      'comparable: "nothing found at Apex" is then a fact about Apex rather than about ' +
+      'what somebody decided to look for that day. Untick one to stop paying for it here ' +
+      'without removing it from the signal type.',
   },
   {
     key: 'business_model',
@@ -366,36 +370,32 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
         </div>
 
         <!-- where to look -->
+        <!-- Derived, not chosen. Each signal type names where its fact lives,
+             so an ICP picking sources as well was a second answer to a settled
+             question — and the planner let it win, which is how a source three
+             types claimed never ran while one nothing claimed ran anyway. The
+             ticks here *subtract*. -->
         <div *ngIf="f.kind === 'sources'" class="chips-wrap">
           <div class="sec-head" style="margin-bottom:8px;">
             <span class="row-sub">
-              <ng-container *ngIf="pickedSources().length; else noSources">
-                <strong>{{ pickedSources().length }}</strong> source{{ pickedSources().length === 1 ? '' : 's' }}
-                read per account
+              <ng-container *ngIf="derivedSources().length; else noSignals">
+                <strong>{{ readSources().length }}</strong> of
+                {{ derivedSources().length }} read per account
                 <span *ngIf="extraSearches()"> · {{ extraSearches() }} extra
                   search{{ extraSearches() === 1 ? '' : 'es' }} from exceptions</span>
               </ng-container>
-              <ng-template #noSources>
-                None chosen — research falls back to whatever the signals above name.
+              <ng-template #noSignals>
+                Choose signals above and the places they are found appear here.
               </ng-template>
-            </span>
-            <button type="button" class="btn" *ngIf="profileId"
-                    (click)="askSources()" [class.busy]="askingSources()"
-                    [disabled]="askingSources()"
-                    title="Assemble the sources this ICP should read">
-              {{ askingSources() ? 'Asking…' : 'Suggest sources' }}
-            </button>
-            <span class="row-sub" *ngIf="!profileId">
-              Save this ICP first and its sources can be assembled for you.
             </span>
           </div>
 
           <div class="fam-grid">
-            <label class="fam" *ngFor="let src of allSources()"
-                   [class.fam-on]="chips['sources']?.includes(src.key)"
+            <label class="fam" *ngFor="let src of derivedSources()"
+                   [class.fam-on]="!isExcluded(src.key)"
                    [title]="src.description">
               <input type="checkbox"
-                     [checked]="chips['sources']?.includes(src.key)"
+                     [checked]="!isExcluded(src.key)"
                      (change)="toggleSource(src.key)">
               <span>
                 {{ src.label }}
@@ -406,22 +406,13 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
             </label>
           </div>
 
-          <p class="row-sub orphan-note" *ngIf="driftedSources().length">
-            {{ driftedSources().length === 1 ? 'One signal expects' : 'Signals expect' }}
-            <strong>{{ driftedSources().join(', ') }}</strong>, which
-            {{ driftedSources().length === 1 ? 'is' : 'are' }} not in this set. Nothing breaks —
-            everything read is still interpreted against every signal — but
-            {{ driftedSources().length === 1 ? 'that conclusion is' : 'those conclusions are' }}
-            less likely to be found.
-            <button type="button" class="btn" style="margin-left:8px;"
-                    (click)="addDrifted()">Add {{ driftedSources().length === 1 ? 'it' : 'them' }}</button>
+          <p class="row-sub" style="margin-top:8px;">
+            Untick one to stop paying for it on this ICP without removing it from the signal
+            type — which is how <code>funding</code> and <code>tech_stack</code> were dropped
+            for a book of brokerages, sixteen calls for one passage, while staying available
+            to a technology ICP.
           </p>
 
-          <p class="row-sub" *ngIf="sourceNotes()" style="margin-top:8px;">{{ sourceNotes() }}</p>
-          <p class="row-sub" *ngIf="newSources().length" style="margin-top:4px;color:var(--warn);">
-            Also suggested, but not in the registry: {{ newSources().join(', ') }} — add
-            {{ newSources().length === 1 ? 'it' : 'them' }} under <strong>Research</strong> first.
-          </p>
         </div>
 
         <!-- range -->
@@ -457,7 +448,10 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
               <em class="row-sub" style="display:block;font-style:normal;">{{ o.hint }}</em>
             </span>
           </label>
-          <button class="linkish" *ngIf="texts[f.key]" (click)="pickChoice(f.key, '')">
+          <!-- Its own row under the options, now that they sit side by side —
+               flex-wrap would otherwise tuck it in as a third column. -->
+          <button class="linkish" *ngIf="texts[f.key]" style="flex:0 0 100%;text-align:left;"
+                  (click)="pickChoice(f.key, '')">
             Clear — neither
           </button>
         </div>
@@ -502,10 +496,14 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
       .icp { display: flex; flex-direction: column; gap: 16px; }
       .fac { display: grid; grid-template-columns: 210px 1fr; gap: 14px;
              align-items: start; }
-      .choices { display: flex; flex-direction: column; gap: 8px; }
+      /* Side by side. With two mutually exclusive options a column reads as a
+         list to work through; a row reads as the choice it is, and the two
+         descriptions can be compared without scanning past one to reach the
+         other. Wraps back to a column when there is no width for it. */
+      .choices { display: flex; flex-wrap: wrap; gap: 8px; }
       .choice { display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
                 border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
-                max-width: 52ch; }
+                flex: 1 1 26ch; min-width: 26ch; max-width: 52ch; }
       .choice-on { border-color: var(--accent); background: var(--surface-2, #f6f7f6); }
       .choice input { margin-top: 3px; }
       .linkish { background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
@@ -623,11 +621,6 @@ export class IcpEditorComponent implements OnInit {
 
   allSources = signal<ResearchSource[]>([]);
   signalTypes = signal<SignalType[]>([]);
-  askingSources = signal(false);
-  sourceNotes = signal('');
-  newSources = signal<string[]>([]);
-  /** Why each source is in, from the last assembly. Cleared by nothing. */
-  private reasons: Record<string, string> = {};
 
   /**
    * Set a single-choice factor, or clear it.
@@ -643,16 +636,44 @@ export class IcpEditorComponent implements OnInit {
     this.emit();
   }
 
-  toggleSource(key: string): void {
-    const on = this.chips['sources'] ?? [];
-    this.chips['sources'] = on.includes(key)
-      ? on.filter((k) => k !== key)
-      : [...on, key];
-    this.emit();
+  /**
+   * Every place the chosen signals say their facts live.
+   *
+   * The ICP no longer holds a source list of its own. It held one, it took
+   * precedence over this, and the two could describe different worlds: a
+   * source three types claimed never ran because the ICP omitted it, while one
+   * nothing claimed ran anyway. Derived, that is unrepresentable.
+   */
+  derivedSources(): ResearchSource[] {
+    const wanted = new Set(this.chips['signals_that_matter'] ?? []);
+    const keys = new Set<string>();
+    for (const t of this.signalTypes()) {
+      if (t.status !== 'active') continue;
+      if (wanted.size && !wanted.has(t.key)) continue;
+      // `?? []` because this runs on every change-detection pass, and a row
+      // that arrives without the field would otherwise throw inside the
+      // template rather than simply contributing nothing.
+      for (const key of t.produced_by ?? []) keys.add(key);
+    }
+    return this.allSources().filter((s) => keys.has(s.key));
   }
 
-  pickedSources(): string[] {
-    return this.chips['sources'] ?? [];
+  /** Derived, less what has been switched off — what actually gets read. */
+  readSources(): ResearchSource[] {
+    return this.derivedSources().filter((s) => !this.isExcluded(s.key));
+  }
+
+  isExcluded(key: string): boolean {
+    return (this.chips['sources_excluded'] ?? []).includes(key);
+  }
+
+  /** The tick means "read this", so toggling it writes the *exclusion*. */
+  toggleSource(key: string): void {
+    const off = this.chips['sources_excluded'] ?? [];
+    this.chips['sources_excluded'] = off.includes(key)
+      ? off.filter((k) => k !== key)
+      : [...off, key];
+    this.emit();
   }
 
   /**
@@ -673,60 +694,12 @@ export class IcpEditorComponent implements OnInit {
     return keys.size;
   }
 
+  /** Why this place is in the list: the types that said their fact lives there. */
   sourceReason(key: string): string {
-    if (this.reasons[key]) return this.reasons[key];
     const naming = this.signalTypes()
       .filter((t) => t.status === 'active' && t.produced_by.includes(key))
       .map((t) => t.key);
     return naming.length ? `expected by ${naming.join(', ')}` : '';
-  }
-
-  /**
-   * Sources this ICP's signals expect that the accepted set leaves out.
-   *
-   * Shown rather than merged in silently: the accepted set is what a run is
-   * recorded against, so changing it is a decision with a person's name on it.
-   */
-  driftedSources(): string[] {
-    const wanted = new Set(this.chips['signals_that_matter'] ?? []);
-    const have = new Set(this.chips['sources'] ?? []);
-    if (!have.size) return [];
-    const missing = new Set<string>();
-    for (const t of this.signalTypes()) {
-      if (t.status !== 'active') continue;
-      if (wanted.size && !wanted.has(t.key)) continue;
-      for (const key of t.produced_by) if (!have.has(key)) missing.add(key);
-    }
-    return [...missing].sort();
-  }
-
-  addDrifted(): void {
-    this.chips['sources'] = [...(this.chips['sources'] ?? []), ...this.driftedSources()];
-    this.emit();
-  }
-
-  askSources(): void {
-    if (!this.profileId) return;
-    this.askingSources.set(true);
-    this.api.suggestSourcesForIcp(this.profileId).subscribe({
-      next: (r) => {
-        this.askingSources.set(false);
-        this.chips['sources'] = r.sources.map((x) => x.key);
-        this.reasons = {};
-        for (const x of r.sources) {
-          this.reasons[x.key] = x.for_types.length
-            ? `expected by ${x.for_types.join(', ')}`
-            : x.why || 'suggested for this ICP';
-        }
-        this.sourceNotes.set(r.notes);
-        this.newSources.set(r.new_sources.map((n) => n.label || n.key));
-        this.emit();
-      },
-      error: () => {
-        this.askingSources.set(false);
-        this.sourceNotes.set('Could not assemble sources just now.');
-      },
-    });
   }
 
   /**

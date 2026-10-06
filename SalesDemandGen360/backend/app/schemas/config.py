@@ -85,6 +85,26 @@ class IcpDefinitionIn(BaseModel):
     definition: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
+    def sources_are_not_chosen_here(self) -> IcpDefinitionIn:
+        """Refuse the old independent source list.
+
+        Sources are derived from the `produced_by` of the signal types this ICP
+        names; `sources_excluded` switches one off. Accepting `sources` again
+        would restore the second gate that let a claimed source never run and an
+        unclaimed one run anyway — silently, in both directions, within a week.
+
+        Refused rather than ignored: a definition that still carries the key
+        looks like it is being honoured, and the screen would agree with it.
+        """
+        if "sources" in self.definition:
+            raise ValueError(
+                "'sources' is no longer chosen on an ICP — research reads what the "
+                "chosen signal types name in produced_by. Use 'sources_excluded' "
+                "to switch one off for this ICP."
+            )
+        return self
+
+    @model_validator(mode="after")
     def track_is_known(self) -> IcpDefinitionIn:
         """Refuse a track nobody reads.
 

@@ -3304,3 +3304,74 @@ Backend 1,789 pass; front end 351 pass; `ng build` exit 0.
 
 `api/config.py`, `schemas/config.py`, `alembic d8b3f1c62a95`, ICP Default v11,
 `settings/signal-types.component.ts`, `core/config.service.ts`, `tests/test_research_config.py` (+2).
+
+## §81 — Sources derived from signals; the pickers tell the truth (2026-10-05)
+
+Four things, from one observation: *"since sources are linked to signal, why give option to choose
+sources."*
+
+### The ICP no longer picks sources
+
+An ICP carried two lists that could disagree about the same thing — `signals_that_matter` and
+`sources` — while every signal type already names where its fact lives in `produced_by`. The second
+was a parallel answer to a settled question, and `build_plan` let it win. Both directions failed
+inside one week:
+
+* `linkedin_serp`, claimed by all three contact types, **never ran** — the ICP omitted it (§77);
+* `reviews` **ran anyway** with no type claiming it, after the one that did was deleted;
+* and the sibling list had fallen eight types behind the registry (§80).
+
+Sources are now the union of `produced_by` across the types the ICP names, filtered as before by
+status, kind and scope. One list, one gate, and both failures become unrepresentable rather than
+fixed. `sources_excluded` keeps the only thing the old list was good for — `d1a7e9c45b82` dropped
+`funding` and `tech_stack` for a book of brokerages, sixteen calls for one passage, while keeping the
+types so they return for a technology ICP. A subtraction cannot describe a different world.
+
+**Nothing moved when it was applied**, which is what made it safe in one step: the ICP listed seven
+sources and the derived set is those seven plus `ats_boards` and `manual`, both dropped downstream
+anyway — one paused, one a kind the planner never schedules. `sources_excluded` starts empty.
+
+`IcpDefinitionIn` now **refuses** a `sources` key rather than ignoring it. A definition still
+carrying it would look honoured, and the screen would agree.
+
+The editor's `driftedSources`/`addDrifted` are gone with it. They existed to reconcile the two lists
+— a patch over the flaw, not a fix for it.
+
+### The track stays, and goes horizontal
+
+Asked whether it is needed, since the signals are chosen explicitly. It is: the track is not a signal
+selector but the one factor the strategy and drafting prompts **branch on**. `enterprise` argues risk
+and continuity to a buyer measured on nothing going wrong, where "velocity language reads as naive";
+`tech_company` argues bandwidth and time to market. The same signal is argued differently to each —
+an acquisition is integration risk to a CIO and roadmap contention to a CTO. Dropping it would flatten
+every draft to "write plainly and let the evidence carry it".
+
+Two mutually exclusive options now sit side by side rather than stacked: a column reads as a list to
+work through, a row as the choice it is.
+
+### The source picker was hiding one, and then explaining nothing
+
+Two faults on the Signal types screen:
+
+* It filtered `status === 'active'` **on top of** the endpoint's own exclusion of deprecated rows, so
+  **paused sources were invisible**. `ats_boards` is paused and three types claim it — the chip showed
+  on the row with no checkbox to untick. Paused rows are now listed and marked.
+* Eight of nine appeared for a company signal with nothing saying why. The ninth is `enrichment`,
+  which looks up people. The picker now states the count and names what the other scope takes.
+
+### A suggestion is a proposal, not a filter
+
+`Suggest sources` ticked boxes and said nothing about which were its idea. Suggested sources are now
+marked (dashed edge, "suggested") while **every** source stays listed and tickable. Showing only the
+suggestions would hide the source a rep knows is right; ticking without marking leaves them unable to
+tell their own choices from the model's, or to judge how good its last answer was. Cleared on reset,
+so a mark never claims the model proposed something for a type it never saw.
+
+**A backtick inside the Angular template literal again** — an HTML comment quoting a function name,
+the third time this session. It terminates the template string and produces `TS-991002` plus a
+cascade of nonsense errors pointing nowhere near the real line.
+
+Backend 1,789 pass; front end 351 pass; `ng build` exit 0.
+
+`services/research.py`, `schemas/config.py`, `alembic e4a9c7d13b60`,
+`settings/icp-editor.component.ts`, `settings/signal-types.component.ts`, two spec modules.

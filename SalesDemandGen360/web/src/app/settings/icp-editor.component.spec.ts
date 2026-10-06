@@ -106,37 +106,43 @@ describe('IcpEditorComponent', () => {
       fixture.detectChanges();
     };
 
-    it('carries the chosen sources back out unchanged', () => {
-      withSources({ sources: ['news'] });
-      expect(cmp.pickedSources()).toEqual(['news']);
+    it('derives the places to look from the chosen signals', () => {
+      /* No source list of its own any more. Each signal type names where its
+         fact lives, so an ICP picking sources as well was a second answer to a
+         settled question — and the planner let that second answer win, which
+         is how a source three types claimed never ran while one nothing
+         claimed ran anyway. */
+      withSources({ signals_that_matter: ['funding', 'engineering_scaling'] });
+      expect(cmp.derivedSources().map((s) => s.key)).toEqual(['news', 'hiring']);
+      expect(cmp.readSources().map((s) => s.key)).toEqual(['news', 'hiring']);
+    });
+
+    it('narrows to the signals chosen, not every active type', () => {
+      withSources({ signals_that_matter: ['engineering_scaling'] });
+      expect(cmp.derivedSources().map((s) => s.key)).toEqual(['hiring']);
+    });
+
+    it('unticking one excludes it without touching the signal type', () => {
+      /* The one thing the old list was good for: dropping a source that costs
+         more than it returns on this book, while the type keeps claiming it so
+         another ICP still gets it. */
+      withSources({ signals_that_matter: ['funding', 'engineering_scaling'] });
       cmp.toggleSource('hiring');
-      expect((emitted as Record<string, unknown>)['sources']).toEqual(['news', 'hiring']);
+      expect((emitted as Record<string, unknown>)['sources_excluded']).toEqual(['hiring']);
+      expect(cmp.isExcluded('hiring')).toBe(true);
+      expect(cmp.readSources().map((s) => s.key)).toEqual(['news']);
+      // Still derived, so it stays on screen with its tick cleared rather than
+      // vanishing — otherwise there is no way to put it back.
+      expect(cmp.derivedSources().map((s) => s.key)).toEqual(['news', 'hiring']);
     });
 
     it('is omitted rather than written as an empty list', () => {
-      /* Absent means "nothing accepted yet", and research falls back to what
-         the signals name. `[]` would mean "read nothing", which is not a
-         thing a rep can express by leaving a control alone. */
-      withSources({ sources: ['news'] });
-      cmp.toggleSource('news');
-      expect('sources' in (emitted as Record<string, unknown>)).toBe(false);
-    });
-
-    it('names a source the signals expect but the set leaves out', () => {
-      /* Drift, shown rather than merged in silently: the accepted set is what
-         a run is recorded against, so changing it is a person's decision. */
-      withSources({ sources: ['news'], signals_that_matter: ['funding', 'engineering_scaling'] });
-      expect(cmp.driftedSources()).toEqual(['hiring']);
-      cmp.addDrifted();
-      expect(cmp.pickedSources()).toEqual(['news', 'hiring']);
-      expect(cmp.driftedSources()).toEqual([]);
-    });
-
-    it('reports no drift before anything has been accepted', () => {
-      /* An ICP that has never been through this screen researches exactly as
-         it did before; warning about every source would be noise. */
+      /* Absent means "nothing switched off". `[]` would say the same thing in
+         a way that looks like a decision somebody made. */
       withSources({ signals_that_matter: ['funding'] });
-      expect(cmp.driftedSources()).toEqual([]);
+      cmp.toggleSource('news');
+      cmp.toggleSource('news');
+      expect('sources_excluded' in (emitted as Record<string, unknown>)).toBe(false);
     });
 
     it('counts the exception searches on top of the sources', () => {
