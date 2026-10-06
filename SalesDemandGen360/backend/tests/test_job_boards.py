@@ -390,17 +390,20 @@ class TestTheRunnerUsesTheRightReader:
     """Two sources are read rather than searched. Dispatching every fetch
     source to the feed reader would read BlueWave's blog and call it hiring."""
 
-    async def test_a_job_board_is_read_by_the_job_board_reader(self, monkeypatch):
+    async def test_an_ats_board_is_read_by_the_job_board_reader(self, monkeypatch):
+        """Keyed by the **registry** name. `c1f7e3b89d24` renamed `job_board` to
+        `ats_boards`; the dispatch table was not part of that rename, so the
+        source went active with no reader behind it."""
         from app.services import evidence as evidence_service
         from app.services import pipeline, sources
 
         async def by_key(session):
-            return {"job_board": SimpleNamespace(key="job_board", kind="fetch")}
+            return {"ats_boards": SimpleNamespace(key="ats_boards", kind="fetch")}
 
         called: list[str] = []
 
         async def job_sweep(acc):
-            called.append("job_board")
+            called.append("ats_boards")
             # An empty batch has to say what was looked at — the schema refuses
             # silence, since it reads the same as never having run.
             return site_sweep.SweepResult(EvidenceBatch(not_found=["3 open roles"]), ("3 open roles",))
@@ -417,8 +420,8 @@ class TestTheRunnerUsesTheRightReader:
         monkeypatch.setattr(site_sweep, "sweep_account", feed_sweep)
         monkeypatch.setattr(evidence_service, "store_found", store_found)
 
-        outcome = await pipeline.llm_family_runner(object())(account(), "job_board")
-        assert called == ["job_board"]
+        outcome = await pipeline.llm_family_runner(object())(account(), "ats_boards")
+        assert called == ["ats_boards"]
         assert outcome.not_found == ("3 open roles",)
 
     async def test_a_fetch_source_with_no_reader_fails_by_name(self, monkeypatch):
