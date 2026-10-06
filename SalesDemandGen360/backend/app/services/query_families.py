@@ -124,10 +124,12 @@ QUERY_FAMILIES: tuple[QueryFamily, ...] = (
         ("company", "contact"),
     ),
     QueryFamily(
-        "ats_boards", "ATS boards and careers pages",
-        "Open roles from the company's own applicant-tracking board (Greenhouse, Lever, Ashby "
-        "or Workday) and its careers domain: titles, teams, locations and descriptions, dated "
-        "by when each role opened.",
+        "ats_boards", "ATS job boards",
+        "Hosted applicant-tracking boards, read through their own public APIs: Greenhouse, "
+        "Lever, Ashby and Workday. One request returns every open role with its title, team, "
+        "location, description and the date it opened. Not the company's own careers page — "
+        "`company_site` already fetches /careers and /jobs, and two sources advertising the "
+        "same page is how a registry starts disagreeing with itself.",
         ("company",),
         runner="fetch",
     ),

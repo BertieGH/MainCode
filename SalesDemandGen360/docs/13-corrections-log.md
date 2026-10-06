@@ -3528,3 +3528,49 @@ Backend 1,796 pass.
 
 `models/account.py`, `services/sizing.py`, `services/resolution.py`, `api/lists.py`,
 `alembic a7e1d4c92f85`, `tests/test_sizing_and_runners.py` (+7).
+
+## §84 — Two renamed sources kept the brief of what they used to be (2026-10-05)
+
+Spotted from a tooltip in a screenshot. `c1f7e3b89d24` renamed three sources and set `key` and
+`label` — **and not `description`**. The description is the only part a model reads: it is what
+`stages.research_request` sends as `source.read_for`. So for two of the three the label promised one
+thing and the brief delivered another, and the brief won.
+
+```
+ats_boards                label "ATS boards and careers pages"
+                          brief "applicant-tracking board (Greenhouse)"
+regulators_and_registers  label "Regulators and licence registers"
+                          brief "SEC EDGAR ... restricted to sec.gov"
+```
+
+`linkedin_index` escaped only because `b6d4a8f32e07` rewrote its brief for the X-Ray operators a
+week later.
+
+**This invalidates a measurement.** `regulators_and_registers` was trialled against two accounts and
+found nothing — against the stale `sec.gov`-only brief, not the licence registers its name
+advertises. The zero is a fact about the narrow query and not evidence about the source as named. It
+is worth re-trialling now that the two agree.
+
+**And a boundary had moved.** §82 gave `/careers` and `/jobs` to `company_site`, a free fetch of the
+company's own site, while `ats_boards` still claimed careers pages in its label — two sources
+advertising the same page. The split is now explicit in both briefs: the company's own site is
+`company_site`; `ats_boards` is the hosted boards reached through their own APIs, for a company large
+enough to run one.
+
+Fixed in `b3d7f05e91c4`, and `query_families.QUERY_FAMILIES` realigned in the same change. That seed
+is the registry seen from the other side, and §78 already recorded what happens when the two drift:
+the suite passes while testing a registry production does not have.
+
+### The ICP screen, from the same screenshot
+
+* The old inclusion picker was still on screen — a **stale bundle**, not a code state. Confirmed by
+  reading the file: the "Suggest sources" button and the "None chosen" text no longer exist in it.
+* A **new** ICP listed all nine sources as though they had been chosen. That is because
+  `signals_that_matter` being empty means *every* active type, not none — the planner widens rather
+  than narrows, and `derivedSources` mirrors it with `wanted.size && …`. The number was true and
+  read as a choice nobody made, so the panel now says which it is: *"No signals chosen above, so this
+  is every active type."* Mirroring the planner is right; doing it silently was not.
+
+Backend 1,796 pass; front end 351 pass; `ng build` exit 0.
+
+`alembic b3d7f05e91c4`, `services/query_families.py`, `settings/icp-editor.component.ts`.

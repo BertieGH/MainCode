@@ -383,6 +383,14 @@ const KNOWN = new Set(FACTORS.map((f) => f.key));
                 {{ derivedSources().length }} read per account
                 <span *ngIf="extraSearches()"> · {{ extraSearches() }} extra
                   search{{ extraSearches() === 1 ? '' : 'es' }} from exceptions</span>
+                <!-- An ICP naming no signals does not narrow research, it
+                     widens it: the planner reads "none chosen" as "every active
+                     type". The list below is then true and looks like a choice
+                     nobody made, so it says which it is. -->
+                <em *ngIf="!signalsChosen()" style="display:block;font-style:normal;">
+                  No signals chosen above, so this is every active type — research would
+                  read all of these. Choose signals to narrow it.
+                </em>
               </ng-container>
               <ng-template #noSignals>
                 Choose signals above and the places they are found appear here.
@@ -644,6 +652,17 @@ export class IcpEditorComponent implements OnInit {
    * source three types claimed never ran because the ICP omitted it, while one
    * nothing claimed ran anyway. Derived, that is unrepresentable.
    */
+  /** Whether this ICP has narrowed research at all.
+   *
+   * Distinguished from "chose nothing yet" because the planner does not treat
+   * them the same: an empty `signals_that_matter` means *every* active type,
+   * not none, so a new ICP derives every source and the list reads as a choice
+   * nobody made.
+   */
+  signalsChosen(): boolean {
+    return (this.chips['signals_that_matter'] ?? []).length > 0;
+  }
+
   derivedSources(): ResearchSource[] {
     const wanted = new Set(this.chips['signals_that_matter'] ?? []);
     const keys = new Set<string>();
