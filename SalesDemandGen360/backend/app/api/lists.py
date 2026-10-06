@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
@@ -30,7 +30,9 @@ from app.models.account import (
 )
 from app.models.config import IcpProfile, ServiceCatalog, service_icp_link
 from app.models.context import Qualification
-from app.services import anchoring, csv_import, resolution, spreadsheet, verification
+from app.services import (
+    anchoring, csv_import, resolution, sizing, spreadsheet, verification,
+)
 
 router = APIRouter(tags=["lists"])
 
@@ -151,6 +153,18 @@ class AccountOut(BaseModel):
     resolution_candidates: list | None = None
     industry: str | None
     employee_count: int | None
+    #: When the count was observed — ours, not theirs. A directory page carries
+    #: no date, so this is when we looked. Null on the accounts that held a
+    #: number before dates existed; nothing was backfilled, because dating them
+    #: today would claim we observed in October what arrived in a CSV.
+    employee_count_as_of: date | None = None
+    #: The last *different* count and when it was seen, so a reader can say
+    #: "grew from 30 to 33 since March" rather than only "33". Carried rather
+    #: than computed here: the screen decides how to phrase a change, and a
+    #: number nothing can reach is the inert-field problem this session kept
+    #: finding.
+    employee_count_before: int | None = None
+    employee_count_before_as_of: date | None = None
     hq_country: str | None
     icp_match_score: float | None
     status: str
@@ -1722,7 +1736,10 @@ async def set_account_resolution(
             " ".join(payload.industry.casefold().split()) if payload.industry else None
         )
     if payload.employee_count is not None:
-        account.employee_count = payload.employee_count
+        # Through the recorder, so a rep correcting a headcount leaves the same
+        # trail an automated observation would. A number typed today is an
+        # observation made today.
+        sizing.record_headcount(account, payload.employee_count)
 
     if payload.status is not None:
         account.resolution_status = payload.status

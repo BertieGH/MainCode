@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict HNzconSzYH8H5FvM77IB3pDvaeMhzKIgF49KqLKWEIapvqIHXrf9YY35xFZ3OuZ
+\restrict 4t0tDkkOyABTEe9xsvEpMQ8lp0iglOYLgBWmINxHD6khuqqtb8nVgfbDfvxwwkE
 
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
@@ -101,6 +101,10 @@ CREATE TABLE public.account (
     dormant_at timestamp with time zone,
     dormant_reason text,
     profile jsonb,
+    employee_count_as_of date,
+    employee_count_before integer,
+    employee_count_before_as_of date,
+    CONSTRAINT ck_account_ck_account_headcount_is_not_negative CHECK ((((employee_count IS NULL) OR (employee_count >= 0)) AND ((employee_count_before IS NULL) OR (employee_count_before >= 0)))),
     CONSTRAINT ck_account_disqualified_needs_a_reason CHECK (((status <> 'disqualified'::text) OR (disqualified_reason IS NOT NULL))),
     CONSTRAINT ck_account_enrichment_status_valid CHECK ((enrichment_status = ANY (ARRAY['not_started'::text, 'running'::text, 'complete'::text, 'partial'::text, 'failed'::text, 'skipped'::text]))),
     CONSTRAINT ck_account_research_status_valid CHECK ((research_status = ANY (ARRAY['not_started'::text, 'running'::text, 'complete'::text, 'partial'::text, 'failed'::text]))),
@@ -3154,5 +3158,5 @@ ALTER TABLE ONLY public.signal
 -- PostgreSQL database dump complete
 --
 
-\unrestrict HNzconSzYH8H5FvM77IB3pDvaeMhzKIgF49KqLKWEIapvqIHXrf9YY35xFZ3OuZ
+\unrestrict 4t0tDkkOyABTEe9xsvEpMQ8lp0iglOYLgBWmINxHD6khuqqtb8nVgfbDfvxwwkE
 

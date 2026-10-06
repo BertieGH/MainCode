@@ -3452,3 +3452,79 @@ here as the shape of the answer; not built.
 Backend 1,789 pass.
 
 `services/site_sweep.py`, `alembic f2c8b4e71a93`, `tests/test_job_boards.py`.
+
+## §83 — The headcount was write-once, undated, and on eight accounts (2026-10-05)
+
+Asked whether a SERP API could track employee counts and their delta between runs, with Google
+X-Ray as the cheap path for small companies.
+
+**The blocker was ours, not Google's.** `resolution.py` held:
+
+```python
+if best.employee_count and not account.employee_count:
+    account.employee_count = int(best.employee_count)
+```
+
+Four problems, none of which a better source fixes:
+
+1. **write-once** — a second resolution run never refreshed it, so a company that grew from 30 to 33
+   looked exactly like one that had not moved;
+2. **undated** — "41 staff" was as-of whenever it first landed, possibly a September CSV;
+3. **no history** — the moment it did change, the number it replaced was gone, destroying the delta
+   at the instant it became computable;
+4. **49 of 57 accounts carry no count at all.**
+
+`a7e1d4c92f85` adds `employee_count_as_of`, `employee_count_before` and
+`employee_count_before_as_of`, and `sizing.record_headcount` is the one place that decides what an
+observation means:
+
+* nothing known — store and date it;
+* **the same number again — refresh the date only.** Writing it into `before` as well would collapse
+  the window a real change is measured over, and the next change would read as "30 to 33 in zero
+  days";
+* a different number — the current value becomes `before` with its own date.
+
+So the pair always spans a **real change** rather than the last two runs. Three observations and one
+change report the month the growth happened in, not the quarter we happened to look across.
+
+`None` is ignored rather than clearing the field: every source returns `None` for "I do not know",
+and letting that erase a held number would make the stored value depend on which source answered
+last — a company would lose its size by being looked at.
+
+Dates are **ours, not theirs**. A directory page or a company profile carries no date, so the only
+honest timestamp is when we looked. Nothing is backfilled for the same reason.
+
+Wired into resolution (replacing the guard) and the manual edit, so a rep correcting a number leaves
+the same trail an automated observation would.
+
+### On the question as asked
+
+The pasted analysis is right that Google returns no aggregated headcount and that its result-count
+estimate is unusable. It misses something worse for us: **through Gemini grounding there is no result
+count at all**, only a few cited passages — so the snapshot-delta method needs a real SERP API *with
+pagination* and cannot be approximated.
+
+And "SERP API for large, X-Ray for small" does not divide into two routes. **X-Ray is a query form,
+not a retrieval route**; both halves need the same credential, because grounding excludes
+`linkedin.com` for everyone (§64). There is no free fallback at the small end.
+
+**The careers page already gives the signal more directly.** Three engineering roles appearing on
+`/careers` between March and June *is* department-level hiring velocity — which is what a headcount
+delta is a proxy for — from a page fetched since §82 at no model cost and no terms-of-service
+exposure. LinkedIn headcount would be the most expensive route to a number we hold for eight
+accounts.
+
+### One thing worth keeping
+
+`AccountOut` carries the three new fields. A stored value nothing can read is the inert-field problem
+this session kept finding — unreachable sources, types that could not fire — and adding a fourth
+would have been careless.
+
+Caught by checking rather than trusting: the first version of that change compiled, the app built,
+and the annotation was an **unresolved `ForwardRef`** because `date` was never imported. It would
+have failed at serialisation, not at import.
+
+Backend 1,796 pass.
+
+`models/account.py`, `services/sizing.py`, `services/resolution.py`, `api/lists.py`,
+`alembic a7e1d4c92f85`, `tests/test_sizing_and_runners.py` (+7).

@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account, AccountListMember
 from app.models.config import EnrichmentConfig
+from app.services import sizing
 from app.services.versioning import get_active
 
 log = logging.getLogger(__name__)
@@ -253,8 +254,18 @@ def _apply(account: Account, best: Candidate, source: str) -> list[str]:
         account.industry = best.industry
         if hasattr(account, "industry_key"):
             account.industry_key = _industry_key(best.industry)
-    if best.employee_count and not account.employee_count:
-        account.employee_count = int(best.employee_count)
+    # Recorded rather than assigned, and **no longer only when empty**. The old
+    # `and not account.employee_count` guard meant a second resolution run
+    # never refreshed the number, so a company that grew from 30 to 33 looked
+    # exactly like one that had not moved. `record_headcount` keeps the value
+    # it replaces and the date of each, which is what makes the change sayable.
+    if best.employee_count:
+        change = sizing.record_headcount(account, int(best.employee_count))
+        if change.outcome == "changed":
+            notes.append(
+                f"headcount {change.before} → {change.after}"
+                + (f" over {change.over_days} days" if change.over_days else "")
+            )
 
     return notes
 

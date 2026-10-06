@@ -8,6 +8,8 @@ quietly rather than to make something new appear.
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from app.services import query_families, sizing
@@ -132,3 +134,88 @@ class TestNotEveryFamilyIsASearch:
         enrichment = query_families.BY_KEY["enrichment"]
         assert enrichment.runner == "provider"
         assert "contact" in enrichment.scopes
+
+
+class TestRecordingAHeadcount:
+    """One place decides what a fresh observation means.
+
+    It had no place at all before: `resolution` assigned the count **only when
+    the field was empty**, so a second run never refreshed it, nothing recorded
+    when it was true, and a change destroyed the value it replaced. A delta was
+    uncomputable however good the source — which is the real reason tracking
+    company growth did not work, not anything about LinkedIn or Google.
+    """
+
+    def _account(self, **fields):
+        from types import SimpleNamespace
+
+        base = dict(
+            employee_count=None,
+            employee_count_as_of=None,
+            employee_count_before=None,
+            employee_count_before_as_of=None,
+        )
+        return SimpleNamespace(**(base | fields))
+
+    def test_the_first_observation_is_dated(self):
+        a = self._account()
+        change = sizing.record_headcount(a, 30, observed_on=date(2026, 3, 1))
+        assert (change.outcome, change.after, change.delta) == ("first", 30, None)
+        assert (a.employee_count, a.employee_count_as_of) == (30, date(2026, 3, 1))
+        assert a.employee_count_before is None
+
+    def test_the_same_number_refreshes_only_the_date(self):
+        """We looked and it had not moved, which is information. Writing it into
+        `before` as well would collapse the window a real change is measured
+        over — the next change would read as "30 to 33 in zero days"."""
+        a = self._account(employee_count=30, employee_count_as_of=date(2026, 3, 1))
+        change = sizing.record_headcount(a, 30, observed_on=date(2026, 6, 1))
+        assert change.outcome == "same"
+        assert a.employee_count_as_of == date(2026, 6, 1)
+        assert a.employee_count_before is None, "nothing was replaced"
+
+    def test_a_change_keeps_what_it_replaced_and_the_window(self):
+        a = self._account(employee_count=30, employee_count_as_of=date(2026, 3, 1))
+        change = sizing.record_headcount(a, 33, observed_on=date(2026, 6, 1))
+        assert (change.outcome, change.before, change.after) == ("changed", 30, 33)
+        assert change.delta == 3
+        assert change.over_days == 92, "the window the growth happened over"
+        assert (a.employee_count, a.employee_count_as_of) == (33, date(2026, 6, 1))
+        assert a.employee_count_before == 30
+        assert a.employee_count_before_as_of == date(2026, 3, 1)
+
+    def test_the_window_spans_the_last_real_change_not_the_last_run(self):
+        """Three observations, one change. The pair must still describe the
+        move, not the two most recent reads."""
+        a = self._account(employee_count=30, employee_count_as_of=date(2026, 3, 1))
+        sizing.record_headcount(a, 30, observed_on=date(2026, 4, 1))
+        sizing.record_headcount(a, 30, observed_on=date(2026, 5, 1))
+        change = sizing.record_headcount(a, 33, observed_on=date(2026, 6, 1))
+        # April and May refreshed `as_of`, so the window is May→June rather
+        # than March→June: the growth is known to have happened in that month,
+        # and claiming three months would understate the rate.
+        assert change.over_days == 31
+        assert a.employee_count_before == 30
+
+    def test_a_shrinking_company_is_recorded_the_same_way(self):
+        a = self._account(employee_count=40, employee_count_as_of=date(2026, 1, 1))
+        change = sizing.record_headcount(a, 31, observed_on=date(2026, 6, 1))
+        assert change.delta == -9, "a loss is as much a signal as a gain"
+
+    def test_an_unknown_count_never_clears_what_is_held(self):
+        """Every source returns None for "I do not know". Letting that erase a
+        stored number would make the value depend on which source answered
+        last, and a company would lose its size by being looked at."""
+        a = self._account(employee_count=30, employee_count_as_of=date(2026, 3, 1))
+        change = sizing.record_headcount(a, None, observed_on=date(2026, 6, 1))
+        assert change.outcome == "ignored"
+        assert (a.employee_count, a.employee_count_as_of) == (30, date(2026, 3, 1))
+
+    def test_a_first_change_with_no_prior_date_reports_no_window(self):
+        """The eight accounts carrying a count today have no date — nothing was
+        backfilled, because dating them today would claim we observed in
+        October what arrived in a September CSV. A delta without a window is
+        not a growth rate, so it says so rather than inventing one."""
+        a = self._account(employee_count=30)
+        change = sizing.record_headcount(a, 33, observed_on=date(2026, 6, 1))
+        assert (change.delta, change.over_days) == (3, None)

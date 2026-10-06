@@ -8,7 +8,7 @@ deliberate copy out of it rather than a live link into it.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Column,
@@ -16,6 +16,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -80,6 +81,15 @@ class Account(Base):
     resolution_candidates: Mapped[list | None] = mapped_column(JSONB)
 
     employee_count: Mapped[int | None] = mapped_column(Integer)
+    #: When the count above was observed — **ours, not theirs**. A directory
+    #: page carries no date, so the only honest timestamp is when we looked.
+    employee_count_as_of: Mapped[date | None] = mapped_column(Date)
+    #: The last *different* count, and when it was seen. Re-observing the same
+    #: number refreshes `employee_count_as_of` alone, so this pair always spans
+    #: a real change rather than the last two runs — which is what makes
+    #: "grew from 30 to 33 since March" sayable.
+    employee_count_before: Mapped[int | None] = mapped_column(Integer)
+    employee_count_before_as_of: Mapped[date | None] = mapped_column(Date)
     revenue_band: Mapped[str | None] = mapped_column(Text)
     funding_stage: Mapped[str | None] = mapped_column(Text)
     hq_country: Mapped[str | None] = mapped_column(Text)
