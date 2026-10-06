@@ -3705,3 +3705,73 @@ twenty-five person brokerage. `scripts/trial_serp.py` is written and waits on a 
 Backend 1,802 pass.
 
 `services/csv_import.py`, `tests/test_contact_import.py` (+3).
+
+## §87 — The SERP route, measured at last (2026-10-06)
+
+`linkedin_index` has been registered and inert since `b6d4a8f32e07`. A Searlo key arrived, and about
+**forty credits of three thousand** answered the questions three days of argument could not.
+
+### It works, and the split is sharp
+
+Ten companies from the book's $10–50M band (15–38 staff), queried with the X-Ray forms already in the
+registry:
+
+```
+site:linkedin.com/in "{company}"       9–10 real employees per page, 16–245 indexed
+site:linkedin.com/posts "{company}"    18 posts across 10 companies — six have none
+```
+
+**Profiles are the good news, and better than hoped.** They are genuine current staff with their
+roles in the snippet — *"CFO of Vantreo Insurance Brokerage"*, *"General Adjuster… Sep 2013 –
+Present"*. `contact_profile` and `contact_role_change` are viable by this route.
+
+**Posts are thin.** Four of ten companies have any at all, usually one to four; one outlier has
+thirty-eight. `contact_content_activity` is not dead but it is a minority case, and a cadence built
+on it would have nothing to say about most accounts.
+
+**Every post date decoded — 18 of 18.** The activity-id timestamp trick works on live data exactly as
+`services/linkedin.post_date` claims. That was the one piece of the design never tested against the
+real thing.
+
+### A hypothesis I had to withdraw mid-test
+
+The `/in` counts ranged from 0.52× to 7.42× Apollo's headcount, and I called it keyword noise. Then I
+looked: Metropolitan Adjustment Bureau's 245 are **real employees**, every one. The count is high
+because it includes **former** staff — that company has "spent over 50 years" accumulating alumni,
+while Apollo counts only current.
+
+So `totalResults` **is not a headcount proxy**; it tracks company age as much as size. The profiles
+behind it are real and useful, the number in front of it is not the number it looks like. Checking
+cost one credit and would otherwise have become a feature built on a misreading.
+
+A second thing fell out of the same snippets: *"Account Manager at Acrisure California LLC **DBA
+VANTREO Insurance Brokerage**"* — an acquisition, visible in a profile, which is
+`m_and_a_integration` evidence nobody searched for.
+
+### On Searlo itself
+
+Clean JSON, `organic[]` with `link`, `title`, `snippet`; `totalResults`, `page`/`nextPage`
+pagination, and `credits: 1` reported per call. One credit per query, no monthly minimum.
+
+At this volume the provider comparison does not matter: 57 accounts × a few queries is tens of
+credits, and the difference between $0.30 and $10 per thousand is a few dollars a year. Searlo did
+everything asked of it; the only reservation is longevity, which pay-as-you-go bounds — if it
+disappears, the client is one file.
+
+### The TLS detail, because it will recur
+
+The first run failed with `CERTIFICATE_VERIFY_FAILED`. This machine runs a TLS-inspection agent whose
+CA is in the Windows store and not in certifi. **Verification was not disabled** — the app already
+solved this and the trial reuses it: `enrichment_clients._client` builds an httpx client on
+`truststore.SSLContext`, which trusts the OS store. Turning verification off would be circumventing
+the inspection agent, which is IT policy and not a trial script's call to make.
+
+### What it decides
+
+* `contact_profile`, `contact_role_change` — **viable**, pending a stored credential and a client.
+* `contact_content_activity` — **thin**. Keep only if a cadence that says nothing for six accounts in
+  ten is worth the call; otherwise it is the honest candidate for dropping.
+* The headcount delta — **not from here**. `totalResults` counts alumni. Apollo already has 100%
+  headcount coverage (§86); what that needs is re-resolution, not another source.
+
+`scripts/trial_serp.py`.

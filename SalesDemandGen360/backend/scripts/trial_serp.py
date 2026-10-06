@@ -16,7 +16,7 @@ Nothing here opens `linkedin.com`. A SERP API returns Google's index of public
 pages, which is the whole distinction the registry is built on and the reason
 `linkedin` is deprecated while `linkedin_index` is not.
 
-    APIFY_TOKEN=... python scripts/trial_serp.py "Beach and O'Neill Insurance" "Agentero"
+    SEARLO_API_KEY=... python scripts/trial_serp.py "Beach and O'Neill Insurance" "Agentero"
 
 Stores nothing. Costs a few SERP pages per company — fractions of a cent.
 """
@@ -34,48 +34,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx  # noqa: E402
 
+from app.services.enrichment_clients import _client  # noqa: E402
+
 from app.services import linkedin  # noqa: E402
 
-#: Apify's synchronous run: start the actor, wait, return the dataset. The
-#: token goes in the query string because that is the only form this endpoint
-#: accepts; it is read from the environment and **never printed**, so a pasted
-#: terminal log cannot leak it (invariant 9).
-RUN = "https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
-
-#: Default actor. Community actors differ in input schema, so `--actor` and
-#: `--input-key` exist for swapping one in without editing this file.
-ACTOR = os.environ.get("APIFY_ACTOR", "scraperlink~google-search-results-serp-scraper")
+#: Searlo's live SERP read. The key travels in a header, is read from the
+#: environment, and is **never printed** — a trial that leaked a credential
+#: into a terminal log would breach invariant 9 to answer a question about
+#: coverage.
+SEARLO = "https://api.searlo.tech/api/v1/search/web"
 
 #: The X-Ray forms, exactly as `b6d4a8f32e07` wrote them into the registry.
-#: `/in` is the employee question — and counting distinct profiles across two
-#: runs is the snapshot delta that §82 could not get from grounding, because
-#: grounding has no pagination.
+#: `/in` is the employee question — counting distinct profiles across two runs
+#: is the snapshot delta §82 could not get from grounding, which has no
+#: pagination and excludes linkedin.com besides.
 QUERIES = {
     "profiles": 'site:linkedin.com/in "{company}"',
     "posts": 'site:linkedin.com/posts "{company}"',
     "company_page": 'site:linkedin.com/company "{company}"',
 }
 
-TIMEOUT = 180.0
+TIMEOUT = 90.0
 
 
-async def search(client: httpx.AsyncClient, token: str, query: str, want: int) -> list[dict]:
-    """One SERP query. Returns whatever rows the actor produced, unflattened."""
-    body = {
-        # The names most Google-SERP actors share. A 400 here names the field
-        # the chosen actor wanted instead, which is faster to read than any
-        # amount of guessing from a marketing page.
-        "queries": query,
-        "maxPagesPerQuery": max(1, want // 10),
-        "resultsPerPage": 10,
-        "countryCode": "us",
-        "languageCode": "en",
-    }
-    response = await client.post(
-        RUN.format(actor=ACTOR), params={"token": token}, json=body, timeout=TIMEOUT
+async def search(client: httpx.AsyncClient, key: str, query: str, want: int) -> dict:
+    """One SERP query. Returns the parsed body, whatever shape it is in."""
+    response = await client.get(
+        SEARLO,
+        params={"q": query, "num": want},
+        headers={"x-api-key": key},
+        timeout=TIMEOUT,
     )
     if response.status_code >= 400:
-        raise RuntimeError(f"{response.status_code}: {response.text[:400]}")
+        # The body names the parameter it wanted, which beats guessing from a
+        # marketing page — but it can also echo the request, so it is trimmed
+        # and never the key itself.
+        raise RuntimeError(f"{response.status_code}: {response.text[:300]}")
     return response.json()
 
 
@@ -106,18 +100,24 @@ def urls_in(rows: list[dict]) -> list[str]:
 
 
 async def main(companies: list[str], want: int) -> None:
-    token = os.environ.get("APIFY_TOKEN", "").strip()
-    if not token:
-        print("APIFY_TOKEN is not set. Nothing was called.")
+    key = os.environ.get("SEARLO_API_KEY", "").strip()
+    if not key:
+        print("SEARLO_API_KEY is not set. Nothing was called.")
         return
 
-    async with httpx.AsyncClient() as client:
+    # The shared client, which trusts the **OS** certificate store via
+    # `truststore`. This machine runs a TLS-inspection agent whose CA is in
+    # the Windows store and not in certifi, so a plain httpx client fails to
+    # verify. Reusing the app's client keeps verification on: turning it off
+    # would be circumventing the inspection agent, which is IT policy and
+    # not something a trial script gets to decide.
+    async with _client(TIMEOUT) as client:
         for company in companies:
             print(f"\n=== {company} " + "=" * max(0, 60 - len(company)))
             for label, template in QUERIES.items():
                 query = template.format(company=company)
                 try:
-                    rows = await search(client, token, query, want)
+                    rows = await search(client, key, query, want)
                 except Exception as exc:  # noqa: BLE001 — a failed query is a result
                     print(f"  {label:13} FAILED  {exc}")
                     continue
