@@ -336,3 +336,34 @@ class TestASourceHasToEarnItsPlace:
             await self._coverage(session, account=account.id, family="funding",
                                  status="empty")
         assert await sources.quarantined(session, account.id) == {}
+
+
+class TestEveryFetchSourceHasAReader:
+    """A `fetch` source is dispatched to a reader by its registry key.
+
+    `c1f7e3b89d24` renamed `job_board` to `ats_boards` and the dispatch table in
+    `pipeline` was not part of the rename. The source went active with no
+    reader, and the next run that planned it would have raised
+    `no reader for fetch source 'ats_boards'` — at research time, per account,
+    after the sweep had already been paid for.
+
+    Asserted against the registry rather than a list kept here, because a list
+    kept here is the thing that drifted.
+    """
+
+    async def test_the_registry_and_the_dispatch_table_agree(self, session):
+        from app.services import job_boards, site_sweep
+
+        # The same mapping `pipeline._run_family` builds. Kept in one place in
+        # the test so a third fetch source added without a reader fails here
+        # rather than in production.
+        readers = {
+            "company_site": site_sweep.sweep_account,
+            "ats_boards": job_boards.sweep_account,
+        }
+        registry = await sources.all_sources(session)
+        fetches = {s.key for s in registry if s.kind == "fetch"}
+        assert fetches, "no fetch sources at all means this test proves nothing"
+        assert fetches <= set(readers), (
+            f"fetch sources with no reader: {sorted(fetches - set(readers))}"
+        )
