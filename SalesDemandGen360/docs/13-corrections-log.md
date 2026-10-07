@@ -4168,3 +4168,43 @@ cap, so after the dedup it proved the dedup instead. Its fixture now varies the 
 Backend 1,835 pass.
 
 `services/site_sweep.py`, `tests/test_job_boards.py` (+4, 1 fixture corrected).
+
+## §94 — The careers-page claim, measured and corrected (2026-10-06)
+
+§82 added `/careers` and `/jobs` to the site sweep and called it the free hiring signal, on the
+strength of one brokerage returning a careers page. §93 then found that sites answer every path with
+the same page, which put the claim in doubt. Twenty accounts, HTTP only, no model calls:
+
+```
+nothing          9 of 20   45%   no feed, no readable page
+catch-all        6 of 20   30%   one page returned under whatever path was tried
+real feed        4 of 20   20%   five to ten dated entries — the good case
+distinct pages   1 of 20    5%   genuinely separate careers and news
+```
+
+**One site in twenty has a real careers page.** §82's claim was drawn from that one site and
+generalised; the honest version is that `company_site` is a *feed reader* that works for a fifth of
+the book and returns a homepage for another third.
+
+### What that is worth, and what it is not
+
+The homepage is still worth keeping — it describes the company, and that is what a profile is made
+of. The three profiles built on the live run came out well on exactly this material.
+
+What it is not worth is **being called `careers`**. Extraction was being handed a homepage under a
+title saying it was a jobs page, and "no roles listed" then reads as a fact about the company rather
+than about the site. A catch-all page is now titled *"site (same page under every path)"*.
+
+The claim is made only when the same text has been seen under **two** paths. One path answering alone
+is not evidence of a catch-all — Charity First's `/careers` is a real careers page and keeps its
+name, verified live alongside Vantreo's, which does not.
+
+### On the §82 entry
+
+It stands as written about mechanism — the paths are interleaved, the fetch is free, `ats_boards` is
+still paused at 26 attempts — but its headline was too strong. A finding from one account, reported
+before it was measured across the book.
+
+Backend 1,841 pass.
+
+`services/site_sweep.py`, `tests/test_job_boards.py` (+3).

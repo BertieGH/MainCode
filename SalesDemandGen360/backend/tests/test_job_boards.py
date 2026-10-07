@@ -804,3 +804,55 @@ class TestOnePageUnderFourNames:
         kept = [e.source_url for e in result.batch.evidence]
         assert len(kept) == 1
         assert kept[0].endswith(site_sweep.PAGE_PATHS[0]), "the first path tried wins"
+
+
+class TestACatchAllPageSaysSo:
+    """Dropping the duplicates was right; leaving the survivor mislabelled was not.
+
+    Measured across twenty accounts: nine sites answer nothing, four have a real
+    feed, **six return one page under every path**, and exactly one has
+    genuinely distinct pages. So the ordinary outcome of a page read is a
+    homepage, not a careers page — and calling it `careers` tells extraction it
+    is reading a jobs page. "No roles listed" then becomes a fact about the
+    company rather than about the site.
+
+    The page is still kept. A homepage describes the company, which is what a
+    profile is made of. It is kept under its real name.
+    """
+
+    async def test_a_site_answering_every_path_alike_is_named_for_it(self):
+        menu = "<html><body><p>" + ("Generic homepage copy. " * 20) + "</p></body></html>"
+        pages = {"https://meridian.test/": NO_FEED_HOME}
+        for path in site_sweep.PAGE_PATHS:
+            pages[f"https://meridian.test{path}"] = menu
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=FakeClient(pages)
+        )
+        assert len(result.batch.evidence) == 1
+        assert result.batch.evidence[0].title == site_sweep.CATCH_ALL_TITLE
+
+    async def test_one_path_answering_alone_keeps_its_name(self):
+        """A single hit is not evidence of a catch-all — nothing was seen twice.
+        Claiming otherwise would mislabel a site that genuinely has one page."""
+        pages = {
+            "https://meridian.test/": NO_FEED_HOME,
+            "https://meridian.test/careers": CAREERS_PAGE,
+        }
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=FakeClient(pages)
+        )
+        assert len(result.batch.evidence) == 1
+        assert result.batch.evidence[0].title == "careers"
+
+    async def test_distinct_pages_each_keep_their_own_name(self):
+        pages = {"https://meridian.test/": NO_FEED_HOME}
+        for n, path in enumerate(site_sweep.PAGE_PATHS[:2]):
+            pages[f"https://meridian.test{path}"] = (
+                f"<html><body><p>Page {n}. " + (f"Distinct copy number {n} for this page. " * 12) + "</p></body></html>"
+            )
+        result = await site_sweep.sweep_account(
+            account(domain="meridian.test"), http=FakeClient(pages)
+        )
+        titles = {e.title for e in result.batch.evidence}
+        assert site_sweep.CATCH_ALL_TITLE not in titles
+        assert len(titles) == 2

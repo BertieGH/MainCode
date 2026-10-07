@@ -92,6 +92,14 @@ MAX_PAGES = 4
 #: headroom — and a terse but genuine trust page runs to about 380, which 400
 #: would have thrown away. The floor is here to exclude emptiness, not brevity.
 MIN_PAGE_CHARS = 250
+#: What a page is called once a second path returns the same text. Measured
+#: across twenty accounts: nine sites answer nothing at all, four have a
+#: real feed, **six return one page under every path**, and exactly one has
+#: genuinely distinct pages. So the common case for a page read is not a
+#: careers page — it is a homepage, and it is still worth keeping, because
+#: a homepage describes the company and that is what a profile is made of.
+#: It is only worth keeping under its real name.
+CATCH_ALL_TITLE = "site (same page under every path)"
 #: A page is not an entry: it has navigation, a footer and a cookie banner
 #: around whatever matters.
 #:
@@ -304,6 +312,10 @@ async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
     #: It also means a 200 from `/careers` does not prove a careers page
     #: exists, which the paths added in §82 had quietly assumed.
     seen: set[str] = set()
+    #: fingerprint -> the row kept for it, so a later path matching the
+    #: same text can correct that row's title rather than being dropped
+    #: silently. Dropping it is right; leaving it mislabelled is not.
+    by_text: dict[str, FoundEvidence] = {}
     for path in PAGE_PATHS:
         if len(out) >= MAX_PAGES:
             break
@@ -320,6 +332,14 @@ async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
             continue
         fingerprint = _WS.sub(" ", text[:PAGE_EXCERPT_CHARS]).strip().casefold()
         if fingerprint in seen:
+            # Seen under another path, so the site answers everything with one
+            # page. Say so on the row we already kept: calling it "careers"
+            # tells extraction it is reading a jobs page, and a generic
+            # homepage read as a careers page is how "no roles listed" becomes
+            # a fact about the company rather than about the site.
+            kept = by_text.get(fingerprint)
+            if kept is not None and kept.title != CATCH_ALL_TITLE:
+                kept.title = CATCH_ALL_TITLE
             continue
         seen.add(fingerprint)
         out.append(
@@ -332,6 +352,7 @@ async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
                 observed_at=None,
             )
         )
+        by_text[fingerprint] = out[-1]
     return out
 
 
