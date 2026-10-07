@@ -12,6 +12,14 @@ This harvests them and tallies what the pages are called, so the synonyms are
 derived from the book rather than invented. Read-only: robots.txt, sitemaps,
 nothing else, no model calls and no credits.
 
+It harvests **through `sitemap.discover` itself**, not through a copy of its
+logic. This script is what widened `sitemap.THEMES` and ranked the index
+children, and it is also what checks that the widening worked — so it has to
+exercise the reader the sweep will actually use. A second implementation here
+would drift, and the drift would read as a result: the first version of this
+script reported 6,487 URLs harvested while the reader, which now skips media
+and taxonomy children, sees far fewer.
+
     python scripts/survey_sitemaps.py
     python scripts/survey_sitemaps.py --limit 20
 """
@@ -20,12 +28,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import gzip
-import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.robotparser import RobotFileParser
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -34,76 +41,30 @@ from sqlalchemy import select  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.models.account import Account  # noqa: E402
 from app.services import site_sweep, sitemap  # noqa: E402
-from app.services.site_sweep import client  # noqa: E402
+from app.services.site_sweep import _get_bytes, client  # noqa: E402
 
-#: Tried when robots.txt declares nothing. Four of fourteen domains in the
-#: first probe had a sitemap at a conventional path and no declaration.
-CONVENTIONAL = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml", "/sitemap-index.xml")
-
-#: A sitemap index points at child sitemaps. Followed, but bounded: a large
-#: site can list hundreds, and this is a survey rather than a crawl.
-MAX_CHILDREN = 5
-#: Per domain. The largest in the probe held 451 URLs, which is fine to parse
-#: and far more than any ranking needs.
-MAX_URLS = 2000
-
-LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.IGNORECASE)
-DECLARED = re.compile(r"(?im)^\s*sitemap:\s*(\S+)")
-
-#: **The reader's own vocabulary**, not a copy of it. This script is what
-#: widened `sitemap.THEMES` in the first place, and it is also what checks the
-#: widening worked — so it has to measure the list the sweep will actually use.
-#: A second copy here would drift, and the drift would read as a result.
 THEMES = sitemap.THEMES
 
 
-async def fetch(http, url: str) -> str | None:
-    try:
-        response = await http.get(url)
-    except Exception:  # noqa: BLE001 — a dead host is a result
-        return None
-    if response.status_code != 200:
-        return None
-    body = response.content
-    if url.endswith(".gz") or body[:2] == b"\x1f\x8b":
-        try:
-            body = gzip.decompress(body)
-        except Exception:  # noqa: BLE001
-            return None
-    return body.decode("utf-8", "replace")
-
-
 async def sitemap_urls(http, domain: str) -> tuple[str, list[str]]:
-    """Every URL a domain's sitemap declares, and how it was found."""
-    candidates: list[str] = []
-    how = "none"
+    """Every URL the reader would see for a domain, and how it found it.
 
-    robots = await fetch(http, f"https://{domain}/robots.txt")
-    if robots:
-        declared = DECLARED.findall(robots)
-        if declared:
-            candidates.extend(declared)
-            how = "robots"
-    candidates.extend(f"https://{domain}{path}" for path in CONVENTIONAL)
+    The robots.txt fetch is the one thing done here rather than in `discover`,
+    because in the sweep it has already happened — `site_sweep.answers` reads
+    it to decide whether the host answers at all, and `discover` takes the
+    parsed rules from that. Doing it here keeps the measurement honest about
+    what `discover` costs: candidates only, no robots fetch of its own.
+    """
+    rules = RobotFileParser()
+    raw = await _get_bytes(http, f"https://{domain}/robots.txt")
+    rules.parse((raw.decode("utf-8", "replace") if raw else "").splitlines())
+    declared = bool(rules.site_maps())
 
-    for candidate in candidates:
-        body = await fetch(http, candidate)
-        if not body or "<loc" not in body.lower():
-            continue
-        locs = LOC.findall(body)
-        if "<sitemapindex" in body.lower():
-            # An index: its locs are child sitemaps, not pages.
-            found: list[str] = []
-            for child in locs[:MAX_CHILDREN]:
-                child_body = await fetch(http, child)
-                if child_body:
-                    found.extend(LOC.findall(child_body))
-            if found:
-                return (how if how != "none" else "conventional") + "+index", found[:MAX_URLS]
-            continue
-        if locs:
-            return (how if candidate in (robots or "") else "conventional"), locs[:MAX_URLS]
-    return "none", []
+    found = await sitemap.discover(http, domain, {f"https://{domain}": rules})
+    if not found:
+        return "none", []
+    how = "robots" if declared and found.found_at in (rules.site_maps() or []) else "conventional"
+    return how, [e.url for e in found.entries]
 
 
 def segments(url: str) -> list[str]:

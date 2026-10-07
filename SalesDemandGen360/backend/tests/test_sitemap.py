@@ -133,6 +133,63 @@ class TestFindingIt:
             "https://meridian.test/about-us",
         }
 
+    async def test_the_media_library_child_is_not_followed(self):
+        """A WordPress index lists nine children. `attachment-sitemap.xml` is
+        the media library and `category`/`post_tag` are taxonomy stubs; taking
+        the first five blind spent fetches on them and let their URLs crowd out
+        the real articles — corpstrat.com harvested 1,138 URLs that way."""
+        http = FakeClient({
+            "https://meridian.test/sitemap.xml": index(
+                "https://meridian.test/attachment-sitemap.xml",
+                "https://meridian.test/category-sitemap.xml",
+                "https://meridian.test/post_tag-sitemap.xml",
+                "https://meridian.test/author-sitemap.xml",
+                "https://meridian.test/post-sitemap.xml",
+            ),
+            "https://meridian.test/post-sitemap.xml": xml(
+                ("https://meridian.test/blog/lakeside", "2026-09-20")
+            ),
+        })
+        found = await sitemap.discover(http, "meridian.test", robots_for("meridian.test"))
+
+        assert [e.url for e in found.entries] == ["https://meridian.test/blog/lakeside"]
+        assert not any("attachment" in u for u in http.asked)
+        assert not any("post_tag" in u for u in http.asked), (
+            "post_tag contains 'post' — the skip list has to be applied first"
+        )
+
+    async def test_the_useful_children_are_followed_first(self):
+        """Ten sites of 35 use an index, and on all ten the valuable children
+        are listed first — so this is insurance against the one that is not,
+        rather than a fix for a site we have seen."""
+        http = FakeClient({
+            "https://meridian.test/sitemap.xml": index(
+                *[f"https://meridian.test/other{n}-sitemap.xml" for n in range(6)],
+                "https://meridian.test/page-sitemap.xml",
+            ),
+            "https://meridian.test/page-sitemap.xml": xml(
+                ("https://meridian.test/about-us", None)
+            ),
+        })
+        found = await sitemap.discover(http, "meridian.test", robots_for("meridian.test"))
+
+        assert [e.url for e in found.entries] == ["https://meridian.test/about-us"]
+
+    async def test_an_index_of_nothing_but_junk_still_tries(self):
+        """Dropping every child would turn a site with an unusual naming
+        scheme into a site with no sitemap, which is worse than a wasted fetch."""
+        http = FakeClient({
+            "https://meridian.test/sitemap.xml": index(
+                "https://meridian.test/attachment-sitemap.xml",
+            ),
+            "https://meridian.test/attachment-sitemap.xml": xml(
+                ("https://meridian.test/blog", None)
+            ),
+        })
+        found = await sitemap.discover(http, "meridian.test", robots_for("meridian.test"))
+
+        assert [e.url for e in found.entries] == ["https://meridian.test/blog"]
+
     async def test_a_gzipped_sitemap_is_decompressed(self):
         http = FakeClient({
             "https://meridian.test/sitemap.xml": gzip.compress(
@@ -211,6 +268,40 @@ class TestWhatThePagesAreCalled:
         roles listed" turns into a fact about the company."""
         assert sitemap.classify("https://x.test/our-people") == ("about", True)
         assert sitemap.classify("https://x.test/people") == ("about", True)
+
+    @pytest.mark.parametrize("path", ["/Careers", "/JOBS/", "/About-Us", "/Blog"])
+    def test_matching_ignores_case(self, path):
+        assert sitemap.classify(f"https://x.test{path}") is not None
+
+    @pytest.mark.parametrize(
+        "path,theme",
+        [("/JoinUs", "careers"), ("/AboutUs", "about"), ("/PressRoom", "news"),
+         ("/OurTeam", "about"), ("/OpenPositions", "careers")],
+    )
+    def test_a_slug_with_no_delimiter_matches(self, path, theme):
+        """Lowercasing turns `/JoinUs` into `joinus`, which never equals
+        `join-us`. Measured: not one of these occurs on this book — they are
+        here because a word that never matches costs nothing against a URL the
+        site already declared."""
+        assert sitemap.classify(f"https://x.test{path}") == (theme, True)
+
+    @pytest.mark.parametrize(
+        "path", ["/testimonials", "/case-studies", "/customers", "/our-clients"]
+    )
+    def test_a_proof_section_is_its_own_theme(self, path):
+        """7 of 35 sites — the same hit rate as careers. Not news, though: a
+        testimonial is undated marketing and can never be a "why now". It
+        names the industries a brokerage serves, which is what the strategy
+        stage aims a pitch at."""
+        assert sitemap.classify(f"https://x.test{path}") == ("proof", True)
+
+    @pytest.mark.parametrize("path", ["/events", "/webinars", "/event"])
+    def test_an_events_section_is_refused(self, path):
+        """Offered alongside the proof sections and measured at 2 sites of 35.
+        The 297 `/events` URLs in the first tally were one carrier's habit —
+        counting URLs instead of sites is how that becomes a rule for
+        everyone."""
+        assert sitemap.classify(f"https://x.test{path}") is None
 
     def test_a_long_vocabulary_costs_nothing(self):
         """The asymmetry this module exists for: these are matched against URLs
@@ -338,6 +429,36 @@ class TestWhichPagesToFetch:
         picked = sitemap.pick(found, limit=6)
 
         assert [p.url for p in picked] == ["https://x.test/team"]
+
+    def test_department_and_posting_paths_are_not_fetched(self):
+        """Measured before refusing: `/careers/engineering` department paths
+        are on **0 of 35** sites and individual postings on **0 of 35**. The
+        argument for reading them — a job advert names the stack — is sound,
+        and on a book of fifteen-to-forty-person brokerages the pages are not
+        there. This is `ats_boards` again, which is paused at 26 attempts and
+        no evidence."""
+        found = sitemap.Sitemap((
+            sitemap.Entry("https://x.test/careers"),
+            sitemap.Entry("https://x.test/careers/engineering"),
+            sitemap.Entry("https://x.test/jobs/details/senior-analyst"),
+        ))
+        picked = sitemap.pick(found, limit=6)
+
+        assert [p.url for p in picked] == ["https://x.test/careers"]
+
+    def test_proof_is_the_hub_dropped_when_the_budget_runs_out(self):
+        """It is the one theme that cannot carry a "why now", so when all four
+        exist it is the one to lose."""
+        found = sitemap.Sitemap((
+            sitemap.Entry("https://x.test/testimonials"),
+            sitemap.Entry("https://x.test/careers"),
+            sitemap.Entry("https://x.test/blog"),
+            sitemap.Entry("https://x.test/about-us"),
+        ))
+        assert [p.theme for p in sitemap.pick(found, limit=3)] == [
+            "about", "news", "careers",
+        ]
+        assert [p.theme for p in sitemap.pick(found, limit=4)][-1] == "proof"
 
     def test_the_limit_holds(self):
         found = sitemap.Sitemap(

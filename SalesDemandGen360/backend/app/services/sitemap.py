@@ -63,9 +63,32 @@ CONVENTIONAL = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml", "/sitem
 #: Candidate sitemap URLs tried before giving up. Each miss is a timeout, and a
 #: site with none of these does not have one.
 MAX_CANDIDATES = 4
-#: Child sitemaps followed from an index. 10 of the 31 arrive this way, and a
+#: Child sitemaps followed from an index. 10 of the 35 arrive this way, and a
 #: large site lists dozens of children — this is a reader, not a crawler.
+#:
+#: **Which** five matters more than how many. A WordPress index lists nine:
+#: `post-sitemap.xml` and `page-sitemap.xml` carry the pages, while
+#: `attachment-sitemap.xml` is the media library, `category-sitemap.xml` and
+#: `post_tag-sitemap.xml` are taxonomy stubs, and `author-sitemap.xml` is one
+#: page per staff login. Taking the first five blind spent fetches on those and
+#: let their URLs crowd the article list — corpstrat.com harvested 1,138 URLs
+#: that way, most of them attachments. See `_worth_following`.
 MAX_CHILDREN = 5
+
+#: Child sitemaps to skip outright. Measured on the three indexed sites that
+#: list more than five children: every one of these holds either media or
+#: taxonomy pages, and neither is prose about the company.
+SKIP_CHILDREN = (
+    "attachment", "category", "tag", "author", "feed", "image", "video",
+    "product", "download", "location_category",
+)
+#: Preferred children, best first. `post` and `page` cover the pages on all ten
+#: indexed sites; `team` and `testimonial` exist as their own children on
+#: corpstrat.com and heffnetwork.com, which is where the about and proof hubs
+#: live on a site built that way.
+PREFER_CHILDREN = (
+    "post", "page", "news", "blog", "career", "job", "team", "testimonial", "press",
+)
 #: Parsed per domain. The largest on the book declares 1,138.
 MAX_ENTRIES = 3000
 
@@ -85,6 +108,14 @@ _LASTMOD = re.compile(r"<lastmod>\s*([^<\s]+)", re.IGNORECASE)
 #: on every site that lacks it. That asymmetry is the whole argument for
 #: reading a sitemap, and it is why this list can afford to be exhaustive while
 #: the guess list is capped at six.
+#:
+#: Paths are lowercased before matching, so `/Careers` and `/JOBS/` match
+#: already. The **un-delimited** spellings at the end of each tuple —
+#: `joinus`, `aboutus`, `pressroom` — are the case lowercasing cannot reach,
+#: because `/JoinUs` becomes `joinus` and never equals `join-us`. Measured: not
+#: one of them occurs on this book. They are kept because a word that never
+#: matches costs nothing here, which is exactly the asymmetry above; they are
+#: ranked last so a site with both spellings is read at the real one.
 THEMES: dict[str, tuple[str, ...]] = {
     # On 19 of the 31 sites. /blog beats /news 13 to 3 — which the guess list
     # had backwards. `resources` (7) and `resource-center` outrank most of the
@@ -96,6 +127,7 @@ THEMES: dict[str, tuple[str, ...]] = {
         "media-center", "mediaroom", "newsroom", "announcements", "updates",
         "company-updates", "stories", "our-stories", "perspectives",
         "magazine", "journal", "knowledge", "library",
+        "pressroom", "latestnews", "pressreleases",
     ),
     # 24 of 31 — the most common page on the book, and never fetched until now.
     #
@@ -110,6 +142,7 @@ THEMES: dict[str, tuple[str, ...]] = {
         "about-us", "about", "team", "our-team", "who-we-are", "staff",
         "our-story", "leadership", "people", "our-people", "meet-the-team",
         "management", "why-us", "our-firm", "company",
+        "aboutus", "ourteam", "whoweare", "ourstory", "meettheteam", "ourpeople",
     ),
     # 7 of 31: `/careers` on 6 and `/join` on 1. Rare for real, not
     # mis-addressed — which confirms §94's one-in-twenty from the other side.
@@ -118,7 +151,22 @@ THEMES: dict[str, tuple[str, ...]] = {
         "work-with-us", "employment", "opportunities", "openings",
         "current-openings", "open-positions", "available-positions",
         "positions", "vacancies", "hiring", "recruitment", "recruit",
-        "job-openings", "culture",
+        "job-openings", "culture", "joinus", "workwithus", "openpositions",
+        "jobopenings",
+    ),
+    # 7 of 35 sites — the same hit rate as careers, which is why it earns a
+    # theme of its own rather than being folded into news. It is **not** news:
+    # a testimonial is undated marketing, so it can never be a "why now".
+    #
+    # What it is good for is the strategy stage. A brokerage's client list and
+    # testimonials name the industries it serves and the wins it is proud of,
+    # which is what a pitch is aimed at — and `/events` and `/webinars`, offered
+    # alongside, are **refused**: 2 sites of 35, and the 297 `/events` URLs in
+    # the first tally were one carrier's habit read as a pattern.
+    "proof": (
+        "testimonials", "testimonial", "case-studies", "case-study",
+        "success-stories", "customers", "clients", "our-clients",
+        "casestudies", "successstories",
     ),
 }
 
@@ -236,6 +284,31 @@ def parse(body: str) -> tuple[list[Entry], list[str]]:
     return entries[:MAX_ENTRIES], children
 
 
+def _worth_following(children: list[str]) -> list[str]:
+    """Child sitemaps, junk dropped and the useful ones first.
+
+    The budget is five fetches. Spending them in the order an index happens to
+    list its children is fine on the ten sites measured — a WordPress index
+    puts `post` and `page` first — but it is luck, and the children it puts
+    *after* those are the media library and the taxonomy stubs, whose URLs then
+    outnumber the real pages in the pool `pick` chooses from.
+    """
+    def name(url: str) -> str:
+        return urlparse(url).path.rsplit("/", 1)[-1].lower()
+
+    kept = [c for c in children if not any(word in name(c) for word in SKIP_CHILDREN)]
+    # `post_tag-sitemap.xml` contains "post", so preference is tested only
+    # after the skip list has removed it. Order matters, not just membership.
+    def rank(url: str) -> int:
+        label = name(url)
+        for position, word in enumerate(PREFER_CHILDREN):
+            if word in label:
+                return position
+        return len(PREFER_CHILDREN)
+
+    return sorted(kept, key=rank) or children
+
+
 async def discover(http, domain: str, robots: dict) -> Sitemap:
     """Find and read the domain's sitemap, or return an empty one.
 
@@ -267,7 +340,7 @@ async def discover(http, domain: str, robots: dict) -> Sitemap:
         if not body or "<loc" not in body.lower():
             continue
         entries, children = parse(body)
-        for child in children[:MAX_CHILDREN]:
+        for child in _worth_following(children)[:MAX_CHILDREN]:
             child_raw = await _get_bytes(http, child)
             if child_raw is None:
                 continue
@@ -370,13 +443,22 @@ def pick(found: Sitemap, *, limit: int) -> list[Page]:
                 hubs[theme] = (rank, Page(entry.url, theme, True, stamp))
             continue
         if theme != "news":
-            # A deep page under about or careers is one staff biography or one
-            # job advert. The hub lists them; fetching each is a crawl.
+            # A deep page under about, careers or proof is one staff biography,
+            # one job advert or one testimonial. The hub lists them; fetching
+            # each is a crawl.
+            #
+            # Measured before being refused: `/careers/engineering`-style
+            # department paths are on **0 of 35** sites and individual postings
+            # (`/jobs/details/`, `/careers/apply/`) on **0 of 35**. Two sites
+            # have any page at all beneath a careers hub, one of them a
+            # thousand-person carrier outside the ICP band. The tech-stack
+            # argument for reading them is sound and the pages do not exist.
             continue
         articles.append(Page(entry.url, theme, False, stamp))
 
     articles.sort(key=lambda p: p.lastmod or date.min, reverse=True)
-    # Hubs in a fixed order so the about page — present on 24 of 31 sites and
-    # the richest description of the company — is never the one dropped.
-    ordered = [hubs[t][1] for t in ("about", "news", "careers") if t in hubs]
+    # Hubs in a fixed order so the about page — present on 28 of 35 sites and
+    # the richest description of the company — is never the one dropped, and
+    # `proof` is, since it is the one that cannot carry a "why now".
+    ordered = [hubs[t][1] for t in ("about", "news", "careers", "proof") if t in hubs]
     return (ordered + articles)[:limit]

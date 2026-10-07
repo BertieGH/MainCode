@@ -4292,3 +4292,84 @@ Backend 1,797 pass.
 
 `services/sitemap.py` (new), `services/site_sweep.py`, `scripts/survey_sitemaps.py` (new),
 `tests/test_sitemap.py` (new, 48), `tests/test_job_boards.py`, `tests/test_site_sweep.py`.
+
+## §96 — Six more sitemap claims, four of them refused (2026-10-06)
+
+The owner brought a list of advanced sitemap patterns to mine for demand-gen intent. Each was
+testable against the book rather than arguable, so `scripts/survey_sitemap_shapes.py` tested them —
+all 53 domains, HTTP only, counting **sites** rather than URLs, because one carrier with 300 event
+pages is one site's habit and reading it as a pattern is how a single account's shape becomes a rule
+for everyone.
+
+```
+/careers/engineering department paths     0 of 35   refused
+/jobs/details/ individual postings        0 of 35   refused
+/testimonials, /customers, case studies   7 of 35   adopted
+/events, /webinars                        2 of 35   refused
+un-delimited /JoinUs                      0 of 35   adopted anyway
+theme-named child sitemaps               10 of 35   adopted, for another reason
+```
+
+### The two refusals that hurt
+
+The department and posting claims are the most valuable ones if true — a job advert names the stack,
+and a surge in one department says where the budget is going. **Zero sites.** Two have any page at
+all beneath a careers hub, and one of those is a thousand-person carrier outside the ICP band. This
+is `ats_boards` again, paused at 26 attempts and no evidence: a fifteen-person brokerage has no
+applicant tracking system and no department structure to expose. Sound argument, absent pages.
+
+`/events` measured 2 sites. The first survey's tally showed 297 `/events` URLs, which looked like a
+strong pattern and was one carrier's calendar — the exact error counting sites exists to prevent.
+
+### Case insensitivity was already there; the delimiter was not
+
+Paths are lowercased before matching, so `/Careers` and `/JOBS/` have always matched. `/JoinUs` has
+not: it lowercases to `joinus`, which never equals `join-us`. Not one un-delimited slug occurs on
+this book, and the spellings are added regardless — a word that never matches costs nothing against
+a URL the site has already declared, which is the asymmetry §95 is built on. They rank last, so a
+site with both spellings is read at the real one.
+
+### The child-sitemap finding is real, and not the claimed one
+
+The claim was that `sitemap-jobs.xml` and `sitemap-posts.xml` hold the valuable pages and should be
+sought. They do exist — `page-sitemap.xml` on 10 of the 10 indexed sites, `post-sitemap.xml` on 8 —
+but they are always listed **first**, so nothing was being missed.
+
+What was happening is the opposite. A WordPress index lists nine children, and after those two come
+`attachment-sitemap.xml` (the media library), `category-sitemap.xml`, `post_tag-sitemap.xml` and
+`author-sitemap.xml`. Taking the first five blind spent fetches on those and let their URLs crowd
+the pool `pick` chooses from: corpstrat.com harvested 1,138 URLs, most of them attachments.
+
+Ranking the children and skipping the junk dropped the book from 6,487 harvested URLs to **5,720**
+with theme coverage unchanged — news 23 sites, about 28, careers 8. The skip list runs before the
+preference list, because `post_tag-sitemap.xml` contains `post`.
+
+An index whose every child looks like junk is still followed: turning a site with an unusual naming
+scheme into a site with no sitemap is worse than a wasted fetch.
+
+### `proof` is a theme, not news
+
+`/testimonials` (7 sites) and `/our-clients` (1) earn their own theme at the same hit rate as
+careers. Deliberately **not** folded into news: a testimonial is undated marketing and can never be
+a "why now". What it carries is the industries a brokerage serves and the wins it advertises, which
+is what the strategy stage aims a pitch at. It is ordered last among the hubs, so it is the one
+dropped when a site has all four and the budget is six.
+
+### The intent-phrase regex is declined
+
+The suggestion was to regex the fetched text for "We are expanding our…", "Proud to announce the
+appointment of…". That is extraction's job, and doing it here would build a second, dumber extractor
+beside the one that already reads every document against every active signal type — producing either
+duplicates or, worse, signals with no model-cited evidence, against invariants 1 and 7. The phrases
+belong in a signal type's instruction if anywhere.
+
+### On the survey script
+
+It harvested with its own copy of the discovery logic and so reported 6,487 URLs while the reader
+saw 5,720 — a measurement of something nothing runs. It now calls `sitemap.discover` directly. Its
+own docstring had warned that a second copy would drift and the drift would read as a result.
+
+Backend 1,818 pass.
+
+`services/sitemap.py`, `scripts/survey_sitemaps.py`, `scripts/survey_sitemap_shapes.py` (new),
+`tests/test_sitemap.py` (+22).
