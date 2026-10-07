@@ -320,7 +320,11 @@ CATALOGUE: tuple[ProviderCatalogue, ...] = (
         ),
         probe=ProbeSpec(
             method="GET",
-            url="https://api.searlo.tech/api/v1/search/web?q=test&num=1",
+            # `/credits`, not a search: it authenticates identically and
+            # **spends nothing**, where probing with a search burns a credit
+            # every time somebody presses Test. It also answers with the
+            # balance, which is the thing worth knowing when a key is checked.
+            url="https://api.searlo.tech/api/v1/credits",
             header="x-api-key",
             value_template="{key}",
             extra_headers={"accept": "application/json"},

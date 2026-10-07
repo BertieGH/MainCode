@@ -3848,3 +3848,73 @@ Backend 1,808 pass; front end 351 pass; `ng build` exit 0.
 `services/linkedin_serp.py` (new), `services/pipeline.py`, `services/provider_catalogue.py`,
 `models/config.py`, `alembic c5e1a83d7b29`, `tests/test_research_sources.py` (+6),
 `tests/test_providers.py`.
+
+## §89 — Searlo's other endpoints, read and mostly declined (2026-10-06)
+
+Asked what else the API offers that a sweep could use. Probed it directly rather than reading a
+marketing page, because the API answers for itself:
+
+```
+/search/web  /search/news  /search/images  /search/maps  /search/places
+/search/scholar  /search/videos  /search/shopping  /credits
+```
+
+### Taken: `/credits`
+
+Returns `{"remaining": 2916}`, authenticates exactly as a search does — **401 for a junk key and for
+a missing header, checked both ways** — and **spends nothing**. It is now the probe, where a search
+would burn a credit every time somebody presses Test. It also answers with the balance, which is the
+thing worth knowing at the moment a key is checked.
+
+### Declined: `/search/news`, on evidence
+
+This looked like the find of the day. It returns `news[]` with a real `date` field, structured, one
+credit — against `trade_press`, which is a grounded search costing a model call. The first sample
+found *"Michael Lopez of Santa Rosa's Vantreo Insurance Brokerage wins…"* for a company our grounded
+`trade_press` A/B had returned **nothing** for.
+
+Seven of ten companies returned items. Then I read them:
+
+```
+Metropolitan Adjustment Bureau   an obituary
+Placer Insurance Agency          "Friend says woman was like a rocket. Now she's in a coma"
+Tribal First                     "trail design process" — the word "tribal"
+ISN Network                      a different ISN entirely, in contractor software
+Vantreo                          genuine — and from 2017
+```
+
+Mostly **name collisions**, the rest stale. Applying the recency window that worked so well for
+posts:
+
+> **Three of ten have any news in the last year, and all three are collisions** — the obituary again,
+> an ISN chairman in Nigeria, and tribal first-aid centres in Krishnagiri.
+
+So: **zero of ten companies have genuine recent news.** A quoted phrase is not enough to pin a
+generic company name, and companies of this size do not make news. That is the same answer
+`trade_press` gave in §82 — its only hits were the one insurtech — reached independently, which is
+worth more than either measurement alone.
+
+Not wired. The third time this discipline has refused something plausible after `review_sites` (0/3)
+and local business journals (A 3, B 2).
+
+### Noted, not taken: `/search/places`
+
+Returns `rating`, `ratingCount`, `address`, `phoneNumber`, `website`, `category`, `hours`,
+`businessStatus`, `openingDate`, coordinates. Most of it duplicates Apollo, which already has 100%
+coverage of this book (§86).
+
+Two things are new. `ratingCount: 7` for a thirty-five person brokerage **confirms `review_sites` was
+rightly retired** — there is no review corpus at this size, independently of the 0/3 trial that
+retired it. And `businessStatus` would flag a permanently closed company, which is list hygiene
+rather than a signal, and worth remembering when account-quality work comes up.
+
+### What it says about generic names
+
+`"ISN Network"`, `"Tribal First"` and `"Placer Insurance Agency"` all collided. Any future query
+design using a bare quoted company name inherits this, including the `/in` profile queries — those
+survived only because a LinkedIn profile mentioning a company is usually about that company, and the
+open web is not so kind.
+
+Backend 1,808 pass.
+
+`services/provider_catalogue.py`.
