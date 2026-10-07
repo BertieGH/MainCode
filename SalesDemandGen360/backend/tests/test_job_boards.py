@@ -696,3 +696,46 @@ class TestTheSubPathFallback:
         )
 
         assert len(result.batch.evidence) == site_sweep.MAX_PAGES
+
+
+class TestAScriptShellIsNotProse:
+    """Stripping tags leaves what is *between* them.
+
+    `MIN_PAGE_CHARS` was written for "a shell that renders its content with a
+    script", and it caught the short ones. A React or Next.js page defeats it
+    from the other direction: the inline script body is thousands of characters,
+    so the shell is not short — it is long and meaningless.
+
+    Four such rows were filed as evidence about one company on the first live
+    run, each beginning `requestAnimationFrame(function(){$RT=performance.now()})`.
+    Extraction would have read them as passages about the business.
+    """
+
+    def test_a_script_body_is_not_counted_as_text(self):
+        shell = (
+            "<html><head><script>requestAnimationFrame(function(){x=1});"
+            + ("var y=1;" * 200)
+            + "</script></head><body><div id=root></div></body></html>"
+        )
+        assert site_sweep._text(shell) == ""
+
+    def test_style_and_noscript_go_the_same_way(self):
+        page = (
+            "<html><head><style>" + (".a{color:red}" * 60) + "</style></head>"
+            "<body><noscript>" + ("Enable JavaScript. " * 30) + "</noscript></body></html>"
+        )
+        assert site_sweep._text(page) == ""
+
+    def test_real_prose_survives_a_page_that_also_has_scripts(self):
+        """The fix must not throw away a page merely for carrying analytics."""
+        page = (
+            "<html><body><script>" + ("track();" * 200) + "</script>"
+            "<p>" + ("Vantreo writes commercial lines for contractors. " * 8) + "</p></body></html>"
+        )
+        text = site_sweep._text(page)
+        assert "Vantreo writes commercial lines" in text
+        assert "track()" not in text
+        assert len(text) >= site_sweep.MIN_PAGE_CHARS
+
+    def test_the_tags_still_go(self):
+        assert site_sweep._text("<p>Hello <b>there</b></p>") == "Hello there"

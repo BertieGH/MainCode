@@ -4038,3 +4038,78 @@ recorded under `merged` and still skipped the case that matters.
 Backend 1,822 pass.
 
 `services/csv_import.py`, `tests/test_contact_import.py` (+2).
+
+## §92 — The first live run, and what it found about itself (2026-10-06)
+
+Three accounts, resolved then researched. Two bugs, one design gap, and an answer to the question
+the harness could not settle.
+
+### `linkedin_index` never ran, and the rule was right
+
+It was absent from the coverage rows entirely. Not a fault in the source — the derivation rule
+(§85) working exactly as designed: **sources come from the `produced_by` of the signal types in
+scope**, `linkedin_index` was claimed only by the three *contact* types, so it sat in the contact
+plan. The book was imported account-grain, there were no contacts, the contact plan never ran.
+
+The awkward part is that the company-level query is what **finds** the people: `site:linkedin.com/in
+"{company}"` returns nine or ten employees with their roles, which is how a contact list gets built.
+Reachable only through contact types, it could only run once the contacts it would have found
+already existed.
+
+Fixed the way the architecture asks — a company-scoped type now says its fact lives there.
+`leadership_change_executive` genuinely does: its subject is who holds a technology or operations
+seat, and a profile reading "VP of Operations at X" is evidence about that seat whether or not the
+person is a contact we track (`d9b2f45c17ae`). Evidence went from **4 rows to 41**.
+
+### Four pages of JavaScript were stored as evidence
+
+```
+title "news"     requestAnimationFrame(function(){$RT=performance.now()}); (self...
+title "careers"  requestAnimationFrame(function(){$RT=performance.now()}); (self...
+```
+
+`_text` strips **tags**; the content *between* `<script>` tags is not a tag. `MIN_PAGE_CHARS` was
+written for exactly this failure — "a shell that renders its content with a script" — and catches the
+short ones. A React or Next.js page defeats it from the other side: the inline script body runs to
+thousands of characters, so the shell is not short, it is long and meaningless. Extraction would have
+read it as prose about the business.
+
+`_NOT_PROSE` now removes `script`, `style`, `noscript` and `template` bodies **before** the tags go,
+because once the tags are gone nothing says where a script began. The same shell now measures **zero**
+characters and is rejected; a page carrying both analytics and prose keeps only the prose.
+
+### Zero signals, and that is the correct answer
+
+Forty-five passages, **three of them dated**, and extraction produced nothing — including from
+*"Charity First Insurance Services, Inc. is a subsidiary of Arthur J. Gallagher"*, which looks like
+`m_and_a_integration` until you ask when.
+
+That is the distinction `schemas/profile.py` opens with: **a signal answers *why now*; a profile
+answers *who are they*.** A profile snippet is a standing description with no date, and
+`m_and_a_integration` is an `event`. "X is a subsidiary of Y" is a fact, not an occurrence. The
+extractor declining it is the design working, not failing.
+
+So the question the harness could not settle — *is a profile snippet enough for extraction?* — has
+the answer **no, and it should not be**. It is enough for a profile, which is what it is for.
+
+### And the profiles are what came out
+
+All three accounts now carry one, with `verbatim` populated — the §90 change, end to end:
+
+```
+"VANTREO, which opened in 2007 with about 18 employees, has grown to about 150 employees"
+    — Insurance Journal
+"Vantreo has developed a comprehensive wine insurance program in partnership with
+ several leading wine industry associations"  — Insurance Business America
+```
+
+The second is a cadence opening on its own, and it is the kind of sentence a 400-character capped
+`summary` removes. That is the whole argument for keeping the source text.
+
+**Worth a look later:** Apollo says 35 employees; the company told Insurance Journal 150 in 2021.
+Nothing acts on it yet, but it is the first case of two sources disagreeing about a headcount since
+`record_headcount` gained the vocabulary to say so.
+
+Backend 1,828 pass.
+
+`services/site_sweep.py`, `alembic d9b2f45c17ae`, `tests/test_job_boards.py` (+4).

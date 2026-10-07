@@ -104,6 +104,20 @@ _LINK_TAG = re.compile(r"<link\b[^>]*>", re.I)
 _ATTR = re.compile(r"""(\w[\w-]*)\s*=\s*["']([^"']*)["']""")
 _TAGS = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
+#: Whole elements whose *contents* are not prose. Stripping tags alone
+#: leaves what is between them, and on a React or Next.js site that is a
+#: few kilobytes of JavaScript — which sails past `MIN_PAGE_CHARS` and gets
+#: stored as a passage about the company. Four such rows were filed for one
+#: account before this existed, each beginning
+#: `requestAnimationFrame(function(){$RT=performance.now()})`.
+#:
+#: This is the same failure `MIN_PAGE_CHARS` was written for — "a shell
+#: that renders its content with a script" — arriving by the one route that
+#: measurement could not catch, because the shell was not short.
+_NOT_PROSE = re.compile(
+    r"<(script|style|noscript|template)\b[^>]*>.*?</\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 @dataclass(frozen=True)
@@ -233,7 +247,12 @@ def feeds_in(html: str, base: str) -> list[str]:
 
 
 def _text(value: str | None) -> str:
-    return _WS.sub(" ", _TAGS.sub(" ", value or "")).strip()
+    """Readable text, with script and style bodies removed first.
+
+    Order matters: the elements go before the tags, because once the tags
+    are gone there is nothing left to say where a script began and ended.
+    """
+    return _WS.sub(" ", _TAGS.sub(" ", _NOT_PROSE.sub(" ", value or ""))).strip()
 
 
 async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
