@@ -55,6 +55,12 @@ class FakeResponse:
         self.status_code = status_code
         self.text = text
 
+    @property
+    def content(self) -> bytes:
+        """As httpx does. The sitemap reader needs the raw bytes to spot a
+        gzipped sitemap before anything tries to decode it as text."""
+        return self.text.encode("utf-8")
+
 
 class FakeClient:
     """Answers from a map; anything else is a 404. Records what was asked."""

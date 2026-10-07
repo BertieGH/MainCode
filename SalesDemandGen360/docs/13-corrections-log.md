@@ -4208,3 +4208,87 @@ before it was measured across the book.
 Backend 1,841 pass.
 
 `services/site_sweep.py`, `tests/test_job_boards.py` (+3).
+
+## §95 — The sweep stops guessing page names and asks the site (2026-10-06)
+
+§94 measured that `company_site` finds a real careers page on one site in twenty, and left the
+reason unexamined: was that the sites' doing, or was the guess list looking in the wrong places?
+Both, as it turns out.
+
+`scripts/survey_sitemaps.py` harvests every account's sitemap — robots.txt `Sitemap:` directives
+first, then the conventional paths, following sitemap *index* files and gzip — and tallies what the
+pages are actually called. All 53 domains on the book, HTTP only, no model calls and no credits:
+
+```
+with a reachable sitemap   35 of 53
+  declared in robots.txt   26 (8 of them only via an index)
+  at a conventional path    9 (2 of them only via an index)
+```
+
+**Two sites in three declare their own page list**, and the guess list was asking about the wrong
+pages:
+
+```
+/blog        14 sites      PAGE_PATHS led with /news and did not contain /blog
+/news         4 sites
+/resources    7 sites      outranks every conventional news name but /blog
+/about-us    13 sites  }   the most common page on the book, 28 of 35 sites,
+/about        9 sites  }   and the sweep never fetched it
+/careers      6 sites      rare for real — §94 confirmed from the other side
+```
+
+So the one-in-twenty was not all the sites' fault. On the commonest shape of site the sweep spent an
+eight-second timeout looking for `/news`, which was not there, and never asked for `/blog`, which
+was. And it never read the about page at all — the richest description of a company available, and
+the material the three live profiles were built on.
+
+### The asymmetry that makes it work
+
+A synonym in the sitemap list is **free**: it is compared against URLs the site has already
+declared, so a spelling that never matches costs nothing. A synonym in the guess list costs a
+timeout on every site that lacks it. That is why `sitemap.THEMES` can afford to be exhaustive —
+including the owner's suggested lists and `/work-at-[company]`-style prefixes — while
+`PAGE_PATHS` stays capped at six, now in measured frequency order.
+
+Re-measured with the merged vocabulary: news 19 → **23** sites, about 24 → **28**, careers 7 → **8**.
+
+### `lastmod` is a sort key and nothing else
+
+29 of 35 sitemaps carry `lastmod` stamps that genuinely vary — one spans 2014‑01‑20 to 2026‑10‑01
+across 1,138 URLs — and dates are the binding constraint on this book, so the temptation was to use
+them. The owner named the reason not to: **a sitemap is a living list.** Everything in it is a page
+the site serves today, so there is no stale entry to filter out, and a cutoff on `lastmod` would
+discard live pages on the strength of a field that means *modified* rather than *published*.
+
+The other direction is worse. A 2019 post re-rendered by a theme upgrade carries today's stamp, and
+filing that as `observed_at` would turn a re-render into a dated event — and a dated event is
+exactly what becomes a signal. So the stamp orders the fetches, newest-changed first, and never
+reaches a passage. Pages stay undated, as every page read already was, and extraction takes the date
+from the text.
+
+A single bulk stamp (2 of 35 domains) orders nothing and is discarded rather than kept as a
+meaningless tie-break.
+
+### What it fetches
+
+One hub per theme — about, news, careers — then the most recently changed news articles, six per
+account. Across the book that is 26 about sections, 19 news sections, 8 careers sections and 75
+articles. Three sites have a sitemap naming no page the vocabulary recognises and fall through to
+the guess, which is why finding a sitemap does not end the search.
+
+The prose floor, the excerpt cap and the same-page detection apply to both routes through one shared
+`_fetch_pages`, so a declared URL cannot become a way around them — a declared page that is a script
+shell is still refused. Coverage notes say `sitemap` or `read_pages`, so the two can be compared on
+evidence rather than argued.
+
+`blog-` was among the prefixes and is dropped: re-run against the book it matched exactly one page,
+`/blog-maintenence`, a maintenance notice. `news-` found a real `/news-events` and stays.
+
+`/people` and `/our-people` were suggested as careers synonyms and are filed under **about**: on this
+book they list the staff a brokerage has, not the roles it wants, and the theme becomes the passage's
+label — mislabelling a staff directory as a jobs page is the §94 error again.
+
+Backend 1,797 pass.
+
+`services/sitemap.py` (new), `services/site_sweep.py`, `scripts/survey_sitemaps.py` (new),
+`tests/test_sitemap.py` (new, 48), `tests/test_job_boards.py`, `tests/test_site_sweep.py`.

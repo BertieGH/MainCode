@@ -59,10 +59,7 @@ FEED_PATHS = (
     "/feed", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml",
     "/blog/feed", "/blog/rss.xml", "/news/feed", "/blog/index.xml",
 )
-#: Read as HTML when no feed answers. Two kinds, **interleaved on purpose**:
-#: announcements and open roles. The loop stops at `MAX_PAGES`, so grouping by
-#: kind meant the second kind was never reached on a site that had the first —
-#: four announcement pages would fill the budget and `/careers` never be tried.
+#: Read as HTML when no feed answers **and the site declares no sitemap**.
 #:
 #: Careers pages are here because **`ats_boards` is paused at 26 attempts and
 #: no evidence**: a twenty-person broker runs no Greenhouse board, but it has a
@@ -77,13 +74,33 @@ FEED_PATHS = (
 #: type is not orphaned: it keeps `trade_press`, `regulators_and_registers` and
 #: its own search instruction, which can still ask a search engine for those
 #: paths without us fetching them blind.
+#:
+#: **Reordered from measurement** (`scripts/survey_sitemaps.py`,
+#: all 53 domains). Among the 31 sites that declare a sitemap:
+#:
+#: * `/blog` appears on **13** sites and `/news` on **3** — this list led with
+#:   `/news` and did not contain `/blog` at all, so on the commonest shape of
+#:   site it timed out looking for the page that was not there and never asked
+#:   for the one that was;
+#: * `/about-us` (12) and `/about` (8) make the about page the most common page
+#:   on the book, 24 sites of 31, and it was never fetched. It is also the best
+#:   description of the company a profile can be built from;
+#: * `/careers` is on 6 and `/join` on 1 — rare for real, which confirms §94's
+#:   one-in-twenty from the other direction.
+#:
+#: Only a guess when `sitemap.discover` finds nothing, which is a third of the
+#: book. Order is frequency order, because `MAX_PAGES` stops the loop early and
+#: whatever is last is what a productive site never reaches.
 PAGE_PATHS = (
-    "/news", "/careers",
-    "/newsroom", "/jobs",
-    "/press", "/about/news",
+    "/blog", "/about-us",
+    "/careers", "/news",
+    "/about", "/resources",
 )
-#: Kept per account from the fallback. Each miss costs a timeout.
+#: Kept per account. Each *guessed* miss costs a timeout; a sitemap-chosen URL
+#: is a page the site has declared, so it costs a fetch and no gamble — which
+#: is why the sitemap path gets a larger budget.
 MAX_PAGES = 4
+MAX_SITEMAP_PAGES = 6
 #: Below this a page is a shell that renders with a script, or a redirect stub.
 #: Storing it files "Skip to main content" as evidence about the company.
 #:
@@ -200,6 +217,23 @@ async def _get(http, url: str) -> str | None:
     return response.text
 
 
+async def _get_bytes(http, url: str) -> bytes | None:
+    """The raw body, for a document that may be compressed.
+
+    `_get` returns `response.text`, which decodes a gzipped sitemap as mojibake
+    rather than failing — so the sitemap reader needs the bytes to spot the
+    gzip magic number before any decoding happens.
+    """
+    try:
+        response = await http.get(url)
+    except Exception as exc:  # noqa: BLE001 — one site must not cost the run
+        log.info("site_sweep.unreachable url=%s err=%s", url, type(exc).__name__)
+        return None
+    if response.status_code != 200:
+        return None
+    return response.content
+
+
 async def allowed(http, url: str, cache: dict[str, RobotFileParser | None] | None = None) -> bool:
     """Whether `robots.txt` permits fetching this URL.
 
@@ -279,23 +313,61 @@ def _text(value: str | None) -> str:
     return _WS.sub(" ", _TAGS.sub(" ", _NOT_PROSE.sub(" ", value or ""))).strip()
 
 
-async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
-    """The fallback: conventional pages, read as HTML when there is no feed.
+async def _read_pages(http, domain: str, robots: dict) -> tuple[list[FoundEvidence], str]:
+    """Pages read as HTML when there is no feed. Asks the site first, then guesses.
 
-    Two kinds of page, for two reasons. `/news` and `/press` carry what a feed
-    would have carried on a site that has one. `/security` and `/trust` carry
-    compliance deadlines and are never in a feed at all — which is why
-    `company_site`, a feed reader, could not produce a single
-    `compliance_security_deadline` no matter how the prompt was worded.
+    Returns the evidence and a tag saying which route produced it, so a
+    coverage query can tell a declared page from a lucky guess.
 
-    **Undated, and left that way.** A page carries no publication date the way
-    a feed entry does, and guessing one from the fetch would date every
-    company's history to today. `observed_at` stays null; the intake gate
-    admits undated evidence precisely so this is possible, and extraction
+    **The sitemap comes first** because it turns the guess into a lookup. The
+    survey behind `sitemap.THEMES` found that two sites in three declare one,
+    and that the paths this function used to guess were the wrong ones — a site
+    is thirteen times more likely to call it `/blog` than `/news`. A declared
+    URL also costs no gamble: it is a page the site says exists, where every
+    guessed miss costs an eight-second timeout.
+
+    The guess survives for the other third, reordered by what the survey
+    measured.
+
+    **Undated either way, and left that way.** A page carries no publication
+    date the way a feed entry does; a sitemap's `lastmod` is not one either and
+    is used only to order the fetches. `observed_at` stays null — the intake
+    gate admits undated evidence precisely so this is possible, and extraction
     takes the date from the text when the text gives one.
+    """
+    from app.services import sitemap
 
-    Bounded hard. Each miss costs a timeout, and a site that has none of these
-    at the conventional spellings does not have them.
+    found = await sitemap.discover(http, domain, robots)
+    if found:
+        chosen = sitemap.pick(found, limit=MAX_SITEMAP_PAGES)
+        if chosen:
+            pages = await _fetch_pages(
+                http, domain, [(p.url, p.title) for p in chosen], robots,
+                limit=MAX_SITEMAP_PAGES,
+            )
+            if pages:
+                return pages, "sitemap"
+        # A sitemap that names no page of any theme is a real answer about the
+        # site, but not a reason to skip the guess: the themes are derived from
+        # this book and a site may simply spell things in a way it has not seen.
+        log.info("site_sweep.sitemap_unhelpful domain=%s urls=%d", domain, len(found.entries))
+
+    pages = await _fetch_pages(
+        http, domain,
+        [(f"https://{domain}{path}", path.strip("/").replace("-", " ")) for path in PAGE_PATHS],
+        robots, limit=MAX_PAGES,
+    )
+    return pages, "read_pages"
+
+
+async def _fetch_pages(
+    http, domain: str, candidates: list[tuple[str, str]], robots: dict, *, limit: int
+) -> list[FoundEvidence]:
+    """Fetch `(url, title)` candidates in order and keep what reads as prose.
+
+    Shared by both routes so the two cannot drift: the same emptiness floor,
+    the same excerpt length, and the same same-page detection apply whether a
+    URL was declared by the site or guessed at.
     """
     out: list[FoundEvidence] = []
     #: Text already taken this sweep. Many sites answer **every** path with the
@@ -316,10 +388,9 @@ async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
     #: same text can correct that row's title rather than being dropped
     #: silently. Dropping it is right; leaving it mislabelled is not.
     by_text: dict[str, FoundEvidence] = {}
-    for path in PAGE_PATHS:
-        if len(out) >= MAX_PAGES:
+    for url, name in candidates:
+        if len(out) >= limit:
             break
-        url = f"https://{domain}{path}"
         if not await allowed(http, url, robots):
             continue
         body = await _get(http, url)
@@ -347,7 +418,7 @@ async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
                 source_type="web",
                 source_url=url,
                 source_name=domain,
-                title=path.strip("/").replace("/", " ").replace("-", " ") or domain,
+                title=name or domain,
                 excerpt=text[:PAGE_EXCERPT_CHARS],
                 observed_at=None,
             )
@@ -483,35 +554,41 @@ async def sweep_account(
                 break
 
         if not items:
-            # No feed. Fall back to reading the conventional pages directly —
-            # a company with no RSS still has a newsroom, and the pages that
-            # carry a compliance deadline (`/security`, `/trust`) are never in
-            # a feed even on a site that has one.
+            # No feed. Read the site's pages directly instead — a company with
+            # no RSS still has a newsroom, an about page and sometimes a
+            # careers page, and `_read_pages` asks the sitemap which of them
+            # exist before falling back to guessing at paths.
             #
             # A fallback, deliberately, and not the first thing tried: a feed
             # is dated, bounded and meant to be read by machines, where a page
             # is none of those. The other route to these pages is a search with
-            # `site:` operators, which costs a model call instead of four HTTP
+            # `site:` operators, which costs a model call instead of a few HTTP
             # requests. Both exist so the comparison can be made on evidence
-            # rather than argued — this one writes `read_pages` into its notes
-            # so a coverage query can tell them apart.
-            pages = await _read_pages(own, domain, robots)
+            # rather than argued — this one writes `sitemap` or `read_pages`
+            # into its notes so a coverage query can tell all three apart.
+            pages, how = await _read_pages(own, domain, robots)
             if pages:
+                via = (
+                    "from its sitemap" if how == "sitemap"
+                    else "at the conventional paths"
+                )
                 note = (
                     f"no feed at {domain}; read {len(pages)} "
-                    f"page{'s' if len(pages) != 1 else ''} directly"
+                    f"page{'s' if len(pages) != 1 else ''} {via}"
                 )
-                log.info("site_sweep.pages domain=%s read=%d", domain, len(pages))
+                log.info(
+                    "site_sweep.pages domain=%s read=%d via=%s", domain, len(pages), how
+                )
                 return SweepResult(
                     EvidenceBatch(evidence=pages),
                     (),
-                    notes=(note, "read_pages"),
+                    notes=(note, how),
                     linkedin_company=linkedin_company,
                 )
             note = (
                 f"no feed found at {domain} — tried the page's own links, "
-                f"{tried} conventional path{'s' if tried != 1 else ''} and "
-                f"{len(PAGE_PATHS)} standard pages"
+                f"{tried} conventional path{'s' if tried != 1 else ''}, its "
+                f"sitemap and {len(PAGE_PATHS)} standard pages"
             )
             return SweepResult(
                 EvidenceBatch(not_found=[note]), (note,), linkedin_company=linkedin_company
