@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account, AccountList, AccountListMember, Contact
+from app.services import sizing
 
 Outcome = Literal[
     # account-grain outcomes
@@ -362,16 +363,45 @@ async def run_import(
                     # the company record on every row of a contact export.
                     linkedin_url=_company_linkedin(cell(row, "linkedin_url")),
                     funding_stage=cell(row, "funding_stage"),
-                    employee_count=_as_int(cell(row, "employee_count")),
+                )
+                # Recorded rather than assigned, so the count carries the
+                # date we learned it. A spreadsheet has no as-of column, so
+                # the honest timestamp is when it was imported — and
+                # without one there is no window a later change can be
+                # measured over.
+                sizing.record_headcount(
+                    account, _as_int(cell(row, "employee_count"))
                 )
                 session.add(account)
                 await session.flush()
-        elif account.id in existing_members:
-            outcome = "already_in_list"
-            detail = "already a member of this list"
         else:
-            outcome = "merged"
-            detail = f"matched existing account {account.name!r}"
+            # **Re-importing refreshes the headcount, whichever branch the row
+            # takes.** This is the cheapest growth signal available: an Apollo
+            # export costs no credits, so importing a fresh one each month
+            # turns `record_headcount` into a delta without a single API call.
+            #
+            # Recorded *before* the membership branches on purpose. The first
+            # version put it under `merged` only, and a monthly re-import of
+            # the same file into the same list takes `already_in_list` — which
+            # is exactly the case this exists for, and it refreshed nothing.
+            moved = None
+            if not dry_run:
+                moved = sizing.record_headcount(
+                    account, _as_int(cell(row, "employee_count"))
+                )
+
+            if account.id in existing_members:
+                outcome = "already_in_list"
+                detail = "already a member of this list"
+            else:
+                outcome = "merged"
+                detail = f"matched existing account {account.name!r}"
+
+            if moved is not None and moved.outcome == "changed":
+                detail += (
+                    f" — headcount {moved.before} → {moved.after}"
+                    + (f" over {moved.over_days} days" if moved.over_days else "")
+                )
             if account.dormant_at is not None:
                 # Its research, signals and contacts were kept for exactly this.
                 detail = (

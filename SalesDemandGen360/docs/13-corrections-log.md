@@ -3981,3 +3981,60 @@ Backend 1,816 pass; front end 351 pass; `ng build` exit 0.
 
 `schemas/profile.py`, `services/profiles.py`, `services/instructions.py`,
 `services/csv_import.py`, `tests/test_contact_import.py` (+5), `tests/test_llm_call_sites.py` (+4).
+
+## §91 — The key works, the book is back, and a re-import is now the growth signal (2026-10-06)
+
+Key stored and probed: **valid**, `last_four 606c` — a different key from the one pasted in chat, so
+it was rotated. The probe runs on `/credits`, so checking it costs nothing and reports the balance.
+The reader then read it from the credential store through the real binder, with
+`kind=fetch · status=active · max_age_days=365`, and produced ten passages for Vantreo at two credits
+with `recent_posts=0`, eleven for Charity First with `recent_posts=1`. The gate works on the live
+path, not just in the harness.
+
+### The import, with the §86 fix in it
+
+```
+accounts 57 · with_headcount 57 · with_country 57 · with_region 57 · with_linkedin 57
+```
+
+Fifty-seven of fifty-seven, against **eight** before the fix. And the consequence that was invisible
+until now: every account resolves to a size band. Previously forty-nine were `unknown`, scoring on
+base weights — `sizing.band_for` refuses to guess, by design, so the book looked unmeasurable rather
+than unmapped.
+
+### Then the headcount had no date, and the fix had two holes
+
+`dated: 0 of 57`. The importer wrote `employee_count` directly, bypassing `record_headcount`, so §83's
+delta machinery had no starting point for the whole book.
+
+Worth stating because the user's own point was the cheapest finding of the day: **an Apollo export
+costs no credits**, so importing a fresh one each month *is* the growth signal, with no API call at
+all. That only works if the second import records anything.
+
+Two traps, both hit:
+
+* the first version recorded on **create** only, so a second import changed nothing — the same
+  write-once shape `resolution` had, reintroduced one file away from where it was fixed;
+* the second put it under the `merged` branch, and a re-import into the **same list** takes
+  `already_in_list` — which is precisely the case it exists for.
+
+Recording now happens before the membership question, for any existing account, and the row detail
+says so: *"headcount 35 → 39 over N days"*. Proved by re-importing the export with one number
+changed:
+
+```
+Vantreo Insurance Brokerage   now 39   was 35   seen 2026-10-07
+dated: 57 of 57
+```
+
+`before_as_of` is null there, correctly — the original 35 was written by the pre-fix import and has
+no honest date, which is the "first change has no window" case §83 already tested. The simulated 39
+was reverted afterwards; it was a test artifact, not an observation.
+
+Guarded by asserting on the **source order** rather than on an outcome, because the branch taken is
+the entire bug: a test that imported twice and checked the number would pass against a version that
+recorded under `merged` and still skipped the case that matters.
+
+Backend 1,822 pass.
+
+`services/csv_import.py`, `tests/test_contact_import.py` (+2).

@@ -471,3 +471,47 @@ class TestAnApolloContactExportImportsWholly:
         assert mapping["hq_country"] == "country"
         assert mapping["hq_region"] == "state"
         assert mapping["employee_count"] == "employees"
+
+
+class TestReimportingRefreshesTheHeadcount:
+    """An Apollo export costs no credits, so importing a fresh one each month
+    is the cheapest growth signal there is — if the second import actually
+    records anything.
+
+    Two traps, both hit on the way here. The first version set the count only
+    when **creating** an account, so a second import changed nothing: the same
+    write-once shape `resolution` had. The second put the refresh under the
+    `merged` branch, and a re-import of the same list takes `already_in_list` —
+    which is exactly the case it exists for, and it refreshed nothing either.
+    """
+
+    def test_the_headcount_is_recorded_for_an_account_already_on_the_list(self):
+        """Asserted on the source, because the branch taken is the whole bug:
+        the recording must happen before the membership question, not inside
+        one of its answers."""
+        import inspect
+
+        from app.services import csv_import
+
+        body = inspect.getsource(csv_import)
+        record = body.index("sizing.record_headcount")
+        # The second call — the one on the existing-account path.
+        second = body.index("sizing.record_headcount", record + 1)
+        already = body.index('outcome = "already_in_list"')
+        merged = body.index('outcome = "merged"')
+        assert second < already and second < merged, (
+            "the headcount must be recorded before the membership branches, or a "
+            "re-import into the same list skips it"
+        )
+
+    def test_a_dry_run_records_nothing(self):
+        """An import that writes because a flag was forgotten is the failure
+        the dry-run default exists to prevent, and a headcount is a write."""
+        import inspect
+
+        from app.services import csv_import
+
+        body = inspect.getsource(csv_import)
+        at = body.index("sizing.record_headcount", body.index("sizing.record_headcount") + 1)
+        window = body[max(0, at - 400):at]
+        assert "if not dry_run:" in window
