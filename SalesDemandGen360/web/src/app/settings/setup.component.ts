@@ -125,9 +125,14 @@ import { apiError, apiErrorCode } from '../shared/api-error';
 
     <!-- One card per slot, in the order you would set them up. -->
     <div class="card slot" *ngFor="let s of slots(); let i = index" [class.done]="s.satisfied">
+      <!-- Status and the action that changes it sit together at the right end,
+           above a rule. Previously the button was the last thing on the card,
+           below the table and the suggestions — so on a slot with two keys it
+           was most of a screen away from the heading it belonged to, and the
+           cards did not line up with each other. -->
       <div class="slot-head">
         <div class="step" [class.on]="s.satisfied">{{ s.satisfied ? '✓' : i + 1 }}</div>
-        <div style="flex:1;">
+        <div style="flex:1;min-width:0;">
           <h3>{{ s.title }}</h3>
           <p class="row-sub" style="max-width:64ch;">{{ s.why }}</p>
         </div>
@@ -137,6 +142,10 @@ import { apiError, apiErrorCode } from '../shared/api-error';
                 'badge-warn': s.state === 'unverified',
                 'badge-neutral': s.state === 'missing'
               }">{{ s.state }}</span>
+        <button class="btn" (click)="openFor(s.kind)" *ngIf="openSlot() !== s.kind">
+          <app-icon name="plus" [size]="13" />
+          {{ s.credentials.length ? 'Add provider' : 'Add a credential' }}
+        </button>
       </div>
 
       <p class="row-sub blocker" *ngIf="s.blocker">{{ s.blocker }}</p>
@@ -217,12 +226,6 @@ import { apiError, apiErrorCode } from '../shared/api-error';
           <a class="link" [href]="p.console_url" target="_blank" rel="noopener">get a key ↗</a>
         </span>
       </div>
-
-      <button class="btn" (click)="openFor(s.kind)" style="margin-top:12px;"
-              *ngIf="openSlot() !== s.kind">
-        <app-icon name="plus" [size]="13" />
-        {{ s.credentials.length ? 'Add another provider' : 'Add a credential' }}
-      </button>
 
       <!-- The form, inside the slot it belongs to. Entering an outreach key
            while reading the enrichment heading was possible while these were
@@ -325,7 +328,14 @@ key; it is unreachable under this name. Delete it and re-enter it against the ri
       .head h2 { font-size: 1.15rem; margin-bottom: 4px; }
       .slot { margin-bottom: 18px; border-color: var(--line); }
       .slot.done { border-color: var(--good, var(--line)); }
-      .slot-head { display: flex; gap: 14px; align-items: flex-start; }
+      /* center, not flex-start: the badge and the button are one
+         control group and have to share a baseline. The rule under the
+         row is what makes a header read as a header rather than as the
+         first line of the card. */
+      .slot-head { display: flex; gap: 14px; align-items: center;
+                   padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+      .slot-head .btn { flex: none; white-space: nowrap; }
+      .slot-head .badge { flex: none; }
       .slot h3 { font-size: 1rem; margin-bottom: 2px; }
       .step { width: 26px; height: 26px; border-radius: 50%; flex: none;
               display: flex; align-items: center; justify-content: center;
