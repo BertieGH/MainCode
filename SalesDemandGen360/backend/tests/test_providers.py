@@ -44,7 +44,11 @@ class TestTheCatalogueIsSuggestionsNotAList:
         outstanding — a stub adapter, which is not a client.
         """
         runnable = {p.key for p in provider_catalogue.CATALOGUE if p.runnable}
-        assert runnable == {"anthropic", "gemini", "contactout", "apollo", "lgm"}
+        # `searlo` joined when `services/linkedin_serp.py` landed — the
+        # adapter the `linkedin_index` source is dispatched to.
+        assert runnable == {
+            "anthropic", "gemini", "contactout", "apollo", "lgm", "searlo",
+        }
 
     def test_verifiable_is_wider_than_runnable(self):
         """The distinction the Gemini case forced.
@@ -59,6 +63,7 @@ class TestTheCatalogueIsSuggestionsNotAList:
         # now both — its published API gave us a route that authenticates.
         assert verifiable == {
             "anthropic", "openai", "gemini", "contactout", "apollo", "lgm",
+            "searlo",
         }
         assert not provider_catalogue.BY_KEY["openai"].runnable
         assert provider_catalogue.BY_KEY["openai"].verifiable

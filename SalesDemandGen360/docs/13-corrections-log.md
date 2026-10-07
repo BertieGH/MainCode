@@ -3775,3 +3775,76 @@ the inspection agent, which is IT policy and not a trial script's call to make.
   headcount coverage (§86); what that needs is re-resolution, not another source.
 
 `scripts/trial_serp.py`.
+
+## §88 — Searlo wired in, and the recency window pushed into the query (2026-10-06)
+
+`linkedin_index` is live. The build, and the two measurements that shaped it.
+
+### It was wired to the one route that could never work
+
+The source was declared `kind='search'`, which dispatches to grounded search — and grounding
+**excludes linkedin.com for everyone**. So the source that existed to read LinkedIn was pointed at
+the only tool that cannot. It is now a `fetch` with its own reader
+(`services/linkedin_serp.py`), the same shape as `company_site` and `ats_boards`, which brings three
+things without building them: the fast-sweep gate, the reuse window, and a coverage row per account.
+
+### The recency window goes **into the query**, and that is the whole trick
+
+Measured, not assumed:
+
+```
+site:linkedin.com/posts "Tribal First"                    38 results, 2025-01-28 .. 2026-09-28
+                       … after:2026-07-06                  6 results, 2026-08-23 .. 2026-09-28
+tbs=qdr:m as a parameter                                  IGNORED — 38, unchanged
+```
+
+So `after:YYYY-MM-DD` is honoured and the parameter is not. Every returned date fell inside the
+window, so this is a real restriction rather than an approximation.
+
+It buys two different things, and the second is the valuable one:
+
+* the results shrink — fewer passages stored, fewer extraction tokens;
+* **`totalResults` on the restricted query says whether anything recent exists *in that same call*,
+  before a single result is read.** Across the band: **eight of ten companies have no post in ninety
+  days.** That is `recent_posts`, the gate that skips per-contact post queries for eighty per cent
+  of accounts.
+
+`max_age_days` is per source (`c5e1a83d7b29`), null meaning no window of its own.
+`durability.research_cutoff` still bounds intake either way — this narrows a source below that bound
+and never widens one past it.
+
+**Set to 365, not 90.** A post is read against *every* signal type, so an acquisition announced ten
+months ago is still an acquisition. The floor belongs where the widest reader needs it, not where the
+narrowest type's TTL sits — narrowing to the type that named the source is the regression CLAUDE.md
+warns about, and it would apply here just as much as to a sweep.
+
+### What is deliberately not stored
+
+A headcount. `totalResults` ran 0.52× to 7.42× Apollo's figure and the high ones are **real former
+employees** (§87), so the count tracks company age rather than size. Writing it through
+`record_headcount` would poison the delta that field exists for.
+
+### Credential
+
+`searlo` joins the provider catalogue, so the key is stored encrypted and reads back as `last_four`
+only. The probe is a status check, which is honest here and would not have been for Apollo: a junk
+key and a missing header both answer **401**, confirmed from both sides. A missing credential is
+reported as *"no SERP credential configured"* rather than as nothing found — the two look identical
+on a screen and mean opposite things.
+
+`test_providers.py` failed on the catalogue invariant, exactly as intended: *"Fails the day an
+adapter lands… whoever writes one has to come here and say so."* Said so.
+
+### And a bug found on the way in
+
+`c1f7e3b89d24` renamed `job_board` to `ats_boards` and the fetch dispatch table was not part of the
+rename. The source was resumed yesterday, so the next run that planned it would have raised
+`no reader for fetch source 'ats_boards'` — at research time, per account, after the sweep was
+already paid for. Fixed, with a test that asserts the registry and the dispatch table agree rather
+than listing the fetch sources a second time.
+
+Backend 1,808 pass; front end 351 pass; `ng build` exit 0.
+
+`services/linkedin_serp.py` (new), `services/pipeline.py`, `services/provider_catalogue.py`,
+`models/config.py`, `alembic c5e1a83d7b29`, `tests/test_research_sources.py` (+6),
+`tests/test_providers.py`.

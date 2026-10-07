@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 4t0tDkkOyABTEe9xsvEpMQ8lp0iglOYLgBWmINxHD6khuqqtb8nVgfbDfvxwwkE
+\restrict B20z7PrMIXfAnemlMLSPzrHqtDS6gqdxBts82a4xxeldmwt79tvrajGIeALsiUG
 
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
@@ -992,6 +992,8 @@ CREATE TABLE public.research_source (
     builtin boolean DEFAULT false NOT NULL,
     status text DEFAULT 'active'::text NOT NULL,
     status_reason text,
+    max_age_days integer,
+    CONSTRAINT ck_research_source_ck_research_source_max_age_positive CHECK (((max_age_days IS NULL) OR (max_age_days > 0))),
     CONSTRAINT ck_research_source_kind_valid CHECK ((kind = ANY (ARRAY['search'::text, 'fetch'::text, 'provider'::text, 'manual'::text]))),
     CONSTRAINT ck_research_source_reuse_days_positive CHECK (((reuse_days IS NULL) OR (reuse_days > 0))),
     CONSTRAINT ck_research_source_scopes_not_empty CHECK ((jsonb_array_length(scopes) > 0)),
@@ -3158,5 +3160,5 @@ ALTER TABLE ONLY public.signal
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 4t0tDkkOyABTEe9xsvEpMQ8lp0iglOYLgBWmINxHD6khuqqtb8nVgfbDfvxwwkE
+\unrestrict B20z7PrMIXfAnemlMLSPzrHqtDS6gqdxBts82a4xxeldmwt79tvrajGIeALsiUG
 

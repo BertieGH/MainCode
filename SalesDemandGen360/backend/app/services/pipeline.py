@@ -939,16 +939,22 @@ def llm_family_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None)
             # Read rather than searched: no model call, and the passage is the
             # company's own words with its own date. Each fetch source has its
             # own reader — the feed is `site_sweep`, open roles are `job_boards`.
-            from app.services import job_boards, site_sweep
+            from app.services import job_boards, linkedin_serp, site_sweep
 
             # Keyed by the **registry** key. `c1f7e3b89d24` renamed
             # `job_board` to `ats_boards` and this dict was not part of the
             # rename, so the source went active with no reader and the next run
             # that planned it would have raised. `tests/test_research_sources.py`
             # now asserts every fetch source in the registry has one.
+            #
+            # `linkedin_index` is bound rather than named: it needs a stored
+            # credential and the source's own recency window, and resolving
+            # those here keeps every other reader's signature free of this
+            # one's requirements.
             readers = {
                 "company_site": site_sweep.sweep_account,
                 "ats_boards": job_boards.sweep_account,
+                "linkedin_index": linkedin_serp.reader_for(session, known),
             }
             reader = readers.get(family)
             if reader is None:

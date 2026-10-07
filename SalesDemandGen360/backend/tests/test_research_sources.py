@@ -20,6 +20,7 @@ prospect who may be perfectly well covered, and nothing errors.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -367,3 +368,129 @@ class TestEveryFetchSourceHasAReader:
         assert fetches <= set(readers), (
             f"fetch sources with no reader: {sorted(fetches - set(readers))}"
         )
+
+
+class TestTheSerpReader:
+    """Reads what a search engine has indexed. **Never opens linkedin.com.**
+
+    That is the distinction the registry is built on: `linkedin` is deprecated
+    because grounding cannot reach these pages at all, and `linkedin_index` is
+    not because this route can.
+    """
+
+    def _page(self, *items, total=0, credits=1):
+        return {"totalResults": total, "credits": credits, "organic": list(items)}
+
+    def _item(self, url, snippet="Account Executive at Northwind, fifteen years in insurance"):
+        return {"link": url, "title": "A Person - Northwind", "snippet": snippet}
+
+    async def test_a_post_carries_the_date_decoded_from_its_url(self):
+        """Eighteen of eighteen decoded on live data. A profile carries none,
+        and inventing one would date a person's whole history to today."""
+        from app.services import linkedin_serp
+
+        post = "https://www.linkedin.com/posts/northwind_hiring-activity-7218901234567890123-AbCd"
+        profile = "https://www.linkedin.com/in/jane-doe-123"
+
+        class Fake:
+            async def get(self, url, **kw):
+                q = kw["params"]["q"]
+                items = [self._outer._item(post)] if "/posts" in q else [self._outer._item(profile)]
+                return SimpleNamespace(
+                    status_code=200,
+                    json=lambda: self._outer._page(*items, total=len(items)),
+                )
+
+            async def aclose(self): ...
+
+        fake = Fake()
+        fake._outer = self
+        out = await linkedin_serp.sweep_account(
+            SimpleNamespace(id="x", name="Northwind"), key="k", http=fake
+        )
+        dated = [e for e in out.batch.evidence if e.observed_at]
+        undated = [e for e in out.batch.evidence if not e.observed_at]
+        assert len(dated) == 1 and dated[0].observed_at.year == 2024
+        assert len(undated) == 1, "a profile page has no date and must not be given one"
+
+    async def test_no_credential_is_not_a_coverage_gap(self):
+        """"Found nothing" and "never asked" look identical on a screen and
+        mean opposite things — the confusion `Runner` exists to prevent."""
+        from app.services import linkedin_serp
+
+        out = await linkedin_serp.sweep_account(
+            SimpleNamespace(id="x", name="Northwind"), key=None
+        )
+        assert out.batch.evidence == []
+        assert any("credential" in m for m in out.misses)
+        assert out.recent_posts == 0
+
+    async def test_the_window_travels_in_the_query(self):
+        """`tbs=qdr:` is ignored by this provider — measured — so the operator
+        has to be in the query string or the window silently does nothing."""
+        from app.services import linkedin_serp
+
+        asked: list[str] = []
+
+        class Fake:
+            async def get(self, url, **kw):
+                asked.append(kw["params"]["q"])
+                return SimpleNamespace(status_code=200, json=lambda: {"organic": []})
+
+            async def aclose(self): ...
+
+        await linkedin_serp.sweep_account(
+            SimpleNamespace(id="x", name="Northwind"), key="k", http=Fake(), max_age_days=90
+        )
+        posts = next(q for q in asked if "/posts" in q)
+        profiles = next(q for q in asked if "/in" in q)
+        assert " after:" in posts, "the post query must carry the window"
+        assert " after:" not in profiles, "a profile has no date to restrict on"
+
+    async def test_recent_posts_is_the_gate(self):
+        """Eight of ten companies had no post in ninety days. Zero here is what
+        skips the per-contact post queries for those accounts."""
+        from app.services import linkedin_serp
+
+        class Fake:
+            async def get(self, url, **kw):
+                return SimpleNamespace(
+                    status_code=200, json=lambda: {"totalResults": 0, "organic": []}
+                )
+
+            async def aclose(self): ...
+
+        out = await linkedin_serp.sweep_account(
+            SimpleNamespace(id="x", name="Northwind"), key="k", http=Fake()
+        )
+        assert out.recent_posts == 0
+        assert any("no posts" in m for m in out.misses)
+
+    async def test_a_failed_query_does_not_cost_the_other_one(self):
+        """Two queries, independent. A profile read that works is worth having
+        even when the post read fails."""
+        from app.services import linkedin_serp
+
+        class Fake:
+            async def get(self, url, **kw):
+                if "/posts" in kw["params"]["q"]:
+                    raise TimeoutError("read timed out")
+                return SimpleNamespace(
+                    status_code=200,
+                    json=lambda: {
+                        "totalResults": 1,
+                        "organic": [{
+                            "link": "https://www.linkedin.com/in/jane-doe-1",
+                            "title": "Jane Doe",
+                            "snippet": "Account Executive at Northwind, fifteen years in insurance",
+                        }],
+                    },
+                )
+
+            async def aclose(self): ...
+
+        out = await linkedin_serp.sweep_account(
+            SimpleNamespace(id="x", name="Northwind"), key="k", http=Fake()
+        )
+        assert len(out.batch.evidence) == 1
+        assert any("posts:" in m for m in out.misses)

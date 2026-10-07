@@ -304,6 +304,34 @@ CATALOGUE: tuple[ProviderCatalogue, ...] = (
     ),
     # ----------------------------------------------------------- outreach
     ProviderCatalogue(
+        key="searlo",
+        label="Searlo (SERP)",
+        kind="enrichment",
+        console_url="https://searlo.tech/dashboard",
+        # Request shape, auth and failure mode all confirmed against a live
+        # key: `GET /api/v1/search/web` with `x-api-key`, returning `organic[]`,
+        # `totalResults`, `nextPage` and `credits` per call. The client is
+        # `services/linkedin_serp.py`.
+        runnable=True,
+        purpose=(
+            "Reads what a search engine has indexed, which is how public "
+            "LinkedIn profiles and posts are reached without ever opening "
+            "linkedin.com. Powers the linkedin_index source."
+        ),
+        probe=ProbeSpec(
+            method="GET",
+            url="https://api.searlo.tech/api/v1/search/web?q=test&num=1",
+            header="x-api-key",
+            value_template="{key}",
+            extra_headers={"accept": "application/json"},
+            # Status alone is enough here, unlike Apollo: a junk key and a
+            # missing header both answer **401**, checked from both sides. No
+            # `success_flag` is needed, and adding one would read a body that
+            # says nothing more than the status already did.
+            live_verified=True,
+        ),
+    ),
+    ProviderCatalogue(
         key="lgm",
         label="La Growth Machine",
         kind="outreach",

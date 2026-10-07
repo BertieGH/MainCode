@@ -814,6 +814,15 @@ class ResearchSource(Base):
     #: nearly happened to `linkedin`, three sessions and three model calls
     #: after it was paused on sixteen runs of evidence.
     status_reason: Mapped[str | None] = mapped_column(Text)
+    #: How far back this source may look, in days. Null means no window of its
+    #: own — `durability.research_cutoff` still bounds intake either way, so
+    #: this narrows a source below that bound and never widens one past it.
+    #:
+    #: Where a provider honours a date operator the window is pushed **into the
+    #: query**, which is worth more than filtering afterwards: the results
+    #: shrink, and `totalResults` on the restricted query says whether anything
+    #: recent exists at all before a single result is read.
+    max_age_days: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (
         CheckConstraint(
