@@ -102,5 +102,13 @@ def _without_contact_details(profile: ContactProfile) -> ContactProfile:
             "responsibilities": [clean(r) or "" for r in profile.responsibilities],
             "background": [clean(b) or "" for b in profile.background],
             "focus_areas": [clean(f) or "" for f in profile.focus_areas],
+            # Verbatim passages are free text quoted from a page, so they are
+            # the **most** likely field to carry an address — a profile page
+            # often prints one. Scrubbed like every other string here: the rule
+            # is about the data, not about which field it arrived in.
+            "verbatim": [
+                passage.model_copy(update={"text": clean(passage.text) or ""})
+                for passage in profile.verbatim
+            ],
         }
     )

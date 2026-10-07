@@ -46,9 +46,15 @@ ACCOUNT_ALIASES: dict[str, tuple[str, ...]] = {
     "employee_count": ("employees", "employee count", "headcount", "size", "employee_count",
                        "# employees", "number of employees", "num employees",
                        "employee range", "company size"),
-    "hq_country": ("country", "hq country", "location country", "company country"),
-    "hq_region": ("region", "state", "hq region", "province", "company state",
-                  "company region"),
+    # **Company-qualified names first.** `suggest_mapping` takes the first
+    # alias that matches, and an Apollo *contacts* export carries both
+    # `Country` (the person's) and `Company Country`. With the bare name
+    # first, importing one stamped the contact's own location onto the
+    # company — the same shape as the `linkedin` bug this module already
+    # guards, and just as silent.
+    "hq_country": ("company country", "hq country", "location country", "country"),
+    "hq_region": ("company state", "company region", "hq region", "region",
+                  "province", "state"),
     # Deliberately company-scoped. A bare "linkedin" column is claimed by the
     # contact mapping below — see `classify_linkedin`.
     "linkedin_url": ("company linkedin", "company linkedin url", "organization linkedin"),
@@ -63,9 +69,18 @@ CONTACT_ALIASES: dict[str, tuple[str, ...]] = {
     "title": ("title", "job title", "position", "role", "designation",
               "job role", "job_title", "jobtitle"),
     "email": ("email", "email address", "work email", "e-mail"),
-    "phone": ("phone", "mobile", "phone number", "direct dial"),
-    "contact_linkedin_url": ("linkedin", "linkedin url", "linkedin_url",
-                             "contact linkedin", "person linkedin", "profile url"),
+    # Apollo emits three, and a work number is the only one worth having:
+    # a personal mobile is the wrong channel for cold B2B outreach, which
+    # is why `apollo_people` never asks for one either.
+    "phone": ("work direct phone", "corporate phone", "phone", "phone number",
+              "direct dial", "mobile", "mobile phone"),
+    # `person linkedin url` is what Apollo emits, and it was missing — so a
+    # contacts export imported with no profile URL at all. That URL is what
+    # `linkedin_index` queries per person, so losing it costs the contact
+    # signals their best input.
+    "contact_linkedin_url": ("person linkedin url", "contact linkedin url",
+                             "person linkedin", "contact linkedin", "linkedin url",
+                             "linkedin_url", "linkedin", "profile url"),
 }
 
 #: Columns that, once populated, mean the file has one row per *person*.

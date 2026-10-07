@@ -963,3 +963,54 @@ class TestTheAccountBlockCarriesTheProfile:
         out = _account_facts(account)["profile"]
 
         assert out == {"what_they_do": "Something."}
+
+
+class TestProfilesKeepTheirSourceText:
+    """The capped fields are a synthesis; `verbatim` is what they were made from.
+
+    Strategy and drafting read `profile`, not `evidence` — so a summary capped
+    at four hundred characters is the only text they ever see, and the phrase a
+    rep would actually quote is usually the one the cap removed.
+    """
+
+    def test_both_prompts_ask_for_quoted_passages(self):
+        from app.services.instructions import STAGE
+
+        for key in ("company_profile", "contact_profile"):
+            body = STAGE.get(key)
+            assert body, f"{key} missing"
+            assert "verbatim" in body, f"{key} never mentions the field"
+            assert "quoted exactly" in body, f"{key} must ask for quotation, not summary"
+
+    def test_the_contact_prompt_forbids_a_route_inside_a_quote(self):
+        """A quoted line carrying an address is still an address, and this is
+        the likeliest field for one to arrive in."""
+        from app.services.instructions import STAGE
+
+        assert "No contact routes in `verbatim`" in STAGE["contact_profile"]
+
+    def test_a_profile_holding_only_passages_is_not_empty(self):
+        """`build_contact` drops an empty profile. A model that synthesised
+        nothing but returned what it read has still produced something a draft
+        can quote."""
+        from app.schemas.profile import CompanyProfile, ContactProfile, Passage
+
+        page = [Passage(text="We place commercial lines for contractors.", url="https://x")]
+        assert not ContactProfile(verbatim=page).is_empty()
+        assert not CompanyProfile(verbatim=page).is_empty()
+        assert ContactProfile().is_empty()
+        assert CompanyProfile().is_empty()
+
+    def test_an_address_inside_a_passage_is_stripped(self):
+        """The scrub is about the data, not about which field it arrived in."""
+        from app.schemas.profile import ContactProfile, Passage
+        from app.services.profiles import _without_contact_details
+
+        dirty = ContactProfile(
+            summary="Runs operations",
+            verbatim=[Passage(text="Reach me on bob@example.com or 555-123-4567", url="https://x")],
+        )
+        clean = _without_contact_details(dirty)
+        assert "bob@example.com" not in clean.verbatim[0].text
+        assert "555-123-4567" not in clean.verbatim[0].text
+        assert clean.verbatim[0].url == "https://x", "the citation survives the scrub"

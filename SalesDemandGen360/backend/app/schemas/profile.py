@@ -21,9 +21,38 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class Passage(BaseModel):
+    """One piece of source text, kept **whole**, with where it came from.
+
+    The structured fields above are a synthesis: capped, compressed, and shaped
+    for deterministic use. This is what they were made from, uncut.
+
+    It exists because the stages that write a cadence — strategy and drafting —
+    read `profile`, not `evidence`. A summary capped at four hundred characters
+    is the right thing to score on and the wrong thing to write from: the phrase
+    a rep would actually quote is usually the one the cap removed.
+
+    Chunked rather than one blob, so each passage keeps the URL that reopens it.
+    A sentence a draft leans on has to be checkable, and a concatenated wall of
+    text cannot say which part came from where.
+    """
+
+    #: The source text, as retrieved. Not summarised, not trimmed.
+    text: str = Field(min_length=1)
+    #: Where it came from, so a rep can open it and a draft can be checked.
+    url: str | None = None
+    #: What produced it — a registry source key, so a passage can be traced to
+    #: the thing that cost money to read.
+    source: str | None = None
+
+
 class CompanyProfile(BaseModel):
     """Firmographics, in the company's own terms where possible."""
 
+    #: The source text these fields were synthesised from, kept whole.
+    #: Strategy and drafting read the profile rather than the evidence, so
+    #: without this the only words they ever see are the capped ones.
+    verbatim: list[Passage] = Field(default_factory=list, max_length=20)
     #: One sentence a rep could read aloud. Their words if they have them.
     what_they_do: str | None = Field(default=None, max_length=400)
     #: Lines of business they sell. For a brokerage: commercial lines,
@@ -54,8 +83,11 @@ class CompanyProfile(BaseModel):
 
     def is_empty(self) -> bool:
         """Nothing was established. Worth distinguishing from "not looked"."""
+        #  counts: passages read but not synthesised are still the
+        # company's own words, and a draft can quote them.
         return not any(
             (
+                self.verbatim,
                 self.what_they_do,
                 self.services,
                 self.target_customers,
@@ -88,6 +120,10 @@ class ContactProfile(BaseModel):
     blacklisted.
     """
 
+    #: The source text these fields were synthesised from, kept whole. A
+    #: profile snippet is already short; capping it twice leaves a draft
+    #: nothing to quote.
+    verbatim: list[Passage] = Field(default_factory=list, max_length=20)
     #: One sentence a rep could open with. Their public self-description where
     #: there is one.
     summary: str | None = Field(default=None, max_length=400)
@@ -110,8 +146,12 @@ class ContactProfile(BaseModel):
     sources: list[str] = Field(default_factory=list, max_length=12)
 
     def is_empty(self) -> bool:
+        # `verbatim` counts. A model that synthesised nothing but returned
+        # the passages it read has still produced something a draft can
+        # quote, and discarding it would throw away the only words we have.
         return not any(
             (
+                self.verbatim,
                 self.summary,
                 self.responsibilities,
                 self.tenure,

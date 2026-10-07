@@ -416,3 +416,58 @@ class TestAnApolloAccountExportImportsWholly:
         mapping = suggest_mapping(self.HEADERS)
         claimed = [f for f, col in mapping.items() if col == "# Employees"]
         assert claimed == ["employee_count"], claimed
+
+
+class TestAnApolloContactExportImportsWholly:
+    """The contact-grain twin of the account export, and it had a worse bug.
+
+    An Apollo contacts export carries **both** `Country` (the person's) and
+    `Company Country`. `suggest_mapping` takes the *first* alias that matches,
+    the bare name came first, and so importing one stamped the contact's own
+    location onto the company record — on every row, silently. That is the same
+    shape as the `linkedin` bug this module already guards, and the reason
+    company-qualified names now sort first.
+
+    Two fields were simply absent: `Person Linkedin Url`, which is what
+    `linkedin_index` queries per person, and the work phone.
+    """
+
+    HEADERS = [
+        "First Name", "Last Name", "Title", "Company", "Email", "Email Status",
+        "Seniority", "Work Direct Phone", "Mobile Phone", "Corporate Phone",
+        "# Employees", "Industry", "Person Linkedin Url", "Website",
+        "Company Linkedin Url", "City", "State", "Country",
+        "Company City", "Company State", "Company Country", "Annual Revenue",
+    ]
+
+    def test_the_company_columns_win_over_the_persons(self):
+        mapping = suggest_mapping(self.HEADERS)
+        assert mapping["hq_country"] == "Company Country", "not the person's Country"
+        assert mapping["hq_region"] == "Company State", "not the person's State"
+
+    def test_the_persons_profile_url_is_mapped_to_the_person(self):
+        mapping = suggest_mapping(self.HEADERS)
+        assert mapping["contact_linkedin_url"] == "Person Linkedin Url"
+        assert mapping["linkedin_url"] == "Company Linkedin Url"
+
+    def test_a_work_number_is_preferred_over_a_mobile(self):
+        """A personal mobile is the wrong channel for cold B2B outreach, which
+        is why `apollo_people` never asks for one either."""
+        mapping = suggest_mapping(self.HEADERS)
+        assert mapping["phone"] == "Work Direct Phone"
+
+    def test_an_account_export_still_maps_its_own_country(self):
+        """The reorder must not cost the account file, which has only the
+        company-qualified names."""
+        mapping = suggest_mapping(
+            ["Company Name", "Website", "# Employees", "Company Country", "Company State"]
+        )
+        assert mapping["hq_country"] == "Company Country"
+        assert mapping["hq_region"] == "Company State"
+
+    def test_a_plain_file_still_maps_bare_names(self):
+        """And neither must it cost a hand-made file that says `country`."""
+        mapping = suggest_mapping(["name", "domain", "country", "state", "employees"])
+        assert mapping["hq_country"] == "country"
+        assert mapping["hq_region"] == "state"
+        assert mapping["employee_count"] == "employees"

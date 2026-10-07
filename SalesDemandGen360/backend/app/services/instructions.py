@@ -132,6 +132,8 @@ and says three things is useful; one that invents the rest describes a company \
 that does not exist, and every later stage will believe it.
 
 Put the URLs you read in `sources`.
+
+Fill `verbatim` with the sentences you actually read, **quoted exactly** - \ntheir words, not yours, with the URL each came from. Three to six is plenty. \nThis is the one field where copying is correct: every other field is capped \nand compressed for scoring, and a draft that wants to say "you describe \nyourselves as X" needs the sentence rather than the summary of it. Do not \nput anything in `verbatim` that is not on the page.
 """,
     "contact_profile": """
 # Task: describe one person's standing role
@@ -160,6 +162,9 @@ attached.
 
 Leave a field empty rather than filling it, and put the URLs you read in \
 `sources`.
+
+Fill `verbatim` with the sentences you actually read, **quoted exactly** - \ntheir words, not yours, with the URL each came from. Three to six is plenty. \nThis is the one field where copying is correct: every other field is capped \nand compressed for scoring, and a draft that wants to say "you describe \nyourselves as X" needs the sentence rather than the summary of it. Do not \nput anything in `verbatim` that is not on the page.
+**No contact routes in `verbatim` either.** A quoted line carrying an \naddress is still an address, and this is the likeliest field for one to \narrive in.
 """,
     "signal_scan": """
 # Task: a fast, broad sweep for anything worth a closer look

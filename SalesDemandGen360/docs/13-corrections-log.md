@@ -3918,3 +3918,66 @@ open web is not so kind.
 Backend 1,808 pass.
 
 `services/provider_catalogue.py`.
+
+## §90 — Profiles keep their source text; the contacts export kept losing its (2026-10-06)
+
+Three asks: keep the whole profile text rather than a snippet, same for the company, and stop
+spending Apollo credits. One was already done, one was a schema change, and one was the same bug as
+§86 wearing different clothes.
+
+### Apollo: already right, and the real saving is elsewhere
+
+Reveals are **already rep-gated** — *"A rep accepts or rejects each suggestion. Nothing is revealed
+without that."* The free `mixed_people/api_search` runs; the paid `people/bulk_match` never does
+without a decision. Nothing to fix.
+
+The saving available is an **export**, not an API change: Apollo's contacts export carries what a
+reveal would buy, at no credit. Which made the import path worth checking, and it was worse than the
+account one.
+
+```
+MISS  contact_linkedin_url  <- 'Person Linkedin Url'
+MISS  phone                 <- 'Work Direct Phone'
+WRONG hq_country            <- 'Country'        (the *person's*)
+WRONG hq_region             <- 'State'          (the *person's*)
+```
+
+The last two are not misses. An Apollo contacts export carries **both** `Country` and `Company
+Country`, `suggest_mapping` takes the first alias that matches, and the bare name came first — so
+importing one stamped the **contact's own location onto the company record**, on every row, silently.
+
+That is the same shape as the `linkedin` bug this module already documents, and it was reintroduced
+by my own §86 fix: adding `company country` to the end of a tuple that began with `country` left the
+wrong one winning. Company-qualified names now sort first, with tests that a plain hand-made file
+saying `country` still works.
+
+Losing `Person Linkedin Url` costs more than it looks: that URL is what `linkedin_index` queries per
+person, so a contacts import was silently removing the best input the contact signals have.
+
+### `verbatim`: the capped fields are a synthesis, and something has to hold the original
+
+`CompanyProfile` and `ContactProfile` gain `verbatim: list[Passage]` — `text`, `url`, `source` —
+kept whole.
+
+The reason is structural rather than aesthetic. **Strategy and drafting read `profile`, not
+`evidence`.** Every field on those profiles is capped — `summary` at 400 characters, lists at ten or
+twelve — because they are shaped for scoring. So the only words those stages ever saw were the
+compressed ones, and the phrase a rep would actually quote is usually the one the cap removed.
+
+Chunked rather than one blob, so each passage keeps the URL that reopens it: a sentence a draft leans
+on has to be checkable, and a concatenated wall of text cannot say which part came from where.
+
+Three consequences handled:
+
+* **`is_empty()` counts it.** `build_contact` discards an empty profile, and a model that synthesised
+  nothing but returned what it read has still produced something quotable.
+* **The scrub covers it.** `_without_contact_details` now strips addresses and numbers from passage
+  text as well — it is the *likeliest* field to carry one, since a profile page often prints one, and
+  the rule is about the data rather than the field it arrived in. The citation URL survives.
+* **Both prompts ask for it**, and say the thing that is otherwise counter-intuitive: this is the one
+  field where copying is correct. The contact prompt repeats the no-contact-routes rule inside it.
+
+Backend 1,816 pass; front end 351 pass; `ng build` exit 0.
+
+`schemas/profile.py`, `services/profiles.py`, `services/instructions.py`,
+`services/csv_import.py`, `tests/test_contact_import.py` (+5), `tests/test_llm_call_sites.py` (+4).
