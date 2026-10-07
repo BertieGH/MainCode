@@ -686,10 +686,18 @@ class TestTheSubPathFallback:
 
     async def test_it_stops_at_the_cap(self):
         """Each miss costs a timeout, and a site without these at the
-        conventional spellings does not have them."""
+        conventional spellings does not have them.
+
+        **Distinct** content per path, deliberately. The fixture used to serve
+        one page at every path, which the same-page dedup now collapses to one
+        — so the test would have passed for the wrong reason, proving the dedup
+        rather than the cap.
+        """
         pages = {"https://meridian.test/": NO_FEED_HOME}
-        for path in site_sweep.PAGE_PATHS:
-            pages[f"https://meridian.test{path}"] = CAREERS_PAGE
+        for n, path in enumerate(site_sweep.PAGE_PATHS):
+            pages[f"https://meridian.test{path}"] = CAREERS_PAGE.replace(
+                "Careers at Meridian", f"Careers at Meridian, office {n}"
+            ).replace("Senior Benefits Analyst", f"Senior Benefits Analyst {n}")
         http = FakeClient(pages)
         result = await site_sweep.sweep_account(
             account(domain="meridian.test"), http=http
@@ -739,3 +747,60 @@ class TestAScriptShellIsNotProse:
 
     def test_the_tags_still_go(self):
         assert site_sweep._text("<p>Hello <b>there</b></p>") == "Hello there"
+
+
+class TestOnePageUnderFourNames:
+    """Many sites answer every path with the same page.
+
+    A catch-all route, or a single-page app serving its shell, returns 200 and
+    identical bytes for `/news`, `/careers`, `/newsroom` and `/jobs`. Measured
+    live on two of three real brokerages: four evidence rows per account, all
+    the same navigation menu, four times the extraction tokens for one page of
+    text that was not even prose.
+
+    `evidence.excerpt_hash` cannot catch it — that key is URL *plus* text, and
+    these differ by URL. Correctly so: the same sentence on two genuinely
+    different pages is two findings. Within one sweep of one site it is the
+    opposite, and this is the only place that distinction can be drawn.
+    """
+
+    def _same_everywhere(self, body: str) -> dict[str, str]:
+        pages = {"https://meridian.test/": NO_FEED_HOME}
+        for path in site_sweep.PAGE_PATHS:
+            pages[f"https://meridian.test{path}"] = body
+        return pages
+
+    async def test_identical_pages_are_stored_once(self):
+        menu = (
+            "<html><body><nav>Home Products Insights Newsroom Careers Contact</nav>"
+            "<p>" + ("Employee Benefits and Absence Management Solutions. " * 10) + "</p>"
+            "</body></html>"
+        )
+        http = FakeClient(self._same_everywhere(menu))
+        result = await site_sweep.sweep_account(account(domain="meridian.test"), http=http)
+        assert len(result.batch.evidence) == 1, [
+            e.source_url for e in result.batch.evidence
+        ]
+
+    async def test_genuinely_different_pages_are_all_kept(self):
+        """The dedup must not collapse a site that really does have separate
+        pages — which is the case it exists to serve."""
+        pages = {"https://meridian.test/": NO_FEED_HOME}
+        for n, path in enumerate(site_sweep.PAGE_PATHS):
+            pages[f"https://meridian.test{path}"] = (
+                f"<html><body><p>Page {n}. " + (f"Distinct content number {n}. " * 12)
+                + "</p></body></html>"
+            )
+        http = FakeClient(pages)
+        result = await site_sweep.sweep_account(account(domain="meridian.test"), http=http)
+        assert len(result.batch.evidence) == site_sweep.MAX_PAGES
+
+    async def test_a_200_from_careers_does_not_prove_a_careers_page(self):
+        """What the dedup really says. The paths added in §82 assumed a 200 meant
+        the page existed; on a catch-all site every path answers 200."""
+        menu = "<html><body><p>" + ("Generic homepage copy. " * 20) + "</p></body></html>"
+        http = FakeClient(self._same_everywhere(menu))
+        result = await site_sweep.sweep_account(account(domain="meridian.test"), http=http)
+        kept = [e.source_url for e in result.batch.evidence]
+        assert len(kept) == 1
+        assert kept[0].endswith(site_sweep.PAGE_PATHS[0]), "the first path tried wins"

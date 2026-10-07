@@ -93,9 +93,25 @@ MAX_PAGES = 4
 #: would have thrown away. The floor is here to exclude emptiness, not brevity.
 MIN_PAGE_CHARS = 250
 #: A page is not an entry: it has navigation, a footer and a cookie banner
-#: around whatever matters. Enough for the opening, which is where a newsroom
-#: or a trust page states its business.
-PAGE_EXCERPT_CHARS = 1200
+#: around whatever matters.
+#:
+#: **2500, raised from 1200.** The first live run showed every site page
+#: arriving at exactly 1200 — min, mean and max alike, which is a wall rather
+#: than a distribution. The company's own site is the only source on this book
+#: that reliably produces anything, and it was the one place text was being
+#: thrown away.
+#:
+#: The cut matters most on the pages added in §82. A `/careers` page opens with
+#: navigation and a masthead; the roles, and the platforms named in their
+#: requirements, sit below that. An `/news` page is the same shape. Clipping at
+#: 1200 kept the boilerplate and dropped the evidence.
+#:
+#: It is not free: every stored character is an extraction input token later,
+#: and four pages at 2500 is ten thousand characters an account against
+#: extraction's measured 3,645-token average. Chosen over 4000 for that reason
+#: — far enough past the masthead to reach the content, short enough not to
+#: double the bill.
+PAGE_EXCERPT_CHARS = 2500
 #: Said plainly, because a rep will see it: we are a research tool reading a
 #: public feed, and a site owner should be able to tell who called.
 USER_AGENT = "SalesDemandGen360-research/1.0 (+company announcement reader)"
@@ -274,6 +290,20 @@ async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
     at the conventional spellings does not have them.
     """
     out: list[FoundEvidence] = []
+    #: Text already taken this sweep. Many sites answer **every** path with the
+    #: same page — a catch-all route, or a single-page app serving its shell —
+    #: so `/news`, `/careers`, `/newsroom` and `/jobs` came back byte-identical
+    #: and were stored as four separate passages of the same navigation menu.
+    #:
+    #: `evidence.excerpt_hash` could not catch it: that key is URL **plus**
+    #: text, and these differ by URL. Correctly so, because the same sentence on
+    #: two genuinely different pages is two findings. Within one sweep of one
+    #: site it is the opposite — the same page under four names — and here is
+    #: the only place that can be told apart.
+    #:
+    #: It also means a 200 from `/careers` does not prove a careers page
+    #: exists, which the paths added in §82 had quietly assumed.
+    seen: set[str] = set()
     for path in PAGE_PATHS:
         if len(out) >= MAX_PAGES:
             break
@@ -288,6 +318,10 @@ async def _read_pages(http, domain: str, robots: dict) -> list[FoundEvidence]:
             # A shell that renders its content with a script, or a redirect
             # stub. Storing it would file "Skip to main content" as evidence.
             continue
+        fingerprint = _WS.sub(" ", text[:PAGE_EXCERPT_CHARS]).strip().casefold()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
         out.append(
             FoundEvidence(
                 source_type="web",

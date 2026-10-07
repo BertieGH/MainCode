@@ -4113,3 +4113,58 @@ Nothing acts on it yet, but it is the first case of two sources disagreeing abou
 Backend 1,828 pass.
 
 `services/site_sweep.py`, `alembic d9b2f45c17ae`, `tests/test_job_boards.py` (+4).
+
+## §93 — Raising the excerpt cap found four copies of one page (2026-10-06)
+
+Asked whether the profile cap had been raised from 400 to 1000. It had not, and the measurements
+said where the real cut was.
+
+```
+linkedin.com (via index)   31 passages   105-173 chars     ← Google's snippet length, not our cut
+verbatim passages           7 passages    65-189 chars     ← uncapped field, whole as retrieved
+what_they_do                3 values     126-236 chars     ← the 400 cap never bit
+vantreo.com / maccorkle.com 8 pages      1200/1200/1200    ← a wall
+```
+
+The synthesised fields were never the problem: `what_they_do` runs to 236 characters against a cap
+of 400. `verbatim` has no character cap at all. And for LinkedIn, 105–173 characters **is** the whole
+thing — Google truncates the snippet, and reading more would mean opening linkedin.com.
+
+The one place text was being thrown away was the company's own site, at `PAGE_EXCERPT_CHARS = 1200`,
+min equal to mean equal to max. Raised to **2500** at the owner's instruction — far enough past a
+masthead to reach the content, short enough not to double an extraction bill.
+
+### Which exposed something worse
+
+With the cap raised, all four pages came back **byte-identical**. `/news`, `/careers`, `/newsroom`
+and `/jobs` were the same page — a catch-all route or a single-page app serving its shell — and the
+text was a navigation menu, not prose.
+
+So each account was storing **four copies of one menu** as four evidence rows, at four times the
+extraction cost, for text that was never prose to begin with.
+
+`evidence.excerpt_hash` could not catch it. That key is URL **plus** text, and these differ by URL —
+correctly, because the same sentence on two genuinely different pages is two findings. Within one
+sweep of one site it is the opposite, the same page under four names, and `_read_pages` is the only
+place that distinction can be drawn.
+
+Deduplicated there, and the result is better than before the raise in both directions:
+
+```
+vantreo.com        4 pages x 1200 = 4800  ->  1 page, 1419 (complete)
+maccorkle.com      4 pages x 1200 = 4800  ->  1 page, 2500
+charityfirst.com   1 page,  949           ->  unchanged, it was already unique
+```
+
+**Fewer tokens and more of each real page.**
+
+It also retires an assumption §82 made without noticing: a 200 from `/careers` does not prove a
+careers page exists. On a catch-all site every path answers 200, which is why the careers work found
+menus rather than roles.
+
+A cap test failed on the way through, correctly: it served one page at every path and asserted the
+cap, so after the dedup it proved the dedup instead. Its fixture now varies the content per path.
+
+Backend 1,835 pass.
+
+`services/site_sweep.py`, `tests/test_job_boards.py` (+4, 1 fixture corrected).
