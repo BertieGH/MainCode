@@ -4,6 +4,8 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "check:templates": "python check_templates.py",
+    "prebuild": "npm run check:templates",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
