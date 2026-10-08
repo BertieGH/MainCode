@@ -63,6 +63,24 @@ def _evidence_out(e: Evidence) -> EvidenceOut:
     )
 
 
+class ContactProfileOut(BaseModel):
+    """One person's standing description, with enough of the person to show it.
+
+    The profile itself says nothing about who it belongs to — `contact.profile`
+    deliberately carries only what the `contact` row does not, so title and
+    seniority are columns rather than profile fields. Those are carried here so
+    a screen can head the section without a second request.
+    """
+
+    contact_id: uuid.UUID
+    contact_name: str
+    title: str | None = None
+    #: The `ContactProfile` contract as stored. Never contains an email or a
+    #: phone number: `profiles._without_contact_details` strips them on the way
+    #: in, and this is a read of what that wrote.
+    profile: dict
+
+
 class SignalOut(BaseModel):
     id: uuid.UUID
     signal_type: str
@@ -205,6 +223,15 @@ class IntelligenceOut(BaseModel):
     #: carries no expiry and is read as standing context rather than a trigger.
     #: `None` when research has not established one.
     profile: dict | None = None
+    #: The same thing for each person at this company who has one, in the order
+    #: a rep reads them. Carried on the account rather than fetched per contact
+    #: because they are read together — "who is this company and who works
+    #: there" is one question, and one round trip.
+    #:
+    #: Only people who have a profile appear. A contact with none is not an
+    #: empty profile; it is a person research has not described, which the
+    #: screen says in its own words rather than by rendering blank fields.
+    contact_profiles: list[ContactProfileOut] = []
     signals: list[SignalOut]
     coverage: list[CoverageOut]
     #: Passages from the coverage run stored before evidence recorded its
@@ -437,6 +464,19 @@ async def account_intelligence(
         account_name=account.name,
         domain=account.domain,
         profile=account.profile,
+        contact_profiles=[
+            ContactProfileOut(
+                contact_id=c.id,
+                contact_name=c.full_name,
+                title=c.title,
+                profile=c.profile,
+            )
+            # Sorted by name so the order is stable between loads. The contacts
+            # tab sorts by whatever the rep chose; this one cannot borrow that
+            # without making the two screens disagree about who comes first.
+            for c in sorted(names.values(), key=lambda c: c.full_name or "")
+            if c.profile
+        ],
         signals=signal_out,
         coverage=coverage,
         unattributed_evidence=unattributed,

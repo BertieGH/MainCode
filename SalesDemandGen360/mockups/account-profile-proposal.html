@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Company profile — layout proposal</title>
+<style>
+  /* Tokens copied from web/src/styles.css so this reads as the same system.
+     Fonts are declared with system fallbacks rather than fetched: the CDN is
+     TLS-blocked on this machine and a mockup that only looks right online is
+     a mockup that cannot be checked. */
+  :root {
+    --bg:#eef1f2; --surface:#fff; --surface-2:#f5f7f7;
+    --text:#171b21; --muted:#5c6672; --faint:#8b949c;
+    --border:#d7dcdc; --border-strong:#c3caca;
+    --accent:#1f6f64; --accent-soft:#e3efec;
+    --good:#2f7a54; --good-soft:#e5f1e9;
+    --warn:#b8801f; --warn-soft:#f7ecd9;
+    --mono-bg:#e7ebea;
+    --shadow:0 1px 2px rgba(23,27,33,.06), 0 6px 20px rgba(23,27,33,.06);
+    --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono','Consolas',monospace;
+    --display:'Fraunces',Georgia,'Times New Roman',serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#12151a; --surface:#1a1f25; --surface-2:#20262d;
+      --text:#eef1f0; --muted:#9aa5a8; --faint:#6b7680;
+      --border:#2b3238; --border-strong:#3a434a;
+      --accent:#5fc0af; --accent-soft:#193028;
+      --good:#5cae83; --good-soft:#1c2c22;
+      --warn:#e0a862; --warn-soft:#2e2416;
+      --mono-bg:#242b31;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#12151a; --surface:#1a1f25; --surface-2:#20262d;
+    --text:#eef1f0; --muted:#9aa5a8; --faint:#6b7680;
+    --border:#2b3238; --border-strong:#3a434a;
+    --accent:#5fc0af; --accent-soft:#193028;
+    --good:#5cae83; --good-soft:#1c2c22;
+    --warn:#e0a862; --warn-soft:#2e2416;
+    --mono-bg:#242b31;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:var(--sans); font-size:14px; line-height:1.5;
+         padding:28px 16px 60px; }
+  .page { max-width:1060px; margin:0 auto; }
+
+  .note { max-width:76ch; margin:0 auto 26px; color:var(--muted);
+          font-size:.82rem; border-left:2px solid var(--accent);
+          padding:2px 0 2px 14px; }
+  .note strong { color:var(--text); }
+
+  h1.acct { font-family:var(--display); font-size:1.5rem; margin:0 0 2px; }
+  .row-sub { font-size:.78rem; color:var(--muted); margin:0; }
+  .mono { font-family:var(--mono); }
+
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--border);
+          margin:18px 0; flex-wrap:wrap; }
+  .tab { font:inherit; font-size:.84rem; background:none; border:none;
+         border-bottom:2px solid transparent; color:var(--muted);
+         padding:9px 14px; cursor:pointer; margin-bottom:-1px; }
+  .tab.on { color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
+  .tab .n { color:var(--faint); font-size:.74rem; margin-left:5px; }
+
+  .card { background:var(--surface); border:1px solid var(--border);
+          border-radius:12px; box-shadow:var(--shadow);
+          padding:20px 22px; margin-bottom:14px; }
+
+  .badge { display:inline-flex; align-items:center; gap:6px; font-size:.7rem;
+           padding:3px 9px; border-radius:20px; font-weight:500;
+           background:var(--mono-bg); color:var(--muted); }
+  .badge::before { content:""; width:6px; height:6px; border-radius:50%;
+                   background:currentColor; }
+  .badge-good { background:var(--good-soft); color:var(--good); }
+  .badge-warn { background:var(--warn-soft); color:var(--warn); }
+
+  /* The header of a section inside a card: a title, and the status of the
+     thing it describes, sharing one rule. Same shape the setup screen uses. */
+  .sec-head { display:flex; gap:14px; align-items:center;
+              padding-bottom:12px; border-bottom:1px solid var(--border);
+              margin-bottom:16px; }
+  .sec-head h2 { font-size:1rem; margin:0 0 2px; }
+  .sec-head .grow { flex:1; min-width:0; }
+  .sec-head .badge { flex:none; }
+
+  /* The one sentence a rep would read aloud. Deliberately the largest thing
+     on the tab — every list below it is detail under this claim. */
+  .headline { font-family:var(--display); font-size:1.12rem; line-height:1.45;
+              margin:0 0 4px; }
+
+  /* Standing facts. A definition list, because each is a labelled single
+     value — chips would imply they are members of a set. */
+  .facts { display:flex; flex-wrap:wrap; gap:26px; margin:18px 0 4px;
+           padding-top:16px; border-top:1px solid var(--border); }
+  .fact dt { font-size:.68rem; letter-spacing:.07em; text-transform:uppercase;
+             color:var(--faint); margin-bottom:3px; }
+  .fact dd { margin:0; font-size:.88rem; }
+
+  .group { margin-top:20px; }
+  .group > h3 { font-size:.68rem; letter-spacing:.07em; text-transform:uppercase;
+                color:var(--faint); margin:0 0 8px; font-weight:600; }
+  .group > .why { font-size:.74rem; color:var(--faint); margin:-4px 0 8px;
+                  max-width:62ch; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font-size:.78rem; padding:4px 11px; border-radius:20px;
+          background:var(--surface-2); border:1px solid var(--border);
+          color:var(--text); }
+  .chip.accent { background:var(--accent-soft); border-color:transparent;
+                 color:var(--accent); }
+
+  .focus { margin:0; padding:0; list-style:none; }
+  .focus li { position:relative; padding-left:18px; margin-bottom:6px;
+              font-size:.88rem; max-width:76ch; }
+  .focus li::before { content:"→"; position:absolute; left:0;
+                      color:var(--accent); }
+
+  /* The uncut source text. Same disclosure pattern as a signal's citations,
+     because it answers the same question: says who? */
+  .cite-btn { font:inherit; font-size:.78rem; display:inline-flex; gap:7px;
+              align-items:center; background:var(--surface); cursor:pointer;
+              border:1px solid var(--border-strong); border-radius:7px;
+              padding:6px 12px; color:var(--text); }
+  .passages { margin-top:14px; display:grid; gap:12px; }
+  .passage { border-left:2px solid var(--border-strong);
+             padding:2px 0 2px 14px; }
+  .passage q { font-size:.88rem; display:block; margin-bottom:5px; }
+  .passage a { color:var(--accent); font-size:.76rem; text-decoration:none;
+               word-break:break-all; }
+  .passage a:hover { text-decoration:underline; }
+
+  .srcs { margin-top:18px; padding-top:14px; border-top:1px solid var(--border);
+          font-size:.76rem; color:var(--muted); }
+  .srcs a { color:var(--accent); text-decoration:none; }
+  .srcs a:hover { text-decoration:underline; }
+
+  /* Empty states. 53 of 57 accounts have no profile, so this is what the tab
+     shows most of the time — and "not looked" and "looked, found nothing"
+     must not read alike. */
+  .empty { text-align:left; padding:26px 22px; }
+  .empty h3 { margin:0 0 6px; font-size:.95rem; }
+  .empty p { margin:0 0 14px; max-width:64ch; }
+  .btn { font:inherit; font-size:.82rem; padding:7px 14px; cursor:pointer;
+         border-radius:7px; border:1px solid var(--border-strong);
+         background:var(--surface); color:var(--text); }
+  .btn.primary { background:var(--accent); border-color:transparent; color:#fff; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .btn.primary { color:#0b1613; }
+  }
+
+  .caption { font-size:.78rem; color:var(--faint); margin:30px 0 10px;
+             text-transform:uppercase; letter-spacing:.07em; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <p class="note">
+    <strong>Proposal — not built.</strong> A <strong>Profile</strong> tab on the account screen,
+    holding what is already stored in <span class="mono">account.profile</span> and shown nowhere.
+    Content below is the real stored profile for Charity First Insurance Services, not sample text.
+  </p>
+
+  <h1 class="acct">Charity First Insurance Services</h1>
+  <p class="row-sub">charityfirst.com · Test Data list</p>
+
+  <div class="tabs">
+    <button class="tab">Contacts <span class="n">3</span></button>
+    <button class="tab on">Profile</button>
+    <button class="tab">Signals <span class="n">4</span></button>
+    <button class="tab">Research coverage <span class="n">7</span></button>
+    <button class="tab">Qualification <span class="n">62</span></button>
+    <button class="tab">Outreach</button>
+  </div>
+
+  <div class="card">
+    <div class="sec-head">
+      <div class="grow">
+        <h2>What they are</h2>
+        <p class="row-sub">Standing description. Unlike a signal it carries no expiry — nothing in it says <em>now</em>.</p>
+      </div>
+      <span class="badge badge-good">researched</span>
+    </div>
+
+    <p class="headline">
+      Charity First Insurance Services operates as a managing program administrator and wholesaler
+      specializing in property and casualty insurance and specialty programs for nonprofits,
+      religious institutions, and for-profit commercial firms.
+    </p>
+
+    <dl class="facts">
+      <div class="fact"><dt>Size</dt><dd>About 20 employees</dd></div>
+      <div class="fact"><dt>Founded</dt><dd>1985</dd></div>
+      <div class="fact"><dt>Ownership</dt><dd>Managing Program Administrator / Wholesaler</dd></div>
+      <div class="fact"><dt>Locations</dt><dd>San Francisco, CA</dd></div>
+    </dl>
+
+    <div class="group">
+      <h3>Who they sell to</h3>
+      <p class="why">The field most often missing and most often needed — it is what makes a pitch sound written for them.</p>
+      <div class="chips">
+        <span class="chip accent">Retail insurance brokers</span>
+        <span class="chip accent">Nonprofit organizations</span>
+        <span class="chip accent">Religious institutions</span>
+        <span class="chip accent">Social service organizations</span>
+        <span class="chip accent">For-profit commercial accounts</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>Lines of business</h3>
+      <div class="chips">
+        <span class="chip">Property &amp; Casualty Insurance</span>
+        <span class="chip">Workers' Compensation</span>
+        <span class="chip">Directors &amp; Officers/EPLI</span>
+        <span class="chip">Cyber Liability</span>
+        <span class="chip">General Liability</span>
+        <span class="chip">Automobile Insurance</span>
+        <span class="chip">Umbrella and Excess Liability</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>Industries served</h3>
+      <div class="chips">
+        <span class="chip">Insurance</span>
+        <span class="chip">Nonprofits and Social Services</span>
+        <span class="chip">Religious Institutions</span>
+        <span class="chip">Commercial Retail</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>What they are pushing</h3>
+      <p class="why">The closest thing here to a signal, and still not one: it has no date.</p>
+      <ul class="focus">
+        <li>Expanding commercial products and digital quoting options for retail brokers</li>
+        <li>Providing specialized cybersecurity coverage and risk management for nonprofits</li>
+      </ul>
+    </div>
+
+    <div class="group">
+      <h3>In their own words</h3>
+      <p class="why">
+        Uncut source text. Strategy and drafting read the profile rather than the evidence, so
+        without this the only words they ever see are the capped ones — and the phrase a rep would
+        actually quote is usually the one the cap removed.
+      </p>
+      <button class="cite-btn" aria-expanded="true">👁 Hide 2 passages</button>
+      <div class="passages">
+        <div class="passage">
+          <q>Charity First is a full-service managing program administrator and wholesaler
+             specializing in insurance for nonprofit organizations, religious institutions,
+             and for-profit commercial firms.</q>
+          <a href="#">https://www.charityfirst.com/</a>
+        </div>
+        <div class="passage">
+          <q>Charity First began in 1985 as an MGU and is your go-to expert in the Nonprofit space.</q>
+          <a href="#">https://www.mynewmarkets.com/</a>
+        </div>
+      </div>
+    </div>
+
+    <p class="srcs">
+      Read from <a href="#">charityfirst.com</a> and <a href="#">mynewmarkets.com</a>.
+      Replaced whole when research runs again — a profile is the current best description,
+      and nothing cites the previous one.
+    </p>
+  </div>
+
+  <p class="caption">The same tab on the other 53 accounts</p>
+
+  <div class="card empty">
+    <div class="sec-head">
+      <div class="grow"><h2>What they are</h2></div>
+      <span class="badge">not researched</span>
+    </div>
+    <h3>No profile yet</h3>
+    <p class="row-sub" style="margin-bottom:14px;">
+      The profile stage has not run for this account. Qualification, strategy and drafting are
+      reading the signals without any standing description of the company behind them.
+    </p>
+    <button class="btn primary">Research this company</button>
+  </div>
+
+  <div class="card empty">
+    <div class="sec-head">
+      <div class="grow"><h2>What they are</h2></div>
+      <span class="badge badge-warn">nothing established</span>
+    </div>
+    <h3>Researched, and the site gave nothing</h3>
+    <p class="row-sub" style="margin-bottom:14px;">
+      Ran on Oct 3 2026. The domain answered but no page described the business — 18 of 53 sites
+      on this book publish no sitemap and no readable about page. Not the same as not having looked.
+    </p>
+    <button class="btn">Try again</button>
+    <button class="btn">See research coverage</button>
+  </div>
+
+</div>
+</body>
+</html>

@@ -122,6 +122,64 @@ export interface StrategyView {
   matrix: MatrixCell[];
 }
 
+/**
+ * One piece of source text, kept whole, with where it came from.
+ *
+ * The structured fields on a profile are a synthesis — capped and compressed.
+ * This is what they were made from, uncut, because strategy and drafting read
+ * the profile rather than the evidence: without it the only words they ever
+ * see are the capped ones, and the phrase a rep would quote is usually the one
+ * the cap removed.
+ */
+export interface Passage {
+  text: string;
+  url?: string | null;
+  /** The registry source key that produced it. */
+  source?: string | null;
+}
+
+/** What a company *is*. Every field optional — a profile that established
+ *  three things says three things. */
+export interface CompanyProfile {
+  verbatim?: Passage[];
+  what_they_do?: string | null;
+  services?: string[];
+  target_customers?: string[];
+  industries_served?: string[];
+  size?: string | null;
+  locations?: string[];
+  current_focus?: string[];
+  ownership?: string | null;
+  founded?: string | null;
+  sources?: string[];
+}
+
+/**
+ * Who a person *is*, as against what has just happened to them.
+ *
+ * Carries only what the contact row does not — title, seniority and buying
+ * role are columns, and repeating them would give two answers to one question.
+ * Never carries an email or a phone number: those come from a verification
+ * provider with a status attached, and the backend strips them on the way in.
+ */
+export interface ContactProfile {
+  verbatim?: Passage[];
+  summary?: string | null;
+  responsibilities?: string[];
+  tenure?: string | null;
+  background?: string[];
+  focus_areas?: string[];
+  decision_scope?: string | null;
+  sources?: string[];
+}
+
+export interface ContactProfileRow {
+  contact_id: string;
+  contact_name: string;
+  title: string | null;
+  profile: ContactProfile;
+}
+
 export interface Intelligence {
   account_id: string;
   account_name: string;
@@ -132,18 +190,13 @@ export interface Intelligence {
    * it carries no expiry and reads as standing context. Null until the profile
    * stage has run.
    */
-  profile: {
-    what_they_do?: string | null;
-    services?: string[];
-    target_customers?: string[];
-    industries_served?: string[];
-    size?: string | null;
-    locations?: string[];
-    current_focus?: string[];
-    ownership?: string | null;
-    founded?: string | null;
-    sources?: string[];
-  } | null;
+  profile: CompanyProfile | null;
+  /**
+   * One per person at this company who has a standing description. Only people
+   * who have one appear: a contact with no profile is not an empty profile, it
+   * is someone research has not described.
+   */
+  contact_profiles: ContactProfileRow[];
   signals: SignalRow[];
   coverage: CoverageRow[];
   /** The model's reading of the signals: themes, what changed, what is unknown. */

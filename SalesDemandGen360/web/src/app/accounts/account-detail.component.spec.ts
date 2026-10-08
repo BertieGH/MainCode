@@ -50,12 +50,13 @@ function sig(over: Partial<SignalRow> = {}): SignalRow {
   };
 }
 
-function intel(signals: SignalRow[]): Intelligence {
+function intel(signals: SignalRow[], over: Partial<Intelligence> = {}): Intelligence {
   return {
     account_id: ACCOUNT,
     account_name: 'Champion Risk',
     domain: 'championrisk.test',
     profile: null,
+    contact_profiles: [],
     signals,
     coverage: [],
     context_narrative: null,
@@ -63,6 +64,7 @@ function intel(signals: SignalRow[]): Intelligence {
     context_version: null,
     qualification: null,
     outreach: [],
+    ...over,
   };
 }
 
@@ -221,5 +223,244 @@ describe('AccountDetailComponent · live and background signals', () => {
 
       expect(fixture.nativeElement.querySelector('.sig.sig-bg')).toBeTruthy();
     });
+  });
+});
+
+/**
+ * The profile tab.
+ *
+ * `account.profile` and `contact.profile` have been written by the profile
+ * stage, read by the context builder, and so consumed by qualification,
+ * strategy and drafting — while being shown on no screen at all. The one
+ * reader who could not see them was the rep.
+ *
+ * What these guard is the distinction the profile exists for: a profile is
+ * what a company or a person *is*, carries no expiry, and must never be
+ * presented as a dated trigger. And that "no profile" and "a profile that
+ * established nothing" do not read alike.
+ */
+describe('AccountDetailComponent · profile tab', () => {
+  let fixture: ComponentFixture<AccountDetailComponent>;
+  let cmp: AccountDetailComponent;
+  let http: HttpTestingController;
+
+  const COMPANY = {
+    what_they_do: 'A managing program administrator for nonprofits.',
+    services: ['Workers Compensation'],
+    target_customers: ['Nonprofit organizations'],
+    size: 'About 20 employees',
+    founded: '1985',
+    sources: ['https://www.charityfirst.com/about'],
+    verbatim: [{ text: 'Charity First began in 1985 as an MGU.', url: 'https://x.test/a' }],
+  };
+
+  const PERSON = {
+    contact_id: 'c-1',
+    contact_name: 'Mark Raby',
+    title: 'Chief Executive Officer',
+    profile: {
+      summary: 'Runs the brokerage and owns the technology budget.',
+      responsibilities: ['Technology spend'],
+      tenure: 'Thirty years in the industry',
+      verbatim: [{ text: 'I am a seasoned insurance professional.', url: 'https://x.test/b' }],
+    },
+  };
+
+  function boot(over: Partial<Intelligence> = {}): void {
+    fixture = TestBed.createComponent(AccountDetailComponent);
+    cmp = fixture.componentInstance;
+    fixture.detectChanges();
+    http.expectOne(URL).flush(intel([], over));
+    http.match(() => true).forEach((r) => r.flush([]));
+    cmp.tab.set('profile');
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [AccountDetailComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: { get: () => ACCOUNT } } },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('shows the company profile the pipeline already stored', () => {
+    boot({ profile: COMPANY });
+    const text = fixture.nativeElement.textContent;
+
+    expect(text).toContain('A managing program administrator for nonprofits.');
+    expect(text).toContain('Nonprofit organizations');
+    expect(text).toContain('About 20 employees');
+  });
+
+  it('shows a profile for each person at the company', () => {
+    boot({ profile: COMPANY, contact_profiles: [PERSON] });
+    const text = fixture.nativeElement.textContent;
+
+    expect(text).toContain('Mark Raby');
+    expect(text).toContain('Chief Executive Officer');
+    expect(text).toContain('Runs the brokerage and owns the technology budget.');
+  });
+
+  it('keeps the source text behind a disclosure, per subject', () => {
+    boot({ profile: COMPANY, contact_profiles: [PERSON] });
+
+    // Two independent toggles, not one: opening the company's passages must
+    // not open a person's. They are different claims about different subjects.
+    cmp.toggle('prof-company');
+    fixture.detectChanges();
+    let text = fixture.nativeElement.textContent;
+    expect(text).toContain('Charity First began in 1985 as an MGU.');
+    expect(text).not.toContain('I am a seasoned insurance professional.');
+
+    cmp.toggle('prof-c-1');
+    fixture.detectChanges();
+    text = fixture.nativeElement.textContent;
+    expect(text).toContain('I am a seasoned insurance professional.');
+  });
+
+  it('never presents a profile as dated', () => {
+    boot({ profile: COMPANY, contact_profiles: [PERSON] });
+    const text = fixture.nativeElement.textContent;
+
+    // The whole reason this is not a signal type. A TTL here would expire a
+    // fact that has not changed.
+    expect(text).not.toContain('expires');
+    expect(text).not.toContain('Observed');
+  });
+
+  it('says a company has not been researched rather than showing it blank', () => {
+    boot({ profile: null });
+    const text = fixture.nativeElement.textContent;
+
+    expect(text).toContain('not researched');
+    expect(text).toContain('No profile for Champion Risk yet');
+  });
+
+  it('counts described people, and shows a dash rather than zero', () => {
+    boot({ profile: COMPANY });
+
+    // "0 profiles" reads as a measurement; nothing here has been measured.
+    expect(cmp.countFor('profile', intel([], { profile: COMPANY }))).toBe('—');
+    expect(cmp.countFor('profile', intel([], { contact_profiles: [PERSON] }))).toBe(1);
+  });
+
+  it('shortens a source URL to its host but links the whole thing', () => {
+    boot({ profile: COMPANY });
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('.psrc a');
+
+    expect(link.textContent!.trim()).toBe('charityfirst.com');
+    expect(link.href).toBe('https://www.charityfirst.com/about');
+  });
+
+  it('shows one link per host, not the same word twice', () => {
+    // Champion Risk cites two pages on its own site. Rendered naively the
+    // line read "championrisk.com, championrisk.com, insurancejournal.com",
+    // which looks like a bug whatever the hrefs say.
+    boot({
+      profile: {
+        ...COMPANY,
+        sources: [
+          'https://www.championrisk.com/a',
+          'https://www.championrisk.com/b',
+          'https://www.insurancejournal.com/c',
+        ],
+      },
+    });
+    const labels = [...fixture.nativeElement.querySelectorAll('.psrc a')].map(
+      (a: any) => a.textContent.trim(),
+    );
+
+    expect(labels).toEqual(['championrisk.com', 'insurancejournal.com']);
+  });
+});
+
+/**
+ * What a signal card calls itself.
+ *
+ * The type key alone was doing two jobs badly: `contact_profile` sat on the
+ * signals tab reading as though it were the person's profile, which is a
+ * different object, lives on its own tab, and carries no expiry.
+ */
+describe('AccountDetailComponent · company and contact signal sections', () => {
+  let fixture: ComponentFixture<AccountDetailComponent>;
+  let http: HttpTestingController;
+
+  function boot(signals: SignalRow[]): void {
+    fixture = TestBed.createComponent(AccountDetailComponent);
+    fixture.detectChanges();
+    http.expectOne(URL).flush(intel(signals));
+    http.match(() => true).forEach((r) => r.flush([]));
+    fixture.componentInstance.tab.set('signals');
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [AccountDetailComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: { get: () => ACCOUNT } } },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('heads the two kinds separately', () => {
+    boot([
+      sig({ scope: 'company' }),
+      sig({ scope: 'contact', contact_name: 'Mark Raby' }),
+    ]);
+    const text = fixture.nativeElement.textContent;
+
+    expect(text).toContain('Company signals');
+    expect(text).toContain('Contact signals');
+  });
+
+  it('omits a heading for a kind with nothing in it', () => {
+    boot([sig({ scope: 'company' })]);
+    const text = fixture.nativeElement.textContent;
+
+    expect(text).toContain('Company signals');
+    expect(text).not.toContain('Contact signals');
+  });
+
+  it('never puts the registry key on the face of a card', () => {
+    // It was the first thing a rep read, and contact_profile read as the
+    // person's profile — a different object, on its own tab, with no expiry.
+    boot([sig({ scope: 'contact', signal_type: 'contact_profile' })]);
+
+    expect(fixture.nativeElement.querySelector('.sig-head code')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('contact_profile');
+  });
+
+  it('keeps the key reachable on hover for registry work', () => {
+    boot([sig({ signal_type: 'mgt_change' })]);
+    const line = fixture.nativeElement.querySelector('.sig strong');
+
+    expect(line.title).toBe('signal type: mgt_change');
+  });
+
+  it('drops the per-card scope badge the heading now carries', () => {
+    boot([sig({ scope: 'company' })]);
+    const head = fixture.nativeElement.querySelector('.sig-head').textContent;
+
+    expect(head).not.toContain('company signal');
+    expect(head).not.toContain('contact signal');
   });
 });

@@ -4418,3 +4418,65 @@ Front end 351 pass; `ng build` exit 0.
 
 `styles.css`, `settings/setup.component.ts`, `campaigns/campaign-detail.component.ts`,
 `campaigns/campaign-person.component.ts`.
+
+## §98 — The profile becomes visible, and a signal stops impersonating it (2026-10-07)
+
+`account.profile` and `contact.profile` have been written by the profile stage since it was built,
+read by the context builder, and so consumed by qualification, strategy and drafting — while
+appearing on no screen. The one reader who could not see them was the rep.
+
+Four of 57 accounts hold a company profile and one contact holds a personal one. Champion Risk's
+runs to a sentence, four standing facts, seven lines of business, seven buyer types and two source
+passages, none of it reachable from the app.
+
+### Where it now lives
+
+A **Profile** tab on the account screen, second — Contacts keeps the lead for the reason already
+recorded there, and this sits before the dated things rather than among them. It holds the company
+and then every person at that company who has been described, in the same shape, because they answer
+the same question about different subjects.
+
+`IntelligenceOut` gains `contact_profiles`, built from the contacts already loaded for the signal
+join, so the screen costs no extra query. Only people who *have* a profile appear: a contact with
+none is not an empty profile, it is someone research has not described, and the tab says so in
+words rather than by rendering blank fields.
+
+The client type was already behind the contract — it declared nine profile fields and not
+`verbatim`, the whole-passage field that was the point of the profile work. Added, along with
+`CompanyProfile`, `ContactProfile` and `Passage` as named types.
+
+Two empty states, deliberately unalike, because 53 of 57 accounts will show one: **not researched**
+(the stage never ran, and the later stages are working without any description of the business) and
+nothing-found. Passages reuse the citation disclosure's `.evidence`/`.ev` rather than new rules, so
+the two cannot drift.
+
+### The signals tab stops making the rep sort
+
+Signals were one mixed list with a scope badge per card. They are now **Company signals** and
+**Contact signals**, each headed with its count. "Something changed at this business" and "something
+changed for this person" are different questions worked through for different reasons, and a badge
+made the reader do the sorting. With the heading carrying the scope, the per-card badge was saying
+what the line above it already said, so it is gone.
+
+**The registry key is off the face of the card.** It was the first thing a rep read and it is the
+one label written for us rather than for them — and `contact_profile` sat there looking exactly like
+the person's profile, which is a different object, on its own tab, with no expiry. It is kept in the
+summary's `title`, for registry work.
+
+That the key *could* mislead this way is not a UI problem. `schemas/profile.py` opens by arguing a
+profile must not be a signal type because a TTL would expire a fact that has not changed — and this
+signal carries `expires Jan 1, 2027`. Renaming the type is still open.
+
+### Two things found by rendering it
+
+A source line read "championrisk.com, championrisk.com, insurancejournal.com": two pages on one site
+shorten to one label. Now one link per host, first URL winning.
+
+The component's CSS went 238 bytes over the 4 kB budget, and the budget was right — `.passages` and
+`.passage` duplicated `.evidence` and `.ev`, and `.psection` duplicated `.sec-title`. Reusing both
+came in under without raising anything.
+
+Front end 364 pass; `ng build` exit 0. Backend 1,818 pass.
+
+`api/intelligence.py`, `core/pipeline.service.ts`, `accounts/account-detail.component.ts`,
+`accounts/account-detail.component.spec.ts` (+13), `mockups/account-profile-proposal.html` (new).

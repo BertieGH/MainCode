@@ -17,7 +17,7 @@ import { CONTACT_COLUMNS } from '../shared/contact-columns';
 import { DataTableComponent } from '../shared/data-table.component';
 import { Contact, ListsService } from '../core/lists.service';
 
-type Tab = 'contacts' | 'signals' | 'coverage' | 'qualification' | 'outreach';
+type Tab = 'contacts' | 'profile' | 'signals' | 'coverage' | 'qualification' | 'outreach';
 
 /** Reads a dimension's basis. A free function so the template stays readable. */
 function basis_is(dim: { basis: string }, value: string): boolean {
@@ -106,12 +106,208 @@ function basis_is(dim: { basis: string }, value: string): boolean {
       </ng-container>
 
       <!-- signals -->
+      <!-- profile — what the company and its people *are*, as against what has
+           just happened to them. Stored on account.profile and contact.profile
+           since the profile stage was built, read by the context builder and
+           so by qualification, strategy and drafting, and until now shown
+           nowhere: the one reader who could not see it was the rep. -->
+      <ng-container *ngIf="tab() === 'profile'">
+        <p class="row-sub" style="max-width:74ch;margin-bottom:14px;">
+          Standing descriptions. Unlike a signal these carry no expiry — nothing in them says
+          <em>now</em> — so they are never set aside for being old. Strategy and drafting read
+          this, which is why the source text is kept whole alongside the summary.
+        </p>
+
+        <!-- the company -->
+        <div class="card prof" *ngIf="d.profile as p; else noCompanyProfile">
+          <div class="prof-head">
+            <div style="flex:1;min-width:0;">
+              <h3>What they are</h3>
+              <p class="row-sub">{{ d.account_name }}</p>
+            </div>
+            <span class="badge badge-good">researched</span>
+          </div>
+
+          <p class="prof-lead" *ngIf="p.what_they_do">{{ p.what_they_do }}</p>
+
+          <dl class="facts" *ngIf="p.size || p.founded || p.ownership || p.locations?.length">
+            <div class="fact" *ngIf="p.size"><dt>Size</dt><dd>{{ p.size }}</dd></div>
+            <div class="fact" *ngIf="p.founded"><dt>Founded</dt><dd>{{ p.founded }}</dd></div>
+            <div class="fact" *ngIf="p.ownership"><dt>Ownership</dt><dd>{{ p.ownership }}</dd></div>
+            <div class="fact" *ngIf="p.locations?.length">
+              <dt>Locations</dt><dd>{{ p.locations!.join(' · ') }}</dd>
+            </div>
+          </dl>
+
+          <!-- first of the lists, and tinted. It is the field most often
+               missing and most often needed: it is what makes a pitch sound
+               written for them rather than at them. -->
+          <div class="pgroup" *ngIf="p.target_customers?.length">
+            <h4>Who they sell to</h4>
+            <div class="chips">
+              <span class="chip accent" *ngFor="let x of p.target_customers">{{ x }}</span>
+            </div>
+          </div>
+
+          <div class="pgroup" *ngIf="p.services?.length">
+            <h4>Lines of business</h4>
+            <div class="chips"><span class="chip" *ngFor="let x of p.services">{{ x }}</span></div>
+          </div>
+
+          <div class="pgroup" *ngIf="p.industries_served?.length">
+            <h4>Industries served</h4>
+            <div class="chips">
+              <span class="chip" *ngFor="let x of p.industries_served">{{ x }}</span>
+            </div>
+          </div>
+
+          <div class="pgroup" *ngIf="p.current_focus?.length">
+            <h4>What they are pushing</h4>
+            <p class="pwhy">The closest thing here to a signal, and still not one: it has no date.</p>
+            <ul class="focus"><li *ngFor="let x of p.current_focus">{{ x }}</li></ul>
+          </div>
+
+          <ng-container
+            *ngTemplateOutlet="verbatim; context: { v: p.verbatim, k: 'company' }"></ng-container>
+          <ng-container *ngTemplateOutlet="srcs; context: { s: p.sources }"></ng-container>
+        </div>
+
+        <ng-template #noCompanyProfile>
+          <div class="card prof">
+            <div class="prof-head">
+              <div style="flex:1;min-width:0;"><h3>What they are</h3></div>
+              <span class="badge badge-neutral">not researched</span>
+            </div>
+            <p class="row-sub" style="max-width:66ch;">
+              No profile for {{ d.account_name }} yet. Qualification, strategy and drafting are
+              reading this company's signals with no standing description of the business behind
+              them. It is written by the profile stage on the next research run.
+            </p>
+          </div>
+        </ng-template>
+
+        <!-- the people. Same shape, because they answer the same question
+             about a different subject, and a rep moving between them should
+             not have to relearn the layout. -->
+        <h3 class="sec-title" *ngIf="d.contact_profiles.length">
+          The people here
+          <span class="row-sub">
+            {{ d.contact_profiles.length }} of {{ contacts().length || d.contact_profiles.length }}
+            described
+          </span>
+        </h3>
+
+        <div class="card prof" *ngFor="let cp of d.contact_profiles">
+          <div class="prof-head">
+            <div style="flex:1;min-width:0;">
+              <h3>{{ cp.contact_name }}</h3>
+              <p class="row-sub">{{ cp.title || 'title not recorded' }}</p>
+            </div>
+            <span class="badge badge-good">researched</span>
+          </div>
+
+          <p class="prof-lead" *ngIf="cp.profile.summary">{{ cp.profile.summary }}</p>
+
+          <dl class="facts" *ngIf="cp.profile.tenure || cp.profile.decision_scope">
+            <div class="fact" *ngIf="cp.profile.tenure">
+              <dt>Tenure</dt><dd>{{ cp.profile.tenure }}</dd>
+            </div>
+            <div class="fact" *ngIf="cp.profile.decision_scope">
+              <dt>Decides</dt><dd>{{ cp.profile.decision_scope }}</dd>
+            </div>
+          </dl>
+
+          <!-- tinted, for the same reason target_customers is on the company:
+               it is the part that decides whether a pitch is addressed to the
+               right person at all. -->
+          <div class="pgroup" *ngIf="cp.profile.responsibilities?.length">
+            <h4>What they own</h4>
+            <div class="chips">
+              <span class="chip accent" *ngFor="let x of cp.profile.responsibilities">{{ x }}</span>
+            </div>
+          </div>
+
+          <div class="pgroup" *ngIf="cp.profile.focus_areas?.length">
+            <h4>What they write and speak about</h4>
+            <p class="pwhy">The nearest thing here to a hook, and still not a signal — no date.</p>
+            <div class="chips">
+              <span class="chip" *ngFor="let x of cp.profile.focus_areas">{{ x }}</span>
+            </div>
+          </div>
+
+          <div class="pgroup" *ngIf="cp.profile.background?.length">
+            <h4>Before this</h4>
+            <ul class="focus"><li *ngFor="let x of cp.profile.background">{{ x }}</li></ul>
+          </div>
+
+          <ng-container
+            *ngTemplateOutlet="verbatim;
+                               context: { v: cp.profile.verbatim, k: cp.contact_id }"></ng-container>
+          <ng-container *ngTemplateOutlet="srcs; context: { s: cp.profile.sources }"></ng-container>
+        </div>
+
+        <p class="row-sub empty" *ngIf="!d.contact_profiles.length && contacts().length">
+          None of the {{ contacts().length }} people here has a profile yet. A contact profile is
+          written when research runs for that person, not for the company.
+        </p>
+
+        <!-- The uncut source text, behind the same disclosure a signal's
+             citations use, because it answers the same question: says who? -->
+        <ng-template #verbatim let-v="v" let-k="k">
+          <div class="pgroup" *ngIf="v?.length">
+            <h4>In their own words</h4>
+            <button class="btn cite" (click)="toggle('prof-' + k)"
+                    [attr.aria-expanded]="open().has('prof-' + k)">
+              <app-icon name="eye" [size]="13" />
+              {{ open().has('prof-' + k) ? 'Hide' : 'Show' }} {{ v.length }} passage(s)
+            </button>
+            <div class="evidence" *ngIf="open().has('prof-' + k)">
+              <div class="ev" *ngFor="let q of v">
+                <p style="margin:0 0 6px;">“{{ q.text }}”</p>
+                <a *ngIf="q.url" [href]="q.url" target="_blank" rel="noopener"
+                   class="row-sub">{{ q.url }}</a>
+                <span class="row-sub" *ngIf="!q.url && q.source">{{ q.source }}</span>
+              </div>
+            </div>
+          </div>
+        </ng-template>
+
+        <!-- Not evidence rows: a profile is not a claim that needs citing the
+             way a signal is. But a rep asking "says who?" deserves an answer,
+             and a stale profile needs somewhere to be re-read. -->
+        <ng-template #srcs let-s="s">
+          <p class="row-sub psrc" *ngIf="s?.length">
+            Read from
+            <ng-container *ngFor="let u of hosts(s); let last = last">
+              <a [href]="u.href" target="_blank" rel="noopener">{{ u.label }}</a><span
+                *ngIf="!last">, </span>
+            </ng-container>. Replaced whole when research runs again.
+          </p>
+        </ng-template>
+      </ng-container>
+
       <ng-container *ngIf="tab() === 'signals'">
         <p class="row-sub" style="max-width:70ch;margin-bottom:14px;">
           Every signal cites the evidence it rests on. A signal whose citation could not be resolved
           was dropped before it reached here, not shown with a caveat.
         </p>
-        <ng-container *ngFor="let s of live(d.signals)">
+        <!-- Two sections, not one mixed list. "Something changed at this
+             business" and "something changed for this person" are different
+             questions a rep works through for different reasons, and a scope
+             badge on each card made the reader do the sorting. -->
+        <h3 class="sec-title" *ngIf="companySignals(d.signals).length">
+          Company signals
+          <span class="row-sub">{{ companySignals(d.signals).length }} extracted</span>
+        </h3>
+        <ng-container *ngFor="let s of companySignals(d.signals)">
+          <ng-container *ngTemplateOutlet="sigCard; context: { s: s }"></ng-container>
+        </ng-container>
+
+        <h3 class="sec-title" *ngIf="contactSignals(d.signals).length">
+          Contact signals
+          <span class="row-sub">{{ contactSignals(d.signals).length }} extracted</span>
+        </h3>
+        <ng-container *ngFor="let s of contactSignals(d.signals)">
           <ng-container *ngTemplateOutlet="sigCard; context: { s: s }"></ng-container>
         </ng-container>
 
@@ -146,10 +342,14 @@ function basis_is(dim: { basis: string }, value: string): boolean {
           <div class="card sig" [class.sig-bg]="!isLive(s)">
             <div class="sig-head">
               <div>
-                <code>{{ s.signal_type }}</code>
-                <span class="badge" [ngClass]="s.scope === 'company' ? 'badge-accent' : 'badge-warn'"
-                      style="margin-left:8px;">{{ s.scope }}</span>
-                <span class="badge badge-neutral" *ngIf="s.is_hypothesis" style="margin-left:6px;">
+                <!-- Neither the registry key nor a scope badge. The key was
+                     the first thing a rep read and is the one label written
+                     for us rather than for them: contact_profile sat here
+                     looking like the person's profile, which is a different
+                     object on its own tab with no expiry. The scope now comes
+                     from the section heading. Both are still reachable — the
+                     key on hover, for registry work. -->
+                <span class="badge badge-neutral" *ngIf="s.is_hypothesis">
                   hypothesis
                 </span>
                 <span class="badge" [ngClass]="isLive(s) ? 'badge-good' : 'badge-neutral'"
@@ -161,7 +361,8 @@ function basis_is(dim: { basis: string }, value: string): boolean {
                 {{ s.strength }} · {{ (s.confidence * 100).toFixed(0) }}%
               </span>
             </div>
-            <strong style="display:block;margin:8px 0 4px;">{{ s.summary }}</strong>
+            <strong style="display:block;margin:8px 0 4px;"
+                    [title]="'signal type: ' + s.signal_type">{{ s.summary }}</strong>
             <p class="row-sub" *ngIf="s.business_implication">{{ s.business_implication }}</p>
             <p class="row-sub">
               Observed {{ s.observed_at | date: 'MMM d, y' }}
@@ -462,6 +663,43 @@ function basis_is(dim: { basis: string }, value: string): boolean {
                font-family: 'IBM Plex Mono', monospace; opacity: .7; }
       .sig, .dim, .thread { margin-bottom: 12px; }
       .sig-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+
+      /* --- profile ---
+         display is declared, not inherited: a global '.slot' turned another
+         screen's cards into flex rows once, and these are stacks. */
+      .prof { display: block; margin-bottom: 14px; }
+      .prof-head { display: flex; gap: 14px; align-items: center;
+                   padding-bottom: 12px; border-bottom: 1px solid var(--line);
+                   margin-bottom: 16px; }
+      .prof-head h3 { font-size: 1rem; margin: 0 0 2px; }
+      .prof-head .badge { flex: none; }
+      /* The largest thing on the card: every list below is detail under it. */
+      .prof-lead { font-family: 'Fraunces', Georgia, serif; font-size: 1.08rem;
+                   line-height: 1.45; margin: 0 0 4px; }
+      /* A list, not chips: each is one labelled value, not a member of a set. */
+      .facts { display: flex; flex-wrap: wrap; gap: 26px; margin: 18px 0 4px;
+               padding-top: 16px; border-top: 1px solid var(--line); }
+      .facts dt, .pgroup h4 { font-size: .68rem; letter-spacing: .07em; font-weight: 600;
+                              text-transform: uppercase; color: var(--faint); margin: 0 0 8px; }
+      .facts dt { margin-bottom: 3px; }
+      .facts dd { margin: 0; }
+      .facts dd, .focus li { font-size: .88rem; }
+      .pgroup { margin-top: 20px; }
+      .pwhy { font-size: .74rem; color: var(--faint); margin: -4px 0 8px; max-width: 64ch; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      .chip { font-size: .78rem; padding: 4px 11px; border-radius: 20px;
+              background: var(--surface-2); border: 1px solid var(--line); }
+      .chip.accent { background: var(--accent-soft); border-color: transparent;
+                     color: var(--accent); }
+      /* Arrows, not chips: these are sentences, and a chip that wraps to three
+         lines is a paragraph wearing a pill. */
+      .focus { margin: 0; padding: 0; list-style: none; }
+      .focus li { position: relative; padding-left: 18px; margin-bottom: 6px; max-width: 78ch; }
+      .focus li::before { content: "\\2192"; position: absolute; left: 0; color: var(--accent); }
+      /* Passages reuse .evidence/.ev from the citation disclosure above. Same
+         shape, same job — a quote and the link that reopens it — so a second
+         set of rules would only let the two drift apart. */
+      .psrc { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
       /* Receded, not hidden: still readable, visibly not one of the live ones.
          Opacity alone would take the evidence excerpts down with it, and those
          are the reason to open a background card at all. */
@@ -537,6 +775,10 @@ export class AccountDetailComponent implements OnInit {
     // the people, and "who would we actually write to" is the question a rep
     // opens an account to answer.
     { key: 'contacts', label: 'Contacts' },
+    // Second, not first. Contacts keeps the lead for the reason above; this is
+    // the standing context for everything after it, so it sits before the
+    // dated things rather than among them.
+    { key: 'profile', label: 'Profile' },
     { key: 'signals', label: 'Signals' },
     { key: 'coverage', label: 'Research coverage' },
     { key: 'qualification', label: 'Qualification' },
@@ -648,8 +890,34 @@ export class AccountDetailComponent implements OnInit {
       });
   }
 
+  /** Source URLs as one link per host, the full URL kept in the href.
+   *
+   *  Shortening to the host is what makes a row of sources read rather than
+   *  wrap — but two pages on one site then render the same word twice, which
+   *  Champion Risk did: "championrisk.com, championrisk.com, insurancejournal.com"
+   *  looks like a bug whatever the hrefs say. One link per host, first URL
+   *  wins, so the label is always distinct and still opens something real.
+   */
+  hosts(urls: string[] | undefined): { href: string; label: string }[] {
+    const seen = new Map<string, string>();
+    for (const url of urls ?? []) {
+      let label = url;
+      try {
+        label = new URL(url).hostname.replace(/^www\./, '');
+      } catch {
+        /* not a URL — show it as given rather than dropping a source */
+      }
+      if (!seen.has(label)) seen.set(label, url);
+    }
+    return [...seen].map(([label, href]) => ({ href, label }));
+  }
+
   countFor(tab: Tab, d: Intelligence): number | string {
     if (tab === 'contacts') return this.contacts().length;
+    // The company profile is not a count, so the tab shows how many *people*
+    // are described. A dash rather than 0 when none are: "0 profiles" reads as
+    // a measurement, and nothing here has been measured.
+    if (tab === 'profile') return d.contact_profiles.length || '—';
     if (tab === 'signals') return d.signals.length;
     if (tab === 'coverage') return d.coverage.length;
     if (tab === 'qualification') return d.qualification ? d.qualification.priority_score : '—';
@@ -684,6 +952,24 @@ export class AccountDetailComponent implements OnInit {
   }
 
   /** Expired or superseded. True, and not a reason to reach out. */
+  /** The live signals about the company itself. */
+  companySignals(signals: SignalRow[]): SignalRow[] {
+    return this.live(signals).filter((s) => s.scope === 'company');
+  }
+
+  /**
+   * The live signals about a person here.
+   *
+   * Split from the company's rather than mixed and badged, because they answer
+   * different questions — "something changed at this business" against
+   * "something changed for this person" — and a rep works through them for
+   * different reasons. Once they are in named sections the per-card scope
+   * badge is saying what the heading above it already said.
+   */
+  contactSignals(signals: SignalRow[]): SignalRow[] {
+    return this.live(signals).filter((s) => s.scope !== 'company');
+  }
+
   background(signals: SignalRow[]): SignalRow[] {
     return signals.filter((s) => !this.isLive(s));
   }
