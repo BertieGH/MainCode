@@ -4584,3 +4584,34 @@ naming; it was right to push back.
 Front end 367 pass; `ng build` exit 0. Backend 1,822 pass.
 
 `api/lists.py`, `core/lists.service.ts`, `accounts/account-detail.component.ts`.
+
+## §101 — Research on the queue screen too (2026-10-08)
+
+§100 put research on the account screen and stopped there. The owner was looking at a **queue** —
+which is where a rep actually reads people, just before promoting them to outreach — and there was
+no research option on it.
+
+**Research this person** on the queue's People table, **Research this company** on its Accounts
+table, both per row and on a selection.
+
+### A queue's people are not one company's
+
+The endpoint is per account, because what research looks for comes from that account's list ICPs. A
+queue's people come from wherever they were queued from, so a selection spanning three companies is
+three plans. `researchPeople` groups by `account_id` and sends one request each; sending them as a
+single call would have to pick one company and quietly research its plan against everybody.
+
+### Two things the account screen's copy gets that this one must not
+
+**No do-not-contact gate.** The account screen's action checks it, because a contact row carries the
+field. `QueueContact` does not — and a queue refuses a suppressed person on the way in, so one
+cannot be sitting there. A `can` reading a field the row has no value for would pass every time
+while looking like a check.
+
+**Allowed on a locked queue.** Removal is gated on `draftQueue()`; research is not. It changes what
+is known about a person, not who is in the queue, so nothing the lock protects is touched. The row
+menu stays available once selection is switched off, which is what makes that work.
+
+Front end 367 pass; `ng build` exit 0.
+
+`queues/queue-detail.component.ts`.

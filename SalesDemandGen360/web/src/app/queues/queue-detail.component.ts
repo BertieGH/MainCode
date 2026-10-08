@@ -248,8 +248,8 @@ import { ReadinessService } from '../shared/readiness.service';
       [data]="people()"
       [selectable]="draftQueue()"
       [rowActions]="peopleActions"
-      [busyKey]="removing() ? 'remove' : null"
-      busyText="Removing…"
+      [busyKey]="removing() ? 'remove' : researching() ? 'research' : null"
+      [busyText]="removing() ? 'Removing…' : 'Researching…'"
       [idOf]="personId"
       [label]="personLabel"
       (open)="openPerson($event)"
@@ -284,8 +284,8 @@ import { ReadinessService } from '../shared/readiness.service';
       (sortChange)="onSort($event)"
       [selectable]="draftQueue()"
       [rowActions]="memberActions"
-      [busyKey]="removing() ? 'remove' : null"
-      busyText="Removing…"
+      [busyKey]="removing() ? 'remove' : researching() ? 'research' : null"
+      [busyText]="removing() ? 'Removing…' : 'Researching…'"
       [idOf]="memberId"
       [label]="memberLabel"
       (open)="openMember($event)"
@@ -462,6 +462,25 @@ export class QueueDetailComponent implements OnInit {
   ];
 
   readonly peopleActions: RowAction[] = [
+    // Offered here as well as on the account screen, because this is where a
+    // rep reads a queue before promoting it: finding somebody thin is exactly
+    // the moment to look into them, and sending them to the account screen to
+    // do it loses the queue they were checking.
+    //
+    // Allowed on a locked queue, unlike removal. Research changes what is
+    // known about a person, not who is in the queue, so nothing a lock
+    // protects is touched.
+    //
+    // No do-not-contact gate, unlike the account screen's copy: queues refuse
+    // a suppressed person on the way in, so one cannot be sitting here. A
+    // `can` reading a field this row does not carry would be a gate that
+    // always passes, dressed up as a check.
+    {
+      key: 'research',
+      label: 'Research this person',
+      row: true,
+      bulk: true,
+    },
     {
       key: 'remove',
       label: 'Remove from queue',
@@ -526,6 +545,10 @@ export class QueueDetailComponent implements OnInit {
   }
 
   async onPeopleBulk(run: { action: RowAction; rows: any[]; skipped: any[] }): Promise<void> {
+    if (run.action.key === 'research') {
+      this.researchPeople(run.rows as QueueContact[]);
+      return;
+    }
     if (run.action.key !== 'remove' || !run.rows.length) return;
     const n = run.rows.length;
     const ok = await this.confirm.ask({
@@ -549,6 +572,85 @@ export class QueueDetailComponent implements OnInit {
       const done = results.length - failed.length;
       if (!failed.length) this.notify.success(`Removed ${done} from the queue.`);
       else this.notify[done ? 'warning' : 'error'](`Removed ${done} · ${failed.length} refused.`, failed[0]);
+      this.load();
+    });
+  }
+
+  researching = signal(false);
+
+  /**
+   * Research the people picked here.
+   *
+   * **Grouped by company, one request each.** The endpoint is per account —
+   * what research looks for comes from the account's list ICPs — and a queue's
+   * people come from wherever they were queued from, so a selection spanning
+   * three companies is three plans, not one. Sending them as a single call
+   * would have to pick a company and quietly research the wrong people.
+   */
+  researchPeople(rows: QueueContact[]): void {
+    const byAccount = new Map<string, string[]>();
+    for (const person of rows ?? []) {
+      if (!person.account_id || !person.contact_id) continue;
+      byAccount.set(person.account_id, [
+        ...(byAccount.get(person.account_id) ?? []),
+        person.contact_id,
+      ]);
+    }
+    if (!byAccount.size) return;
+
+    this.researching.set(true);
+    forkJoin(
+      [...byAccount].map(([accountId, contactIds]) =>
+        this.listsApi.researchAccount(accountId, { contactIds }).pipe(
+          map((r: any) => ({ ok: !!r?.ran && !r?.blocked, why: r?.blocked as string | null, r })),
+          catchError((err) => of({ ok: false, why: apiError(err, 'refused'), r: null })),
+        ),
+      ),
+    ).subscribe((results) => {
+      this.researching.set(false);
+      const failed = results.filter((x) => !x.ok);
+      const signals = results.reduce((n, x) => n + (x.r?.signals_stored ?? 0), 0);
+      const evidence = results.reduce((n, x) => n + (x.r?.evidence_stored ?? 0), 0);
+      const people = rows.length;
+      const what =
+        `${people} ${people === 1 ? 'person' : 'people'} at ${byAccount.size} ` +
+        `compan${byAccount.size === 1 ? 'y' : 'ies'} · ${evidence} evidence · ${signals} signal(s)`;
+      if (!failed.length) this.notify.success(`Researched ${what}.`);
+      else
+        this.notify[failed.length < results.length ? 'warning' : 'error'](
+          `Researched ${results.length - failed.length} of ${results.length} companies.`,
+          failed[0].why ?? undefined,
+        );
+      this.load();
+    });
+  }
+
+  /** The accounts picked here, one request each. No contact ids, so the
+   *  company's own families are what gets planned. */
+  researchCompanies(rows: QueueMember[]): void {
+    const ids = [...new Set((rows ?? []).map((m) => m.account_id).filter(Boolean))];
+    if (!ids.length) return;
+    this.researching.set(true);
+    forkJoin(
+      ids.map((id) =>
+        this.listsApi.researchAccount(id).pipe(
+          map((r: any) => ({ ok: !!r?.ran && !r?.blocked, why: r?.blocked as string | null, r })),
+          catchError((err) => of({ ok: false, why: apiError(err, 'refused'), r: null })),
+        ),
+      ),
+    ).subscribe((results) => {
+      this.researching.set(false);
+      const failed = results.filter((x) => !x.ok);
+      const signals = results.reduce((n, x) => n + (x.r?.signals_stored ?? 0), 0);
+      const reused = results.filter((x) => x.r?.reused).length;
+      const done = results.length - failed.length;
+      const note = `${done} compan${done === 1 ? 'y' : 'ies'} · ${signals} signal(s)`
+        + (reused ? ` · ${reused} reused, nothing bought` : '');
+      if (!failed.length) this.notify.success(`Researched ${note}.`);
+      else
+        this.notify[done ? 'warning' : 'error'](
+          `Researched ${done} of ${results.length}.`, failed[0].why ?? undefined,
+        );
       this.load();
     });
   }
@@ -589,6 +691,10 @@ export class QueueDetailComponent implements OnInit {
 
   /** Built here rather than shared: removal depends on this queue's state. */
   readonly memberActions: RowAction[] = [
+    // The company's own families, where the people action researches a person.
+    // Both are here because a queue is read before it is promoted, and that is
+    // when a thin account is noticed.
+    { key: 'research', label: 'Research this company', row: true, bulk: true },
     {
       key: 'remove',
       label: 'Remove from queue',
@@ -670,6 +776,10 @@ export class QueueDetailComponent implements OnInit {
    *  without costing the rest. */
   /** Remove one or many; one refusal is reported without costing the rest. */
   async onMemberBulk(run: { action: RowAction; rows: any[]; skipped: any[] }): Promise<void> {
+    if (run.action.key === 'research') {
+      this.researchCompanies(run.rows as QueueMember[]);
+      return;
+    }
     if (run.action.key !== 'remove' || !run.rows.length) return;
     const n = run.rows.length;
     const ok = await this.confirm.ask({
