@@ -606,6 +606,25 @@ export class ListsService {
   }
 
   /**
+   * Research one account, or named people at it, from the account screen.
+   *
+   * `listId` is only needed when the account is on more than one list: a
+   * list's ICPs decide which signal types research looks for, so the server
+   * refuses to guess between two that may disagree and returns `which_list`
+   * with the options.
+   */
+  researchAccount(
+    accountId: string,
+    opts: { contactIds?: string[]; force?: boolean; listId?: string } = {},
+  ): Observable<any> {
+    const params: Record<string, string | string[]> = {};
+    if (opts.force) params['force'] = 'true';
+    if (opts.listId) params['list_id'] = opts.listId;
+    if (opts.contactIds?.length) params['contact_ids'] = opts.contactIds;
+    return this.http.post(`/api/accounts/${accountId}/run-research`, null, { params });
+  }
+
+  /**
    * Mark people do-not-contact, or allow them again.
    *
    * Never a delete: their signals, evidence and outreach history stay. What

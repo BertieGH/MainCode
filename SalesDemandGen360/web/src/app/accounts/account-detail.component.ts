@@ -15,6 +15,7 @@ import { IconComponent } from '../shared/icon.component';
 import { apiError } from '../shared/api-error';
 import { CONTACT_COLUMNS } from '../shared/contact-columns';
 import { DataTableComponent } from '../shared/data-table.component';
+import { RowAction } from '../shared/table-view';
 import { Contact, ListsService } from '../core/lists.service';
 
 type Tab = 'contacts' | 'profile' | 'signals' | 'coverage' | 'qualification' | 'outreach';
@@ -52,12 +53,32 @@ function basis_is(dim: { basis: string }, value: string): boolean {
             <span *ngIf="d.context_version"> · context v{{ d.context_version }}</span>
           </p>
         </div>
-        <div *ngIf="d.qualification as q" class="score">
-          <span class="badge" [ngClass]="bandClass(q.priority_band)">{{ q.priority_band }}</span>
-          <strong>{{ q.priority_score }}</strong>
-          <span class="row-sub">config v{{ q.scoring_config_version }}</span>
+        <div style="display:flex;align-items:center;gap:16px;flex:none;">
+          <div *ngIf="d.qualification as q" class="score">
+            <span class="badge" [ngClass]="bandClass(q.priority_band)">{{ q.priority_band }}</span>
+            <strong>{{ q.priority_score }}</strong>
+            <span class="row-sub">config v{{ q.scoring_config_version }}</span>
+          </div>
+          <!-- Research from here, not only from the list. A rep reading one
+               company's signals and finding them thin should not have to go
+               back to the list to ask for more. Same endpoint and the same
+               reuse window: inside it this costs nothing, which is why
+               "Research" is safe to offer and "Rerun" is the one that spends. -->
+          <div style="display:flex;gap:8px;">
+            <button class="btn" (click)="research()" [disabled]="researching()">
+              <app-icon name="refresh" [size]="13" />
+              {{ researching() === 'company' ? 'Researching…' : 'Research' }}
+            </button>
+            <button class="btn" (click)="research(true)" *ngIf="d.coverage.length"
+                    [disabled]="researching()"
+                    title="Ignore the reuse window and buy every planned family again">
+              {{ researching() === 'rerun' ? 'Re-researching…' : 'Rerun' }}
+            </button>
+          </div>
         </div>
       </div>
+
+      <p class="row-sub" style="margin:-8px 0 14px;" *ngIf="researchNote()">{{ researchNote() }}</p>
 
       <div class="tabs">
         <button *ngFor="let t of tabs" class="tab" [class.on]="tab() === t.key"
@@ -89,6 +110,12 @@ function basis_is(dim: { basis: string }, value: string): boolean {
                         [data]="contacts()"
                         [sort]="contactSort()"
                         (sortChange)="onContactSort($event)"
+                        [selectable]="true"
+                        [rowActions]="contactActions"
+                        [busyKey]="researching() === 'contacts' ? 'research' : null"
+                        busyText="Researching…"
+                        (bulk)="researchPeople($any($event).rows)"
+                        (rowAction)="researchPeople([$any($event).row])"
                         [cell]="contactCell">
         </app-data-table>
 
@@ -888,6 +915,91 @@ export class AccountDetailComponent implements OnInit {
           this.pasteError.set(apiError(err, 'Could not save that.'));
         },
       });
+  }
+
+  /** Which research request is in flight, so two cannot overlap. */
+  researching = signal<'company' | 'rerun' | 'contacts' | null>(null);
+  researchNote = signal<string | null>(null);
+
+  /**
+   * "Research this person" on the contacts table.
+   *
+   * Narrows research to the named people: nobody else at the company is looked
+   * into, and their own reuse window is ignored, because naming somebody is an
+   * explicit ask to look now. The company's families are still planned and the
+   * window handles those — a person's news means little with no company behind
+   * it.
+   */
+  readonly contactActions: RowAction[] = [
+    {
+      key: 'research',
+      label: 'Research this person',
+      // A suppressed contact is somebody we have been told to leave alone, and
+      // the server refuses them anyway — offering it would be a button that
+      // reports "nothing was researched".
+      can: (r) => !r.do_not_contact,
+      why: 'marked do-not-contact',
+      row: true,
+      bulk: true,
+    },
+  ];
+
+  research(force = false): void {
+    this.researching.set(force ? 'rerun' : 'company');
+    this.researchNote.set(null);
+    this.lists.researchAccount(this.accountId, { force }).subscribe({
+      next: (r) => this.afterResearch(r),
+      error: (err) => this.researchFailed(err),
+    });
+  }
+
+  researchPeople(rows: { id: string }[]): void {
+    const ids = (rows ?? []).map((r) => r.id).filter(Boolean);
+    if (!ids.length) return;
+    this.researching.set('contacts');
+    this.researchNote.set(null);
+    this.lists.researchAccount(this.accountId, { contactIds: ids }).subscribe({
+      next: (r) => this.afterResearch(r, ids.length),
+      error: (err) => this.researchFailed(err),
+    });
+  }
+
+  /** Report what the run did, then reload — every tab is downstream of it. */
+  private afterResearch(r: any, people = 0): void {
+    this.researching.set(null);
+    if (!r?.ran || r?.blocked) {
+      this.researchNote.set(r?.blocked ?? 'Research could not run.');
+      return;
+    }
+    const bits: string[] = [];
+    if (people) bits.push(`${people} ${people === 1 ? 'person' : 'people'}`);
+    if (r.reused) bits.push('reused recent research — nothing bought');
+    if (r.evidence_stored) bits.push(`${r.evidence_stored} evidence`);
+    if (r.signals_stored) bits.push(`${r.signals_stored} new signal(s)`);
+    if (r.signals_duplicate) bits.push(`${r.signals_duplicate} already known`);
+    if (r.skipped_unresolved) bits.push('skipped — identity not confirmed');
+    this.researchNote.set(bits.length ? bits.join(' · ') : 'Nothing new was found.');
+    this.api.intelligence(this.accountId).subscribe({
+      next: (d) => this.data.set(d),
+      error: () => undefined,
+    });
+    this.loadContacts();
+  }
+
+  private researchFailed(err: unknown): void {
+    this.researching.set(null);
+    // The account is on several lists whose ICPs may ask for different things.
+    // The server refuses to guess; say which they are rather than showing a
+    // bare 409, so the rep knows what the choice actually is.
+    const body = (
+      err as { error?: { error?: string; message?: string; lists?: { label: string }[] } }
+    )?.error;
+    if (body?.error === 'which_list') {
+      const names = (body.lists ?? []).map((l) => l.label).join(', ');
+      this.researchNote.set(`${body.message} Lists: ${names}.`);
+      return;
+    }
+    this.researchNote.set(apiError(err, 'Could not research this account.'));
   }
 
   /** Source URLs as one link per host, the full URL kept in the href.

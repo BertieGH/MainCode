@@ -4538,3 +4538,49 @@ Backend 1,822 pass. Front end 367 pass; `ng build` exit 0.
 
 `services/csv_import.py`, `core/lists.service.ts`, `lists/csv-import.component.ts`,
 `tests/test_contact_import.py` (+4), `lists/csv-import.component.spec.ts` (+3).
+
+## §100 — Research reachable from the account screen (2026-10-08)
+
+Research could only be started from a list. A rep reading one company's signals, finding them thin,
+had to go back to the list, find the row, select it and run from there — and there was no way at all
+to say "look into this one person".
+
+**A Research button on the account screen, and "Research this person" on its contacts table.**
+Both hit a new `POST /accounts/{id}/run-research`.
+
+### The route decides one thing and delegates the rest
+
+What research looks for comes from `plan_for_list`: a list's ICPs decide which signal types are in
+scope, and the reuse window, the source quarantine and the fast-sweep gate all hang off that plan.
+So the account route resolves **which list** and then calls `run_research_for_list` — a second
+implementation would be a second thing to keep in step, and the first to drift would be the part
+that decides what gets bought.
+
+An account on one list has an obvious answer. On several it does not: their ICPs can differ and the
+plans with them, so the route returns `409 which_list` naming them rather than picking the newest
+and researching against the wrong one. The screen reads that and says which lists they are.
+
+An account on no list is refused with the reason, because without a list there is no plan.
+
+### What the two actions mean
+
+`Research` respects the reuse window, so inside it the run costs nothing and reports "reused recent
+research — nothing bought". `Rerun` is the one that spends, and it only appears once there is
+coverage to rerun.
+
+`Research this person` passes `contact_ids`, which the list route already understands: nobody else
+at the company is looked into and the person's own reuse window is ignored, because naming somebody
+is an explicit ask to look now. It is offered per row and on a selection, and refused for a
+do-not-contact — the server rejects them anyway, so offering it would be a button that reports
+nothing happened.
+
+### On the budget, again
+
+The three new rules put the component 25 bytes over its 4 kB style budget. They are one-off layout —
+a flex row, a gap, a margin — so they moved into the template as inline styles, which is what the
+rest of this component already does for the same kind of thing. The budget is for shared rules worth
+naming; it was right to push back.
+
+Front end 367 pass; `ng build` exit 0. Backend 1,822 pass.
+
+`api/lists.py`, `core/lists.service.ts`, `accounts/account-detail.component.ts`.

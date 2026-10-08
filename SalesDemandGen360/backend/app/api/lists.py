@@ -1245,6 +1245,88 @@ async def run_research_for_list(
     return report
 
 
+@router.post("/accounts/{account_id}/run-research", response_model=ResearchOut)
+async def run_research_for_account(
+    account_id: uuid.UUID,
+    list_id: uuid.UUID | None = Query(
+        None, description="Which list's ICPs decide what to look for. Only needed "
+                          "when the account is on more than one."
+    ),
+    contact_ids: list[uuid.UUID] | None = Query(
+        None, description="Research only these people at the account. Omit for the company."
+    ),
+    force: bool = Query(False),
+    fast_sweep: bool = Query(True),
+    profiles: bool = Query(True),
+    session: AsyncSession = Depends(get_session),
+):
+    """Research one account — or named people at it — from the account screen.
+
+    **Delegates to the list route rather than repeating it.** What to look for
+    comes from `plan_for_list`: a list's ICPs decide which signal types are in
+    scope, and the reuse window, the quarantine and the fast-sweep gate all
+    hang off that plan. Reimplementing any of it here would be a second
+    research path to keep in step, and the first thing to drift would be the
+    thing that decides what gets bought.
+
+    So the only work this route does is answer "which list". An account on one
+    list has an obvious answer. An account on several has a real question —
+    their ICPs can differ, and the plans with them — so rather than picking the
+    newest and quietly researching against the wrong one, it says which lists
+    those are and asks to be told.
+    """
+    account = await session.get(Account, account_id)
+    if account is None:
+        raise HTTPException(404, "account not found")
+
+    memberships = (
+        await session.execute(
+            select(AccountList)
+            .join(AccountListMember, AccountListMember.list_id == AccountList.id)
+            .where(AccountListMember.account_id == account_id)
+            .order_by(AccountList.label)
+        )
+    ).scalars().all()
+    if not memberships:
+        return ResearchOut(
+            ran=False,
+            blocked=(
+                f"{account.name} is on no list, and a list's ICPs are what decide "
+                "what research looks for. Add it to one first."
+            ),
+        )
+    if list_id is not None:
+        if not any(m.id == list_id for m in memberships):
+            raise HTTPException(404, "that list does not hold this account")
+        chosen = list_id
+    elif len(memberships) == 1:
+        chosen = memberships[0].id
+    else:
+        raise HTTPException(
+            409,
+            {
+                "error": "which_list",
+                "message": (
+                    f"{account.name} is on {len(memberships)} lists, whose ICPs may "
+                    "ask for different things. Say which to research for."
+                ),
+                "lists": [{"id": str(m.id), "label": m.label} for m in memberships],
+            },
+        )
+
+    return await run_research_for_list(
+        list_id=chosen,
+        limit=1,
+        payload=ResearchTargetsIn(
+            account_ids=[account_id], contact_ids=list(contact_ids or [])
+        ),
+        force=force,
+        fast_sweep=fast_sweep,
+        profiles=profiles,
+        session=session,
+    )
+
+
 class QualifyAccountOut(BaseModel):
     account_id: uuid.UUID
     name: str
