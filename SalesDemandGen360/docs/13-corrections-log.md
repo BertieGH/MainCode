@@ -4480,3 +4480,61 @@ Front end 364 pass; `ng build` exit 0. Backend 1,818 pass.
 
 `api/intelligence.py`, `core/pipeline.service.ts`, `accounts/account-detail.component.ts`,
 `accounts/account-detail.component.spec.ts` (+13), `mockups/account-profile-proposal.html` (new).
+
+## §99 — A company list read as a list of nobody (2026-10-07)
+
+A twenty-five row list of EV and mobility companies — company name, website, nothing else about a
+person — previewed as **25 `skipped_no_contact`, "Import 0 accounts"**. The owner's plan was the
+ordinary one: import the companies, enrich contacts through Apollo afterwards.
+
+Two defects, and the second is the worse of them.
+
+### The file was read as contact-grain
+
+`detect_grain` returns `"contact"` when a person column is mapped *and populated*. `GRAIN_MARKERS`
+held `title` and `contact_linkedin_url` alongside the name and email fields — and neither of those
+can identify a person. Reproduced exactly:
+
+```
+company name + website only          account
++ Title populated                    contact    <- the bug
++ company LinkedIn populated         contact    <- the bug
++ Industry only                      account
+```
+
+So a `Title` column saying what the business does, or a `LinkedIn` column of company pages, routed
+the whole file down the contact path — where `_upsert_contact` requires a name or an email and
+skipped every row.
+
+The rule is now the one the importer itself enforces: **grain is decided only by what can build a
+contact.** `GRAIN_MARKERS` is `full_name`, `email`, `first_name`, `last_name`. Title and LinkedIn
+still *corroborate* — `suggest_mapping` uses them to settle whether an ambiguous `name` column means
+the company or the person, which is a wider question than grain asks — so that list is now
+explicitly the longer one. The real import from §82's era, `contact Name` with a `Designation` and
+no email, stays contact-grain; verified alongside the rest.
+
+### The preview was under-reporting a commit
+
+`willWrite` was `created + merged`. Those are **account-grain outcomes**: on a contact-grain file
+every row reports a contact outcome instead, so the account count is structurally zero — while
+`run_import` creates the accounts regardless of grain, before the contact branch. The button would
+have said "Import 0 accounts" for a file that creates twenty-five, on *every* contact import ever
+run, not just this one.
+
+`accounts_touched` has been on the response since it was written and the client interface never
+declared it, so nothing could use it. Declared, and the button now reads it; contacts are counted
+beside it when there are any.
+
+A preview that under-reports what a commit will do is worse than no preview — it is a reason not to
+press the button, and the owner did not press it.
+
+### On the diagnosis
+
+The grain cause was found by reproducing it against `suggest_mapping` and `detect_grain` directly,
+not by reading them. Four probes separated "a title did it" from "a LinkedIn column did it" — it
+turned out to be either, independently.
+
+Backend 1,822 pass. Front end 367 pass; `ng build` exit 0.
+
+`services/csv_import.py`, `core/lists.service.ts`, `lists/csv-import.component.ts`,
+`tests/test_contact_import.py` (+4), `lists/csv-import.component.spec.ts` (+3).

@@ -94,10 +94,22 @@ CONTACT_ALIASES: dict[str, tuple[str, ...]] = {
 #: contact field. It imported one company, zero contacts, and enrichment had
 #: nobody to work on. A column literally called "contact name" is as clear a
 #: person marker as an email address.
-GRAIN_MARKERS = (
-    "full_name", "email", "first_name", "last_name", "title",
-    "contact_linkedin_url",
-)
+#: **Only what can identify a person.** `_upsert_contact` makes a contact from
+#: a name or an email and nothing else; a row with neither is skipped. So a
+#: column that cannot produce a contact must not be allowed to decide that the
+#: file is full of them — the file is then routed down the contact path and
+#: every row is rejected at the far end.
+#:
+#: `title` and `contact_linkedin_url` were in this list and are the reason. A
+#: company list of `Company Name | Website | Title`, where Title is what the
+#: business does, was read as a list of people: 25 rows, 25
+#: `skipped_no_contact`, no companies imported, and a preview that said
+#: "Import 0 accounts" for a file that plainly held 25. A `LinkedIn` column of
+#: company pages did the same thing.
+#:
+#: They still **corroborate** — `suggest_mapping` uses them to settle an
+#: ambiguous `name` column — they just cannot decide on their own.
+GRAIN_MARKERS = ("full_name", "email", "first_name", "last_name")
 
 #: The person-name headers that mean a person and cannot mean anything else.
 #:
@@ -150,8 +162,16 @@ def suggest_mapping(headers: list[str]) -> dict[str, str | None]:
     for field_name, aliases in CONTACT_ALIASES.items():
         mapping[field_name] = next((lowered[a] for a in aliases if a in lowered), None)
 
+    # Mapping asks a wider question than grain does. Here the question is
+    # "does this file have a person side at all", which decides whether the
+    # ambiguous `name` column means the company or the contact — and a title
+    # or a personal LinkedIn URL answers it perfectly well. Grain asks the
+    # narrower "can a person actually be built from a row", which they cannot,
+    # so `GRAIN_MARKERS` is the shorter list and this is the longer one.
     person_columns = any(
-        mapping.get(f) for f in GRAIN_MARKERS if f != "full_name"
+        mapping.get(f)
+        for f in (*GRAIN_MARKERS, "title", "contact_linkedin_url")
+        if f != "full_name"
     )
     if not person_columns and mapping.get("full_name"):
         # A person-name column decides the grain only when it is unambiguous.

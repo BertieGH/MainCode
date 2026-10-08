@@ -197,6 +197,16 @@ export interface ImportReport {
   committed: boolean;
   counts: Record<string, number>;
   rows: ImportRow[];
+  /**
+   * Distinct companies this import will touch, counted on the key rather than
+   * on the row. The server has always sent it and the client never declared
+   * it, so the button counted account-grain outcomes instead — which are zero
+   * on a contact-grain file, and the preview read "Import 0 accounts" for a
+   * file that would create twenty-five.
+   */
+  accounts_touched: number;
+  /** `"contact"` when the file is one row per person, `"account"` otherwise. */
+  grain: 'account' | 'contact';
 }
 
 /** Shape of the 422 the sort allowlist returns. */

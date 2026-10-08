@@ -129,7 +129,9 @@ import { apiError } from '../shared/api-error';
 
         <div style="display:flex;gap:10px;margin-top:16px;align-items:center;" *ngIf="!r.committed">
           <button class="btn btn-primary" (click)="commit()" [disabled]="busy()">
-            {{ busy() ? 'Importing…' : 'Import ' + willWrite(r) + ' accounts' }}
+            {{ busy() ? 'Importing…'
+               : 'Import ' + willWrite(r) + ' accounts'
+                 + (willWriteContacts(r) ? ' · ' + willWriteContacts(r) + ' contacts' : '') }}
           </button>
           <button class="btn" (click)="reset()">Cancel</button>
           <span class="row-sub">Nothing has been written yet.</span>
@@ -296,8 +298,21 @@ export class CsvImportComponent {
   }
 
   /** Only `created` and `merged` rows become list members. */
+  /** Companies this import will write, as the server counted them.
+   *
+   *  Was `created + merged`, which are **account-grain outcomes**: on a
+   *  contact-grain file every row reports a contact outcome instead, so the
+   *  button read "Import 0 accounts" for a file that would create twenty-five
+   *  of them. A preview that under-reports what a commit will do is worse than
+   *  no preview — it is a reason not to press the button.
+   */
   willWrite(r: ImportReport): number {
-    return (r.counts['created'] ?? 0) + (r.counts['merged'] ?? 0);
+    return r.accounts_touched;
+  }
+
+  /** People this import will write, or 0 on a company file. */
+  willWriteContacts(r: ImportReport): number {
+    return (r.counts['contact_created'] ?? 0) + (r.counts['contact_updated'] ?? 0);
   }
 
   countEntries(r: ImportReport): [string, number][] {

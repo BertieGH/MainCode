@@ -5,12 +5,22 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CsvImportComponent } from './csv-import.component';
 import { ImportReport } from '../core/lists.service';
 
-function report(counts: Record<string, number>, committed = false): ImportReport {
+function report(
+  counts: Record<string, number>,
+  committed = false,
+  over: Partial<ImportReport> = {},
+): ImportReport {
   return {
     total_rows: Object.values(counts).reduce((a, b) => a + b, 0),
     committed,
     counts,
     rows: [],
+    // What the server counts: distinct companies the import will touch. On an
+    // account file it equals created + merged, which is why the button agreed
+    // with itself for so long on the only files anyone tested.
+    accounts_touched: (counts['created'] ?? 0) + (counts['merged'] ?? 0),
+    grain: 'account',
+    ...over,
   };
 }
 
@@ -130,5 +140,55 @@ describe('CsvImportComponent', () => {
       expect(cmp.error()).toBe('mapping must be a JSON object');
       expect(cmp.busy()).toBeFalse();
     });
+  });
+});
+
+/**
+ * What the preview promises the commit will do.
+ *
+ * A twenty-five company list previewed as "Import 0 accounts" while a commit
+ * would have created all twenty-five. The button counted `created + merged`,
+ * which are **account-grain outcomes**: on a contact-grain file every row
+ * reports a contact outcome instead, so the account count was structurally
+ * zero. A preview that under-reports is a reason not to press the button.
+ */
+describe('CsvImportComponent · what the preview promises', () => {
+  let fixture: ComponentFixture<CsvImportComponent>;
+  let cmp: CsvImportComponent;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CsvImportComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CsvImportComponent);
+    cmp = fixture.componentInstance;
+  });
+
+  it('counts the companies a contact file will still create', () => {
+    const r = report({ contact_created: 25 }, false, {
+      accounts_touched: 25,
+      grain: 'contact',
+    });
+
+    expect(cmp.willWrite(r)).toBe(25);
+    expect(cmp.willWriteContacts(r)).toBe(25);
+  });
+
+  it('agrees with the outcome counts on a company file', () => {
+    const r = report({ created: 20, merged: 5 });
+
+    expect(cmp.willWrite(r)).toBe(25);
+    expect(cmp.willWriteContacts(r)).toBe(0);
+  });
+
+  it('does not count skipped rows as people to be written', () => {
+    const r = report({ skipped_no_contact: 25 }, false, {
+      accounts_touched: 25,
+      grain: 'account',
+    });
+
+    expect(cmp.willWrite(r)).toBe(25);
+    expect(cmp.willWriteContacts(r)).toBe(0);
   });
 });

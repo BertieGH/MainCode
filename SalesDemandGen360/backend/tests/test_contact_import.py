@@ -111,6 +111,55 @@ class TestDetectingTheGrain:
         rows = self._rows({"Company": "Northwind", "Website": "northwind.example", "Title": ""})
         assert detect_grain(rows, suggest_mapping(headers)) == "account"
 
+    def test_a_populated_title_does_not_make_it_a_contact_file_either(self):
+        """The one that bit. A twenty-five company list of
+        `Company Name | Website | Title`, where Title said what the business
+        does, was read as a list of people: twenty-five rows, twenty-five
+        `skipped_no_contact`, not one company imported.
+
+        A title identifies nobody. `_upsert_contact` builds a contact from a
+        name or an email and skips a row with neither, so a column that cannot
+        produce a contact must not be what decides the file is full of them.
+        """
+        headers = ["Company Name", "Website", "Title"]
+        rows = self._rows(
+            {"Company Name": "EV Connect", "Website": "evconnect.com",
+             "Title": "EV charging software"},
+        )
+        assert detect_grain(rows, suggest_mapping(headers)) == "account"
+
+    def test_a_company_linkedin_column_does_not_make_it_a_contact_file(self):
+        """The same failure by the other route. A company list carrying its
+        own LinkedIn pages was read as people and skipped wholesale."""
+        headers = ["Company Name", "Website", "LinkedIn"]
+        rows = self._rows(
+            {"Company Name": "EV Connect", "Website": "evconnect.com",
+             "LinkedIn": "https://www.linkedin.com/company/evconnect"},
+        )
+        assert detect_grain(rows, suggest_mapping(headers)) == "account"
+
+    def test_a_name_and_a_title_with_no_email_is_still_a_contact_file(self):
+        """The guard on the fix. `contact Name` with a `Designation` and no
+        email is a real import that must stay contact-grain — the title is
+        still allowed to *corroborate* an ambiguous name column, it just
+        cannot decide the grain on its own."""
+        headers = ["Company", "Website", "Contact Name", "Designation"]
+        rows = self._rows(
+            {"Company": "Northwind", "Website": "northwind.example",
+             "Contact Name": "Dana Reyes", "Designation": "VP Engineering"},
+        )
+        assert detect_grain(rows, suggest_mapping(headers)) == "contact"
+
+    def test_first_and_last_name_alone_are_enough(self):
+        """No email, no title — but a person can be built from these, which is
+        the whole test for whether a row is about one."""
+        headers = ["Company", "Website", "First Name", "Last Name"]
+        rows = self._rows(
+            {"Company": "Northwind", "Website": "northwind.example",
+             "First Name": "Dana", "Last Name": "Reyes"},
+        )
+        assert detect_grain(rows, suggest_mapping(headers)) == "contact"
+
 
 class TestMappingAContactExport:
     HEADERS = [
