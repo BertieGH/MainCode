@@ -4615,3 +4615,46 @@ menu stays available once selection is switched off, which is what makes that wo
 Front end 367 pass; `ng build` exit 0.
 
 `queues/queue-detail.component.ts`.
+
+## §102 — A progress bar for research, and the parallel run it replaced (2026-10-08)
+
+Research from the account and queue screens showed a disabled button reading "Researching…" and
+nothing else. Each account is several model calls with web search, so that spinner sat there for
+minutes with no way to tell whether anything was happening or how much was left.
+
+`RunProgressComponent` and `SequentialRun` already existed for exactly this — the list screen has
+used them since resolve, enrich and research stopped being one request for a whole selection. Both
+screens now use them: "Researching 3 of 8… 0:42", a bar, the company in flight, what has come back
+so far, and Cancel.
+
+### The bar is the smaller half of this
+
+The queue handler used `forkJoin` and fired **every company at once**. That is precisely what
+`run_research_for_list` is written to avoid, and its docstring says why: each account is several
+model calls with web search, so running them together multiplies the spend rate and the rate-limit
+exposure at the same moment, and a mistake is discovered after paying for all of it rather than
+after one.
+
+So the progress bar was not a cosmetic request. A bar can only be honest if the work is sequential,
+and making it sequential is what the server wanted in the first place. The ask for the bar is what
+surfaced the parallel run.
+
+`SequentialRun` also brings Cancel, which stops between accounts rather than abandoning a request
+in flight — the server would carry on and the money would be spent either way — and it writes each
+account's outcome to the Activity log as it lands, so a long run is readable afterwards.
+
+### What the two screens do differently
+
+On the account screen a company run is **one** item, so the bar reads 1 of 1; what it buys there is
+the elapsed clock and the Cancel, not a count. Researching people there is one item **per person**,
+because each is its own request and the bar should name who it is on.
+
+On the queue screen people are grouped by company — one item per company, carrying its people —
+because the endpoint is per account and a queue's people come from wherever they were queued from.
+
+The buttons no longer carry run state. They disable while a run is going and the bar says the rest,
+so a button is not left claiming progress it cannot see.
+
+Front end 367 pass; `ng build` exit 0.
+
+`queues/queue-detail.component.ts`, `accounts/account-detail.component.ts`.

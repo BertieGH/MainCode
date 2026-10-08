@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { Observable } from 'rxjs';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
@@ -16,6 +17,8 @@ import { apiError } from '../shared/api-error';
 import { CONTACT_COLUMNS } from '../shared/contact-columns';
 import { DataTableComponent } from '../shared/data-table.component';
 import { RowAction } from '../shared/table-view';
+import { RunProgressComponent } from '../shared/run-progress.component';
+import { RunItem, SequentialRun } from '../shared/sequential-run';
 import { Contact, ListsService } from '../core/lists.service';
 
 type Tab = 'contacts' | 'profile' | 'signals' | 'coverage' | 'qualification' | 'outreach';
@@ -36,7 +39,7 @@ function basis_is(dim: { basis: string }, value: string): boolean {
 @Component({
   selector: 'app-account-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, IconComponent, SortableDirective, DataTableComponent],
+  imports: [CommonModule, RouterLink, IconComponent, SortableDirective, DataTableComponent, RunProgressComponent],
   template: `
     <a routerLink="/lists" class="back"><app-icon name="back" [size]="14" />All lists</a>
 
@@ -64,20 +67,24 @@ function basis_is(dim: { basis: string }, value: string): boolean {
                back to the list to ask for more. Same endpoint and the same
                reuse window: inside it this costs nothing, which is why
                "Research" is safe to offer and "Rerun" is the one that spends. -->
+          <!-- Both disabled while a run is going, and the bar below says what
+               it is doing — the buttons no longer carry the state, so they do
+               not have to lie about progress they cannot see. -->
           <div style="display:flex;gap:8px;">
-            <button class="btn" (click)="research()" [disabled]="researching()">
+            <button class="btn" (click)="research()" [disabled]="researchRun.busy()">
               <app-icon name="refresh" [size]="13" />
-              {{ researching() === 'company' ? 'Researching…' : 'Research' }}
+              Research
             </button>
             <button class="btn" (click)="research(true)" *ngIf="d.coverage.length"
-                    [disabled]="researching()"
+                    [disabled]="researchRun.busy()"
                     title="Ignore the reuse window and buy every planned family again">
-              {{ researching() === 'rerun' ? 'Re-researching…' : 'Rerun' }}
+              Rerun
             </button>
           </div>
         </div>
       </div>
 
+      <app-run-progress [run]="researchRun"></app-run-progress>
       <p class="row-sub" style="margin:-8px 0 14px;" *ngIf="researchNote()">{{ researchNote() }}</p>
 
       <div class="tabs">
@@ -112,7 +119,7 @@ function basis_is(dim: { basis: string }, value: string): boolean {
                         (sortChange)="onContactSort($event)"
                         [selectable]="true"
                         [rowActions]="contactActions"
-                        [busyKey]="researching() === 'contacts' ? 'research' : null"
+                        [busyKey]="researchRun.busy() ? 'research' : null"
                         busyText="Researching…"
                         (bulk)="researchPeople($any($event).rows)"
                         (rowAction)="researchPeople([$any($event).row])"
@@ -918,7 +925,10 @@ export class AccountDetailComponent implements OnInit {
   }
 
   /** Which research request is in flight, so two cannot overlap. */
-  researching = signal<'company' | 'rerun' | 'contacts' | null>(null);
+  /** The research run, which drives the progress bar. One at a time: research
+   *  is several model calls with web search, and a spinner that never moves is
+   *  what this replaces. */
+  readonly researchRun = new SequentialRun();
   researchNote = signal<string | null>(null);
 
   /**
@@ -944,62 +954,102 @@ export class AccountDetailComponent implements OnInit {
     },
   ];
 
+  /** The company's own families. One item, so the bar reads 1 of 1 — what it
+   *  buys here is the elapsed clock and a Cancel, not a count. */
   research(force = false): void {
-    this.researching.set(force ? 'rerun' : 'company');
-    this.researchNote.set(null);
-    this.lists.researchAccount(this.accountId, { force }).subscribe({
-      next: (r) => this.afterResearch(r),
-      error: (err) => this.researchFailed(err),
-    });
+    const d = this.data();
+    void this.runResearch(
+      [{ id: this.accountId, name: d?.account_name ?? 'this company' }],
+      (id) => this.lists.researchAccount(id, { force }),
+      force ? 'Re-researching' : 'Researching',
+    );
   }
 
-  researchPeople(rows: { id: string }[]): void {
-    const ids = (rows ?? []).map((r) => r.id).filter(Boolean);
-    if (!ids.length) return;
-    this.researching.set('contacts');
-    this.researchNote.set(null);
-    this.lists.researchAccount(this.accountId, { contactIds: ids }).subscribe({
-      next: (r) => this.afterResearch(r, ids.length),
-      error: (err) => this.researchFailed(err),
-    });
+  researchPeople(rows: { id: string; full_name?: string }[]): void {
+    const picked = (rows ?? []).filter((r) => r.id);
+    if (!picked.length) return;
+    // One item per person, not one for the lot: each is its own request, and
+    // the bar should say which person it is on.
+    void this.runResearch(
+      picked.map((r) => ({ id: r.id, name: r.full_name ?? 'this person' })),
+      (contactId) => this.lists.researchAccount(this.accountId, { contactIds: [contactId] }),
+    );
   }
 
-  /** Report what the run did, then reload — every tab is downstream of it. */
-  private afterResearch(r: any, people = 0): void {
-    this.researching.set(null);
-    if (!r?.ran || r?.blocked) {
-      this.researchNote.set(r?.blocked ?? 'Research could not run.');
-      return;
-    }
-    const bits: string[] = [];
-    if (people) bits.push(`${people} ${people === 1 ? 'person' : 'people'}`);
-    if (r.reused) bits.push('reused recent research — nothing bought');
-    if (r.evidence_stored) bits.push(`${r.evidence_stored} evidence`);
-    if (r.signals_stored) bits.push(`${r.signals_stored} new signal(s)`);
-    if (r.signals_duplicate) bits.push(`${r.signals_duplicate} already known`);
-    if (r.skipped_unresolved) bits.push('skipped — identity not confirmed');
-    this.researchNote.set(bits.length ? bits.join(' · ') : 'Nothing new was found.');
+  private async runResearch(
+    items: RunItem[],
+    call: (id: string) => Observable<any>,
+    verb = 'Researching',
+  ): Promise<void> {
+    this.researchNote.set(null);
+    const t = { evidence: 0, signals: 0, duplicate: 0, reused: 0, failed: 0, skipped: 0 };
+    const summary = () => {
+      const bits: string[] = [];
+      if (t.reused) bits.push('reused recent research — nothing bought');
+      if (t.evidence) bits.push(`${t.evidence} evidence`);
+      if (t.signals) bits.push(`${t.signals} new signal(s)`);
+      if (t.duplicate) bits.push(`${t.duplicate} already known`);
+      if (t.skipped) bits.push('skipped — identity not confirmed');
+      if (t.failed) bits.push(`${t.failed} failed`);
+      return bits.join(' · ') || 'nothing new';
+    };
+    const stop = { reason: '' };
+    const out = await this.researchRun.run<any>({
+      verb,
+      items,
+      call,
+      summary,
+      describe: (_, r: any) =>
+        !r?.ran || r?.blocked
+          ? { kind: 'error', text: r?.blocked ?? 'could not run' }
+          : {
+              kind: 'success',
+              text: r.reused
+                ? 'reused recent research'
+                : `${r.evidence_stored ?? 0} evidence · ${r.signals_stored ?? 0} signals`,
+            },
+      onResult: (_, r: any) => {
+        if (!r?.ran || r?.blocked) {
+          stop.reason = r?.blocked ?? 'Research could not run.';
+          return 'stop';
+        }
+        t.evidence += r.evidence_stored ?? 0;
+        t.signals += r.signals_stored ?? 0;
+        t.duplicate += r.signals_duplicate ?? 0;
+        t.skipped += r.skipped_unresolved ?? 0;
+        if (r.reused) t.reused += 1;
+        return undefined;
+      },
+      onError: (_, err) => {
+        t.failed += 1;
+        // The account is on several lists whose ICPs may ask for different
+        // things. The server refuses to guess; say which they are rather than
+        // leaving a bare 409, so the rep knows what the choice actually is.
+        const body = (
+          err as { error?: { error?: string; message?: string; lists?: { label: string }[] } }
+        )?.error;
+        if (body?.error === 'which_list') {
+          const names = (body.lists ?? []).map((l) => l.label).join(', ');
+          stop.reason = `${body.message} Lists: ${names}.`;
+          return 'stop';
+        }
+        return undefined;
+      },
+    });
+
+    this.researchNote.set(
+      stop.reason
+        ? stop.reason
+        : out.cancelled
+          ? `Stopped after ${out.completed} · ${summary()}`
+          : summary(),
+    );
+    // Every tab is downstream of research, so reload rather than patch.
     this.api.intelligence(this.accountId).subscribe({
       next: (d) => this.data.set(d),
       error: () => undefined,
     });
     this.loadContacts();
-  }
-
-  private researchFailed(err: unknown): void {
-    this.researching.set(null);
-    // The account is on several lists whose ICPs may ask for different things.
-    // The server refuses to guess; say which they are rather than showing a
-    // bare 409, so the rep knows what the choice actually is.
-    const body = (
-      err as { error?: { error?: string; message?: string; lists?: { label: string }[] } }
-    )?.error;
-    if (body?.error === 'which_list') {
-      const names = (body.lists ?? []).map((l) => l.label).join(', ');
-      this.researchNote.set(`${body.message} Lists: ${names}.`);
-      return;
-    }
-    this.researchNote.set(apiError(err, 'Could not research this account.'));
   }
 
   /** Source URLs as one link per host, the full URL kept in the href.

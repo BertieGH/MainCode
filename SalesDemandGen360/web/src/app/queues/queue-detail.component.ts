@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { catchError, forkJoin, map, of } from 'rxjs';
+import { Observable, catchError, forkJoin, map, of } from 'rxjs';
 
 import {
   Account,
@@ -40,6 +40,8 @@ import { apiError } from '../shared/api-error';
 import { DataTableComponent } from '../shared/data-table.component';
 import { RATING_COLUMNS_COMPACT, gateClass, bandClass as ratingBand } from '../shared/rating-columns';
 import { ColumnDef, RowAction } from '../shared/table-view';
+import { RunProgressComponent } from '../shared/run-progress.component';
+import { RunItem, SequentialRun } from '../shared/sequential-run';
 
 import { ConfirmService } from '../shared/confirm.service';
 import { NotifyService } from '../shared/notify.service';
@@ -48,7 +50,7 @@ import { ReadinessService } from '../shared/readiness.service';
 @Component({
   selector: 'app-queue-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent, FilterPanelComponent, SortableDirective, DataTableComponent],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, FilterPanelComponent, SortableDirective, DataTableComponent, RunProgressComponent],
   template: `
     <a routerLink="/queues" class="back"><app-icon name="back" [size]="14" />All queues</a>
 
@@ -238,6 +240,11 @@ import { ReadinessService } from '../shared/readiness.service';
       </div>
     </div>
 
+    <!-- Placed once, above both tables, because one run is in flight at a
+         time and it may have been started from either. Renders nothing when
+         idle, so it costs no space the rest of the time. -->
+    <app-run-progress [run]="researchRun"></app-run-progress>
+
     <!-- The people this queue sends to. -->
     <h3 class="section">People <span class="row-sub">{{ people().length }}</span></h3>
     <app-data-table
@@ -248,7 +255,7 @@ import { ReadinessService } from '../shared/readiness.service';
       [data]="people()"
       [selectable]="draftQueue()"
       [rowActions]="peopleActions"
-      [busyKey]="removing() ? 'remove' : researching() ? 'research' : null"
+      [busyKey]="removing() ? 'remove' : researchRun.busy() ? 'research' : null"
       [busyText]="removing() ? 'Removing…' : 'Researching…'"
       [idOf]="personId"
       [label]="personLabel"
@@ -284,7 +291,7 @@ import { ReadinessService } from '../shared/readiness.service';
       (sortChange)="onSort($event)"
       [selectable]="draftQueue()"
       [rowActions]="memberActions"
-      [busyKey]="removing() ? 'remove' : researching() ? 'research' : null"
+      [busyKey]="removing() ? 'remove' : researchRun.busy() ? 'research' : null"
       [busyText]="removing() ? 'Removing…' : 'Researching…'"
       [idOf]="memberId"
       [label]="memberLabel"
@@ -576,84 +583,116 @@ export class QueueDetailComponent implements OnInit {
     });
   }
 
-  researching = signal(false);
+  /** One run at a time, with a bar: research is several model calls with web
+   *  search per account, so the screen has to say where it has got to. */
+  readonly researchRun = new SequentialRun();
 
   /**
    * Research the people picked here.
    *
-   * **Grouped by company, one request each.** The endpoint is per account —
-   * what research looks for comes from the account's list ICPs — and a queue's
+   * **Grouped by company, one item each.** The endpoint is per account — what
+   * research looks for comes from the account's list ICPs — and a queue's
    * people come from wherever they were queued from, so a selection spanning
    * three companies is three plans, not one. Sending them as a single call
-   * would have to pick a company and quietly research the wrong people.
+   * would have to pick a company and quietly research its plan against
+   * everybody.
+   *
+   * **Sequential, not parallel.** The first version used `forkJoin` and fired
+   * every company at once, which is what the server route is written to avoid:
+   * each account is several model calls with web search, so running them
+   * together multiplies the spend rate and the rate-limit exposure at the same
+   * moment, and a mistake is found after paying for all of it. One at a time is
+   * also what makes a progress bar honest.
    */
   researchPeople(rows: QueueContact[]): void {
-    const byAccount = new Map<string, string[]>();
+    const byAccount = new Map<string, { name: string; contactIds: string[] }>();
     for (const person of rows ?? []) {
       if (!person.account_id || !person.contact_id) continue;
-      byAccount.set(person.account_id, [
-        ...(byAccount.get(person.account_id) ?? []),
-        person.contact_id,
-      ]);
+      const held = byAccount.get(person.account_id);
+      if (held) held.contactIds.push(person.contact_id);
+      else
+        byAccount.set(person.account_id, {
+          name: person.account_name || 'this company',
+          contactIds: [person.contact_id],
+        });
     }
     if (!byAccount.size) return;
-
-    this.researching.set(true);
-    forkJoin(
-      [...byAccount].map(([accountId, contactIds]) =>
-        this.listsApi.researchAccount(accountId, { contactIds }).pipe(
-          map((r: any) => ({ ok: !!r?.ran && !r?.blocked, why: r?.blocked as string | null, r })),
-          catchError((err) => of({ ok: false, why: apiError(err, 'refused'), r: null })),
-        ),
-      ),
-    ).subscribe((results) => {
-      this.researching.set(false);
-      const failed = results.filter((x) => !x.ok);
-      const signals = results.reduce((n, x) => n + (x.r?.signals_stored ?? 0), 0);
-      const evidence = results.reduce((n, x) => n + (x.r?.evidence_stored ?? 0), 0);
-      const people = rows.length;
-      const what =
-        `${people} ${people === 1 ? 'person' : 'people'} at ${byAccount.size} ` +
-        `compan${byAccount.size === 1 ? 'y' : 'ies'} · ${evidence} evidence · ${signals} signal(s)`;
-      if (!failed.length) this.notify.success(`Researched ${what}.`);
-      else
-        this.notify[failed.length < results.length ? 'warning' : 'error'](
-          `Researched ${results.length - failed.length} of ${results.length} companies.`,
-          failed[0].why ?? undefined,
-        );
-      this.load();
-    });
+    const people = rows.length;
+    void this.runResearch(
+      [...byAccount].map(([id, v]) => ({ id, name: v.name })),
+      (id) => this.listsApi.researchAccount(id, { contactIds: byAccount.get(id)!.contactIds }),
+      `${people} ${people === 1 ? 'person' : 'people'}`,
+    );
   }
 
-  /** The accounts picked here, one request each. No contact ids, so the
-   *  company's own families are what gets planned. */
+  /** The accounts picked here, one at a time. No contact ids, so the company's
+   *  own families are what gets planned. */
   researchCompanies(rows: QueueMember[]): void {
-    const ids = [...new Set((rows ?? []).map((m) => m.account_id).filter(Boolean))];
-    if (!ids.length) return;
-    this.researching.set(true);
-    forkJoin(
-      ids.map((id) =>
-        this.listsApi.researchAccount(id).pipe(
-          map((r: any) => ({ ok: !!r?.ran && !r?.blocked, why: r?.blocked as string | null, r })),
-          catchError((err) => of({ ok: false, why: apiError(err, 'refused'), r: null })),
-        ),
-      ),
-    ).subscribe((results) => {
-      this.researching.set(false);
-      const failed = results.filter((x) => !x.ok);
-      const signals = results.reduce((n, x) => n + (x.r?.signals_stored ?? 0), 0);
-      const reused = results.filter((x) => x.r?.reused).length;
-      const done = results.length - failed.length;
-      const note = `${done} compan${done === 1 ? 'y' : 'ies'} · ${signals} signal(s)`
-        + (reused ? ` · ${reused} reused, nothing bought` : '');
-      if (!failed.length) this.notify.success(`Researched ${note}.`);
-      else
-        this.notify[done ? 'warning' : 'error'](
-          `Researched ${done} of ${results.length}.`, failed[0].why ?? undefined,
-        );
-      this.load();
-    });
+    const seen = new Map<string, string>();
+    for (const m of rows ?? []) {
+      if (m.account_id && !seen.has(m.account_id)) seen.set(m.account_id, m.account_name);
+    }
+    if (!seen.size) return;
+    void this.runResearch(
+      [...seen].map(([id, name]) => ({ id, name })),
+      (id) => this.listsApi.researchAccount(id),
+    );
   }
+
+  /** Shared by both, so the counting and the reporting cannot drift apart. */
+  private async runResearch(
+    items: RunItem[],
+    call: (id: string) => Observable<any>,
+    prefix = '',
+  ): Promise<void> {
+    const t = { evidence: 0, signals: 0, reused: 0, failed: 0 };
+    const summary = () => {
+      const bits = prefix ? [prefix] : [];
+      bits.push(`${t.evidence} evidence`, `${t.signals} signal(s)`);
+      if (t.reused) bits.push(`${t.reused} reused, nothing bought`);
+      if (t.failed) bits.push(`${t.failed} failed`);
+      return bits.join(' · ');
+    };
+    const stop = { reason: '' };
+    const out = await this.researchRun.run<any>({
+      verb: 'Researching',
+      items,
+      call,
+      summary,
+      describe: (_, r: any) =>
+        !r?.ran || r?.blocked
+          ? { kind: 'error', text: r?.blocked ?? 'could not run' }
+          : {
+              kind: 'success',
+              text: r.reused
+                ? 'reused recent research'
+                : `${r.evidence_stored ?? 0} evidence · ${r.signals_stored ?? 0} signals`,
+            },
+      onResult: (_, r: any) => {
+        if (!r?.ran || r?.blocked) {
+          // A blocked capability is the same answer for every account, so
+          // there is nothing to learn from asking twelve more times.
+          stop.reason = r?.blocked ?? 'Research could not run.';
+          return 'stop';
+        }
+        t.evidence += r.evidence_stored ?? 0;
+        t.signals += r.signals_stored ?? 0;
+        if (r.reused) t.reused += 1;
+        return undefined;
+      },
+      onError: () => {
+        t.failed += 1;
+        return undefined;
+      },
+    });
+
+    if (stop.reason) this.notify.error('Research stopped.', stop.reason);
+    else if (out.cancelled) this.notify.warning(`Stopped after ${out.completed}.`, summary());
+    else if (t.failed) this.notify.warning(`Researched ${out.completed}.`, summary());
+    else this.notify.success(`Researched ${out.completed}.`, summary());
+    this.load();
+  }
+
 
   readonly memberId = (m: QueueMember) => m.account_id;
   readonly memberLabel = (m: QueueMember) => m.account_name;
