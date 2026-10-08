@@ -41,7 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.config import IntegrationCredential
 from app.schemas.evidence import EvidenceBatch, FoundEvidence
-from app.services import crypto, linkedin
+from app.services import crypto, linkedin, post_ranking
 from app.services.enrichment_clients import _client
 
 log = logging.getLogger(__name__)
@@ -56,6 +56,31 @@ PER_PAGE = 10
 #: A snippet is the evidence. Below this it is a fragment — "… - LinkedIn" —
 #: that reads as a passage and says nothing.
 MIN_SNIPPET = 40
+
+#: Posts kept per account, after ranking. Six, not ten: strategy already reads
+#: the signals, the company profile and the proof points, and the tenth snippet
+#: buys little against what it costs in extraction tokens. Measured first — four
+#: companies in six return a full page of ten, so this is a real cut and not a
+#: cap that never binds.
+MAX_POSTS = 6
+#: Taken from the top of each axis — technology, and fit to what we sell —
+#: before the overall cap. Two threes rather than one six, because the two
+#: scores answer different questions.
+PER_BUCKET = 3
+#: How recent a post must be to reach a cadence — **applied by the reader, not
+#: by the sweep.**
+#:
+#: Separate from the source's `max_age_days`, which governs the fetch: a SERP
+#: page returns ten results whatever window is asked for, so narrowing the
+#: query buys no credits and only changes which ten arrive — on a company that
+#: posts quarterly it wastes the call. Fetch wide, select narrow.
+#:
+#: The first version applied this *during* the sweep, which quietly undid the
+#: design — a stored post outside the window was gone, so changing the window
+#: would have meant re-fetching, the one thing this is meant to avoid. It is
+#: now what `strategy` passes to `post_ranking.pick` at read time, where
+#: changing it is free.
+PAYLOAD_DAYS = 90
 
 TIMEOUT = 30.0
 
@@ -136,8 +161,49 @@ async def _ask(client, key: str, query: str) -> SerpResult:
     return out
 
 
+def _rank_posts(
+    posts: list[FoundEvidence],
+    *,
+    fit: tuple[str, ...] = (),
+    signals: tuple[str, ...] = (),
+    window_days: int | None = None,
+) -> tuple[list[FoundEvidence], list[post_ranking.Scored]]:
+    """The posts worth keeping, and the scores that say why.
+
+    Both are returned together because the note needs the scores and the batch
+    needs the evidence; computing them in two places would let the stored rows
+    and the explanation of them disagree.
+    """
+    scored = post_ranking.score(
+        [p.excerpt or "" for p in posts],
+        fit=fit,
+        signals=signals,
+        dates=[p.observed_at for p in posts],
+    )
+    chosen = post_ranking.pick(
+        scored, per_bucket=PER_BUCKET, limit=MAX_POSTS, window_days=window_days
+    )
+    kept = []
+    for s in chosen:
+        post = posts[s.index]
+        # The reason travels with the passage. `relevance` is what a rep reads
+        # when asking why this post is in their draft, and a lexical score can
+        # answer that where an embedding could not.
+        post.relevance = f"indexed LinkedIn post · {s.why}"
+        # **Third-party coverage, not the company's own voice.** Measured across
+        # seven accounts: 45 post authors held one employee. These are trade
+        # media and analysts talking *about* the company, so the reliability
+        # sits below `company_site`'s first-hand 0.85 — a podcast host's take on
+        # a launch is not the launch being announced.
+        post.reliability = 0.6
+        kept.append(post)
+    return kept, chosen
+
+
 async def sweep_account(account: Any, *, key: str | None = None, http=None,
-                        max_age_days: int | None = 365) -> SweepResult:
+                        max_age_days: int | None = 365,
+                        fit: tuple[str, ...] = (),
+                        signals: tuple[str, ...] = ()) -> SweepResult:
     """Read what the index holds about one company. Two queries, no pagination.
 
     Returns the same shape as the other fetch readers so `pipeline` dispatches
@@ -182,11 +248,31 @@ async def sweep_account(account: Any, *, key: str | None = None, http=None,
             misses.append(f"posts: {posts.error}")
         else:
             recent = posts.total
-            found.extend(posts.found)
+            # **Ranked before stored.** A page returns ten posts whatever we
+            # ask, and on this book four companies in six return a full ten —
+            # so the question is which to keep. Each kept one is an extraction
+            # input token later, and the dropped ones leave no row because
+            # evidence is immutable: what is stored is stored for good.
+            # **No recency window here.** "Fetch wide, select narrow" means
+            # the narrowing happens when strategy builds a payload, not when
+            # the sweep stores — otherwise changing the window costs a
+            # re-fetch, which is the thing that design exists to avoid.
+            # Storage is bounded by the cap; `PAYLOAD_DAYS` is for the reader.
+            kept, why = _rank_posts(posts.found, fit=fit, signals=signals)
+            found.extend(kept)
+            notes.append(post_ranking.note(len(posts.found), why))
             if not posts.found:
                 misses.append(
                     f"no posts in the last {max_age_days} days" if max_age_days
                     else "no posts indexed"
+                )
+            elif not kept:
+                # Seen and rejected is not the same as nothing indexed, and a
+                # coverage screen that showed them alike would send a rep
+                # looking for a source that is working fine.
+                misses.append(
+                    f"{len(posts.found)} post(s) indexed, none about technology "
+                    "or what we sell"
                 )
         notes.append(
             f"serp: {profiles.credits + posts.credits} credit(s), "
@@ -252,7 +338,74 @@ def reader_for(session: AsyncSession, source) -> "object":
 
     async def read(account):
         return await sweep_account(
-            account, key=await api_key(session), max_age_days=max_age
+            account,
+            key=await api_key(session),
+            max_age_days=max_age,
+            fit=await fit_lexicon(session),
+            signals=await signal_lexicon(session),
         )
 
     return read
+
+
+async def signal_lexicon(session: AsyncSession) -> tuple[str, ...]:
+    """The words the **active signal types** are looking for.
+
+    This is what stops the ranking from undoing extraction's work. Scoring on
+    technology and fit alone dropped a real post reading "After three
+    remarkable years at WeaveGrid, it's time to…" — a departure, which
+    `leadership_change_executive` exists to catch and which names no
+    technology. A filter that runs before extraction has to know what
+    extraction wants, and the registry is where that is written down.
+
+    Taken from the type keys and labels rather than their full instructions: a
+    key like `leadership_change_executive` is already a list of the right
+    words, where a paragraph of instruction is mostly prose about how to judge.
+    """
+    from sqlalchemy import select
+
+    from app.models.config import SignalType
+
+    rows = (
+        await session.execute(
+            select(SignalType.key, SignalType.label).where(SignalType.status == "active")
+        )
+    ).all()
+    return post_ranking.fit_terms(
+        [k for k, _ in rows], [lbl for _, lbl in rows]
+    )
+
+
+async def fit_lexicon(session: AsyncSession) -> tuple[str, ...]:
+    """The words that mean "relevant to what we sell", from what we sell.
+
+    Read from the active services and the org's positioning rather than written
+    into `post_ranking`: those are already maintained on the Services screen,
+    and a second hand-kept list is the one that would go stale. An installation
+    that sells something else gets a different lexicon for free.
+
+    An empty tuple is a real answer — with no services configured, posts are
+    ranked on the technology axis alone rather than on a lexicon invented here.
+    """
+    from sqlalchemy import select
+
+    from app.models.config import OrgProfile, ServiceCatalog
+
+    rows = (
+        await session.execute(
+            select(
+                ServiceCatalog.name,
+                ServiceCatalog.description,
+                ServiceCatalog.positioning_angles,
+            ).where(ServiceCatalog.is_active)
+        )
+    ).all()
+    org = (
+        await session.execute(select(OrgProfile).where(OrgProfile.is_active))
+    ).scalars().first()
+    return post_ranking.fit_terms(
+        [name for name, _, _ in rows],
+        [desc for _, desc, _ in rows],
+        [a for _, _, angles in rows for a in (angles or [])],
+        getattr(org, "positioning_angles", None) or [],
+    )

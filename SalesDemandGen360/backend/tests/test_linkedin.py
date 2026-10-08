@@ -68,6 +68,34 @@ class TestWhoAUrlBelongsTo:
     def test_belongs(self, url, expected):
         assert linkedin.belongs(url, company_url=self.COMPANY, person_url=self.PERSON) is expected
 
+    def test_the_public_id_suffix_is_not_a_different_person(self):
+        """One person, two spellings, and providers disagree about which.
+
+        Apollo stored `/in/apoorv-bhargava-94100842`; his own post is at
+        `/posts/apoorv-bhargava_…`. Compared exactly those are two people, and
+        the first measurement of post authorship duly reported **zero**
+        employees among forty-five authors — a number produced entirely by this
+        mismatch, not by the data.
+        """
+        apollo = "https://www.linkedin.com/in/apoorv-bhargava-94100842"
+        post = "https://www.linkedin.com/posts/apoorv-bhargava_speedtopower-activity-751-0IYT"
+        assert linkedin.belongs(post, person_url=apollo) is True
+        # And the other way round, since either side may carry the suffix.
+        assert linkedin.same_slug("apoorv-bhargava", "apoorv-bhargava-94100842")
+
+    def test_a_different_person_is_still_a_mismatch(self):
+        """The suffix strip must not merge everybody with a similar name."""
+        assert linkedin.belongs(
+            "https://www.linkedin.com/posts/jane-doe_x-activity-1-a",
+            person_url="https://www.linkedin.com/in/john-smith-12345678",
+        ) is False
+        assert not linkedin.same_slug("john-smith", "john-smithson")
+
+    def test_a_short_tail_is_not_a_public_id(self):
+        """Only a real disambiguator comes off. `dana-reid-ab` is a name, and
+        treating a two-character tail as an id would merge genuine namesakes."""
+        assert not linkedin.same_slug("dana-reid", "dana-reid-ab")
+
     def test_nothing_on_record_is_not_a_mismatch(self):
         """Without a stored page there is nothing to compare with — keep, not drop."""
         assert linkedin.belongs("https://www.linkedin.com/company/anyone/") is None

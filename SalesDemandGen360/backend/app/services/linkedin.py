@@ -91,6 +91,33 @@ def post_author(url: str | None) -> str | None:
     return None
 
 
+#: The disambiguating tail LinkedIn appends to a public identifier when the
+#: plain vanity name is taken — `apoorv-bhargava-94100842`.
+_PUBLIC_ID_TAIL = re.compile(r"-[0-9a-f]{6,}$", re.I)
+
+
+def same_slug(a: str | None, b: str | None) -> bool:
+    """Whether two LinkedIn slugs name the same person, suffix or no suffix.
+
+    **One person has two spellings and providers disagree about which to store.**
+    Apollo gave us `/in/apoorv-bhargava-94100842`; his own post is at
+    `/posts/apoorv-bhargava_…`. An exact comparison says those are two people,
+    and the first measurement of post authorship duly reported *zero* employees
+    among forty-five authors — a number produced entirely by this mismatch.
+
+    So the tail comes off both sides before comparing. It is only ever a
+    *disambiguator*: LinkedIn adds it when the plain name is taken, which means
+    stripping it can in principle merge two people who share a name. That is
+    accepted here because the comparison is always made within one account —
+    two same-named people at one company is rarer than two spellings of one
+    person, which is universal.
+    """
+    if not a or not b:
+        return False
+    a, b = a.lower(), b.lower()
+    return a == b or _PUBLIC_ID_TAIL.sub("", a) == _PUBLIC_ID_TAIL.sub("", b)
+
+
 def belongs(
     url: str | None, *, company_url: str | None = None, person_url: str | None = None
 ) -> bool | None:
@@ -102,13 +129,13 @@ def belongs(
     """
     if not is_linkedin(url):
         return None
-    wanted = {s for s in (company_slug(company_url), person_slug(person_url)) if s}
+    wanted = [s for s in (company_slug(company_url), person_slug(person_url)) if s]
     if not wanted:
         return None
     found = company_slug(url) or person_slug(url) or post_author(url)
     if found is None:
         return None
-    return found in wanted
+    return any(same_slug(found, w) for w in wanted)
 
 
 def company_pages(page: str | None) -> list[str]:
