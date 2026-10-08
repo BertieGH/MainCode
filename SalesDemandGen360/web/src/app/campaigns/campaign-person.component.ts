@@ -247,7 +247,7 @@ function refusal(err: unknown, fallback: string): string {
                    binding is invisible: a rep cannot tell which attribute a
                    body occupies, nor that a subject they wrote will never
                    appear because the step has nowhere to put it. -->
-              <div class="slot" *ngIf="t.subject_allowed || t.subject">
+              <div class="attr-slot" *ngIf="t.subject_allowed || t.subject">
                 <span class="slot-id" *ngIf="t.subject_attribute">{{ wire(t.subject_attribute) }}</span>
                 <span class="slot-id none" *ngIf="!t.subject_attribute">no subject</span>
                 <span class="slot-name">{{ t.subject_attribute_label || noSubject(t) }}</span>
@@ -261,7 +261,7 @@ function refusal(err: unknown, fallback: string): string {
                 will not send — this step has nowhere to put it
               </span>
 
-              <div class="slot" *ngIf="t.lgm_attribute">
+              <div class="attr-slot" *ngIf="t.lgm_attribute">
                 <span class="slot-id">{{ wire(t.lgm_attribute) }}</span>
                 <span class="slot-name">{{ t.lgm_attribute_label }}</span>
               </div>

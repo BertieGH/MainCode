@@ -271,8 +271,16 @@ th.sortable.sort-desc .arrow::after { content: "\2193"; }
 
 /* Which LGM attribute a piece of drafted content is written into. Sits above
    the content it names, so the binding reads as a label on the words rather
-   than as metadata elsewhere on the screen. */
-.slot { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
+   than as metadata elsewhere on the screen.
+
+   Named `attr-slot`, not `slot`. It was `.slot`, which collided with the
+   setup screen's credential cards — those carry `class="card slot"`, and a
+   component stylesheet that does not declare `display` cannot override a
+   global one that does. So every setup card silently became a flex row and
+   laid its header, its table and its provider list out as three columns,
+   squeezing the heading to one word per line. The card markup never changed;
+   a class name in a different feature did. */
+.attr-slot { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
 .slot-id { font-family: 'IBM Plex Mono', monospace; font-size: .68rem;
            padding: 2px 8px; border-radius: 4px; white-space: nowrap;
            background: var(--accent-soft); color: var(--accent); }

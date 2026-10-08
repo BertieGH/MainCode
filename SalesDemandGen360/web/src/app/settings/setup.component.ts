@@ -326,7 +326,15 @@ key; it is unreachable under this name. Delete it and re-enter it against the ri
       .head { display: flex; justify-content: space-between; align-items: flex-start;
               gap: 20px; margin-bottom: 22px; }
       .head h2 { font-size: 1.15rem; margin-bottom: 4px; }
-      .slot { margin-bottom: 18px; border-color: var(--line); }
+      /* display is declared, not assumed. A global '.slot { display: flex }'
+         in styles.css — the LGM attribute chip, a different feature entirely —
+         turned every card here into a flex row, laying the header, the table
+         and the provider list out as three columns and squeezing the heading
+         to one word per line. A component stylesheet that says nothing about
+         display cannot win against a global one that does, however specific
+         its scoping attribute is. That rule is now '.attr-slot'; this says
+         block so the next collision cannot repeat it. */
+      .slot { display: block; margin-bottom: 18px; border-color: var(--line); }
       .slot.done { border-color: var(--good, var(--line)); }
       /* center, not flex-start: the badge and the button are one
          control group and have to share a baseline. The rule under the

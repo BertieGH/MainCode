@@ -4373,3 +4373,48 @@ Backend 1,818 pass.
 
 `services/sitemap.py`, `scripts/survey_sitemaps.py`, `scripts/survey_sitemap_shapes.py` (new),
 `tests/test_sitemap.py` (+22).
+
+## §97 — The setup cards were a flex row, and a class name did it (2026-10-07)
+
+The owner reported that the API settings screen had not changed as proposed. It had: the status
+badge and the add action were in the card header exactly as §d8d8682 described. The header was just
+324px wide inside an 877px card, because **every card on the screen was a flex row**.
+
+`.card.slot` computed to `display: flex`. No rule in the component set it; no inline style set it.
+It came from `styles.css`:
+
+```css
+/* Which LGM attribute a piece of drafted content is written into. */
+.slot { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
+```
+
+That is the attribute chip from the draft-binding work — a different feature, on a different screen.
+The setup screen's credential cards carry `class="card slot"`, and the component's own
+`.slot { margin-bottom: 18px; border-color: var(--line) }` says nothing about `display`, so there
+was nothing to override with. Angular's scoping attribute raises specificity; it cannot win a
+property the rule does not declare.
+
+So `.slot-head`, `.table-wrap` and `.suggest` — three siblings meant to stack — became three
+columns. The heading wrapped to one word per line, the table sat beside the description, and the
+provider list sat beside the table. The screenshot the owner sent was accurate and current; the
+bundle was not stale.
+
+The chip is now `.attr-slot`, and the setup card declares `display: block` so the next collision
+cannot repeat this. Four call sites in `campaign-detail` and `campaign-person` renamed with it.
+
+### What I got wrong first
+
+I spent the first several steps trying to prove the build was stale — checking the dist timestamp,
+grepping the bundle for the old label — because the source plainly could not produce what the
+screenshot showed. The bundle was current and the source was fine; the premise that a component's
+markup determines its layout was what failed. A global class name reached across two features and
+nothing in either file mentions the other.
+
+It was settled in one step once the page was actually rendered and the computed style read, which
+is where this should have started. Reading CSS cannot find a cascade collision; only the cascade
+can.
+
+Front end 351 pass; `ng build` exit 0.
+
+`styles.css`, `settings/setup.component.ts`, `campaigns/campaign-detail.component.ts`,
+`campaigns/campaign-person.component.ts`.

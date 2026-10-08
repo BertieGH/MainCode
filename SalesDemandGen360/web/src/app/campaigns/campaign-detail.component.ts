@@ -635,7 +635,7 @@ interface ThreadRow {
         <p class="row-sub" *ngIf="t.purpose">{{ t.purpose }}</p>
         <!-- The same slot chips as the person drawer: whoever approves an arc
              should see where each piece of it lands, not just what it says. -->
-        <div class="slot" *ngIf="t.subject_allowed || t.subject">
+        <div class="attr-slot" *ngIf="t.subject_allowed || t.subject">
           <span class="slot-id" *ngIf="t.subject_attribute">{{ wire(t.subject_attribute) }}</span>
           <span class="slot-id none" *ngIf="!t.subject_attribute">no subject</span>
           <span class="slot-name">{{ t.subject_attribute_label || noSubject(t) }}</span>
@@ -645,7 +645,7 @@ interface ThreadRow {
         <span class="row-sub" *ngIf="t.subject && !t.subject_allowed">
           will not send — this step has nowhere to put it
         </span>
-        <div class="slot" *ngIf="t.lgm_attribute">
+        <div class="attr-slot" *ngIf="t.lgm_attribute">
           <span class="slot-id">{{ wire(t.lgm_attribute) }}</span>
           <span class="slot-name">{{ t.lgm_attribute_label }}</span>
         </div>
