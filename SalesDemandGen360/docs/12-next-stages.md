@@ -122,3 +122,32 @@ project.
 A first because it is cheap and everything after it is read through the specification. F is not
 last by priority — it is last by availability, and it jumps the queue the moment the credential
 exists.
+
+---
+
+## G · `ats_boards` earns its place or goes — **low priority**, owner's note (2026-10-08)
+
+`ats_boards` is `status='active'` and has produced **no evidence in 31 attempts across two books** —
+26 on the insurance brokerages, 5 on the enterprise sample. Both measurements say the same thing: a
+fifteen-person brokerage runs no Greenhouse board, and even the EV and apparel companies in the
+enterprise list expose nothing this reader can find. §96 measured why from the other side —
+individual job postings appear in **0 of 35** sitemaps, and department paths in 0 of 35.
+
+The owner's instruction is not to delete it but to give it a different shape:
+
+* **A waterfall rather than one reader.** Greenhouse/Lever/Ashby detection is the current single
+  path; a waterfall would try the ATS, then a jobs RSS or Atom feed, then the careers page the
+  sitemap reader now finds reliably.
+* **A jobs feed search.** Many boards publish RSS even where the API is hidden, and a feed is dated,
+  which is the property this book is short of — §102's sample showed signals track the *dated*
+  count, not the raw one.
+* **IT roles only.** The value is never the headcount, it is the stack: a job advert asking for
+  three years on a named platform is evidence that platform is running. A general hiring sweep buys
+  warehouse and retail adverts at the same token cost and tells us nothing about an IT estate.
+
+Note the one thing that already works here and should not be rebuilt: `engineering_team_expansion`
+produced a signal for KORE Power from a **Lead Controls Engineer** advert, found through
+`linkedin_index`, not through `ats_boards`. So the job-advert idea is sound and the route is wrong —
+which is the argument for a waterfall rather than for more of the same reader.
+
+Deliberately unsequenced. It is behind everything in A–F and the owner said so.
