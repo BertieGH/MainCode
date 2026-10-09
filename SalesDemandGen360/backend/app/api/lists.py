@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
@@ -35,6 +37,7 @@ from app.services import (
 )
 
 router = APIRouter(tags=["lists"])
+log = logging.getLogger(__name__)
 
 # The allowlist is a mapping to column objects, never to strings — see deps.py.
 ACCOUNT_SORTS = {
@@ -350,6 +353,209 @@ async def create_list(payload: AccountListIn, session: AsyncSession = Depends(ge
     session.add(row)
     await session.commit()
     return AccountListOut.model_validate(row)
+
+
+# ==========================================================================
+# building a list out of the Apollo contacts this account already owns
+# ==========================================================================
+class ApolloBuildIn(BaseModel):
+    """What to look for among the contacts already paid for.
+
+    Not a search of Apollo's database — that is the Suggested tab, where a
+    person is a proposal to spend a credit. These people are already bought,
+    so reading them is free however often it is done.
+    """
+
+    #: Apollo's own bands, as `apollo_list_builder.SIZE_BANDS` spells them.
+    size_bands: list[str] = Field(default_factory=lambda: ["51-200"], max_length=6)
+    #: Which buyer personas each company must be able to field. A company that
+    #: cannot fill every one of these is skipped, because a list quietly
+    #: missing the persona it was built for looks complete and is not.
+    personas: list[str] = Field(
+        default_factory=lambda: ["economic buyer", "technical buyer"], max_length=2
+    )
+    #: Only `verified` passes the send gate, so anything else is a contact
+    #: nobody may write to.
+    verified_only: bool = True
+    per_company: int = Field(default=2, ge=1, le=5)
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class ApolloBuildOut(BaseModel):
+    ran: bool
+    blocked: str | None = None
+    #: Where the numbers fall away. Free to compute — four one-row queries.
+    funnel: dict = Field(default_factory=dict)
+    note: str = ""
+    #: Set only by the build, not the preview.
+    list_id: uuid.UUID | None = None
+    created: int = 0
+    merged: int = 0
+    contacts: int = 0
+    #: A sample for the preview, with no addresses — the screen shows who and
+    #: where, and the list itself carries the rest.
+    sample: list[dict] = Field(default_factory=list)
+
+
+async def _apollo_candidates(session: AsyncSession, payload: ApolloBuildIn):
+    from app.services import apollo_list_builder as builder
+    from app.services import apollo_people
+
+    client = await apollo_people.from_credentials(session)
+    if client is None:
+        return None, "No Apollo key is configured, so there are no saved contacts to read."
+    build = await builder.gather(
+        client,
+        size_bands=tuple(payload.size_bands),
+        verified_only=payload.verified_only,
+        personas=tuple(payload.personas),
+        per_company=payload.per_company,
+        limit=payload.limit,
+    )
+    # The coarse counts are the four cheap queries; the rest came from the read.
+    coarse = await builder.counts(
+        client, size_bands=tuple(payload.size_bands), verified_only=payload.verified_only
+    )
+    build.funnel.saved_total = coarse.saved_total
+    build.funnel.verified = coarse.verified
+    build.funnel.titled = coarse.titled
+    build.funnel.in_band = coarse.in_band
+    return build, None
+
+
+@router.post("/lists/from-apollo/preview", response_model=ApolloBuildOut)
+async def preview_from_apollo(
+    payload: ApolloBuildIn,
+    deep: bool = Query(
+        False,
+        description="Also read the pages, to count companies that can field every "
+                    "persona. Slower, still free.",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """What these filters would give, without writing or charging anything.
+
+    **Two speeds, because the costs differ by twenty times.** The coarse
+    funnel is four one-row queries and returns in a couple of seconds, so the
+    screen can recount on every keystroke. Counting the companies that can
+    field *every* persona means reading the pages behind those numbers, which
+    measured at sixty-four seconds, so it happens only when asked for.
+
+    Nothing here is charged either way — that is why the preview is a separate
+    route rather than a dry-run flag. A dry run that might spend money is not
+    something anybody presses twice.
+    """
+    from app.services import apollo_list_builder as builder
+    from app.services import apollo_people
+
+    if not deep:
+        client = await apollo_people.from_credentials(session)
+        if client is None:
+            return ApolloBuildOut(
+                ran=False,
+                blocked="No Apollo key is configured, so there are no saved contacts to read.",
+            )
+        funnel = await builder.counts(
+            client,
+            size_bands=tuple(payload.size_bands),
+            verified_only=payload.verified_only,
+        )
+        return ApolloBuildOut(
+            ran=True,
+            funnel=asdict(funnel),
+            note=f"{funnel.in_band:,} contacts match. Check availability to see how many "
+                 f"companies can field every persona.",
+        )
+
+    build, blocked = await _apollo_candidates(session, payload)
+    if build is None:
+        return ApolloBuildOut(ran=False, blocked=blocked)
+    return ApolloBuildOut(
+        ran=True,
+        funnel=asdict(build.funnel),
+        note=build.note,
+        sample=[
+            {
+                "company": c.company,
+                "domain": c.domain,
+                "title": c.title,
+                "persona": c.persona,
+                "email_status": c.email_status,
+                # No name and no address. The preview answers "is this the
+                # right shape of list", which needs neither.
+            }
+            for c in build.chosen[:20]
+        ],
+    )
+
+
+@router.post("/lists/from-apollo", response_model=ApolloBuildOut, status_code=201)
+async def build_from_apollo(
+    label: str = Query(..., min_length=1, max_length=200),
+    payload: ApolloBuildIn = Body(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a list and fill it from the saved Apollo contacts. No credits.
+
+    **Imported through `csv_import`, not written directly.** The people arrive
+    as rows in the shape an Apollo export has, and the importer already knows
+    how to resolve an account by domain, merge a company it has seen before,
+    refresh a headcount and attach a contact — all of it tested. A second
+    write path here would be the one that forgets a step.
+    """
+    from app.services import csv_import
+
+    build, blocked = await _apollo_candidates(session, payload)
+    if build is None:
+        return ApolloBuildOut(ran=False, blocked=blocked)
+    if not build.chosen:
+        return ApolloBuildOut(
+            ran=True, funnel=asdict(build.funnel),
+            blocked=(
+                "Nothing matched. "
+                + (build.note or "Widen the size band or ask for one persona.")
+            ),
+        )
+
+    rows = [
+        {
+            "Company": c.company,
+            "Website": c.domain,
+            "Company Linkedin Url": c.company_linkedin or "",
+            "First Name": (c.full_name.split(" ", 1) + [""])[0],
+            "Last Name": (c.full_name.split(" ", 1) + [""])[1],
+            "Title": c.title or "",
+            "Email": c.email or "",
+            "Person Linkedin Url": c.linkedin_url or "",
+        }
+        for c in build.chosen
+    ]
+    new_list = await csv_import.ensure_list(
+        session, label=label, source="apollo", created_by="bertie"
+    )
+    report = await csv_import.run_import(
+        session,
+        list_id=new_list.id,
+        rows=rows,
+        mapping=csv_import.suggest_mapping(list(rows[0].keys())),
+        added_by="bertie",
+        dry_run=False,
+    )
+    await session.commit()
+    log.info(
+        "apollo_build.done list=%s contacts=%d companies=%d",
+        new_list.id, report.counts.get("contact_created", 0), report.accounts_touched,
+    )
+    return ApolloBuildOut(
+        ran=True,
+        funnel=asdict(build.funnel),
+        note=build.note,
+        list_id=new_list.id,
+        created=report.counts.get("created", 0),
+        merged=report.counts.get("merged", 0),
+        contacts=report.counts.get("contact_created", 0)
+        + report.counts.get("contact_updated", 0),
+    )
 
 
 @router.get("/lists/{list_id}", response_model=AccountListOut)

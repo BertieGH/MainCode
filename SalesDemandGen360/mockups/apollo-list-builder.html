@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build a list from Apollo</title>
+<style>
+  :root {
+    --bg:#eef1f2; --surface:#fff; --surface-2:#f5f7f7;
+    --text:#171b21; --muted:#5c6672; --faint:#8b949c;
+    --line:#d7dcdc; --line-strong:#c3caca;
+    --accent:#1f6f64; --accent-soft:#e3efec;
+    --good:#2f7a54; --good-soft:#e5f1e9;
+    --warn:#b8801f; --warn-soft:#f7ecd9;
+    --gate:#a86a1e; --gate-soft:#f7ecd9;
+    --mono-bg:#e7ebea;
+    --shadow:0 1px 2px rgba(23,27,33,.06), 0 6px 20px rgba(23,27,33,.06);
+    --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+    --display:'Fraunces',Georgia,serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#12151a; --surface:#1a1f25; --surface-2:#20262d;
+      --text:#eef1f0; --muted:#9aa5a8; --faint:#6b7680;
+      --line:#2b3238; --line-strong:#3a434a;
+      --accent:#5fc0af; --accent-soft:#193028;
+      --good:#5cae83; --good-soft:#1c2c22;
+      --warn:#e0a862; --warn-soft:#2e2416;
+      --gate:#e0a862; --gate-soft:#2e2416;
+      --mono-bg:#242b31;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+         font-size:14px; line-height:1.5; padding:26px 16px 60px; }
+  .page { max-width:1000px; margin:0 auto; }
+  .note { max-width:78ch; margin:0 auto 24px; color:var(--muted); font-size:.82rem;
+          border-left:2px solid var(--accent); padding:2px 0 2px 14px; }
+  .note strong { color:var(--text); }
+  h1 { font-family:var(--display); font-size:1.4rem; margin:0 0 3px; }
+  h2.step { font-size:.95rem; margin:0 0 3px; }
+  .row-sub { font-size:.78rem; color:var(--muted); margin:0; }
+  .mono { font-family:var(--mono); }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:12px;
+          box-shadow:var(--shadow); padding:20px 22px; margin-bottom:14px; }
+  .badge { display:inline-flex; align-items:center; gap:6px; font-size:.7rem; padding:3px 9px;
+           border-radius:20px; background:var(--mono-bg); color:var(--muted); font-weight:500; }
+  .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .badge-good { background:var(--good-soft); color:var(--good); }
+  .badge-warn { background:var(--warn-soft); color:var(--warn); }
+  .badge-accent { background:var(--accent-soft); color:var(--accent); }
+  .btn { font:inherit; font-size:.82rem; padding:7px 14px; border-radius:7px; cursor:pointer;
+         border:1px solid var(--line-strong); background:var(--surface); color:var(--text); }
+  .btn.primary { background:var(--accent); border-color:transparent; color:#fff; }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn.primary{color:#0b1613;}}
+  .sec-head { display:flex; gap:14px; align-items:center; padding-bottom:12px;
+              border-bottom:1px solid var(--line); margin-bottom:16px; }
+  .sec-head .grow { flex:1; min-width:0; }
+  .num { font-family:var(--mono); font-size:.72rem; color:var(--faint); }
+
+  /* step 1 — where the people come from */
+  .modes { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .mode { border:1px solid var(--line); border-radius:10px; padding:16px; cursor:pointer;
+          background:var(--surface-2); }
+  .mode.on { border-color:var(--accent); background:var(--accent-soft); }
+  .mode h3 { margin:0 0 4px; font-size:.9rem; display:flex; align-items:center; gap:8px; }
+  .mode .big { font-family:var(--display); font-size:1.5rem; display:block; margin:8px 0 2px; }
+  .mode ul { margin:10px 0 0; padding-left:16px; font-size:.78rem; color:var(--muted); }
+  .mode li { margin-bottom:3px; }
+
+  /* step 2 — filters */
+  .filters { display:grid; grid-template-columns:repeat(2,1fr); gap:18px 26px; }
+  .f label { display:block; font-size:.68rem; letter-spacing:.07em; text-transform:uppercase;
+             color:var(--faint); font-weight:600; margin-bottom:7px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font-size:.78rem; padding:5px 11px; border-radius:20px; cursor:pointer;
+          background:var(--surface-2); border:1px solid var(--line); }
+  .chip.on { background:var(--accent-soft); border-color:transparent; color:var(--accent);
+             font-weight:500; }
+  .chip.off { opacity:.55; }
+  select, input[type=text] { font:inherit; font-size:.84rem; padding:6px 9px; border-radius:7px;
+    border:1px solid var(--line-strong); background:var(--surface); color:var(--text); width:100%; }
+
+  /* the funnel — live, and free in both modes */
+  .funnel { background:var(--surface-2); border-radius:10px; padding:14px 16px; margin-top:4px; }
+  .fr { display:flex; align-items:center; gap:12px; padding:5px 0; font-size:.82rem; }
+  .fr .bar { flex:1; height:6px; border-radius:3px; background:var(--line); overflow:hidden; }
+  .fr .fill { height:100%; background:var(--accent); }
+  .fr .n { font-family:var(--mono); font-size:.78rem; min-width:7ch; text-align:right; }
+  .fr.final { border-top:1px solid var(--line); margin-top:6px; padding-top:10px; font-weight:600; }
+
+  .pick { display:flex; gap:22px; align-items:flex-end; flex-wrap:wrap; }
+  .cost { margin-top:16px; padding:13px 15px; border-radius:9px; display:flex; gap:14px;
+          align-items:center; border:1px solid var(--good); background:var(--good-soft); }
+  .cost.paid { border-color:var(--gate); background:var(--gate-soft); }
+  .cost strong { font-size:.95rem; }
+  .warn-note { margin-top:14px; font-size:.79rem; color:var(--muted); border-left:2px solid var(--warn);
+               padding:3px 0 3px 12px; max-width:76ch; }
+  table.data { width:100%; border-collapse:collapse; font-size:.82rem; margin-top:4px; }
+  table.data th { text-align:left; font-size:.68rem; letter-spacing:.06em; text-transform:uppercase;
+                  color:var(--faint); padding:8px 10px; border-bottom:1px solid var(--line); }
+  table.data td { padding:9px 10px; border-bottom:1px solid var(--line); }
+  table.data tr:last-child td { border-bottom:none; }
+  .caption { font-size:.76rem; color:var(--faint); margin:30px 0 10px; letter-spacing:.07em;
+             text-transform:uppercase; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <p class="note">
+    <strong>Proposal — not built.</strong> A third route beside <em>Create and import</em> and
+    <em>Create empty</em>: build a list straight out of Apollo. Every number shown is measured from
+    your live account, not invented.
+  </p>
+
+  <h1>Build a list from Apollo</h1>
+  <p class="row-sub">Nothing is written, and nothing is charged, until the last step.</p>
+
+  <!-- ── 1 ───────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="sec-head">
+      <div class="grow"><h2 class="step">1 · Where the people come from</h2>
+        <p class="row-sub">The only choice that changes what it costs.</p></div>
+      <span class="badge badge-good">free so far</span>
+    </div>
+
+    <div class="modes">
+      <div class="mode on">
+        <h3>Your saved contacts <span class="badge badge-good">0 credits</span></h3>
+        <span class="big">356,830</span>
+        <p class="row-sub">already in your Apollo account</p>
+        <ul>
+          <li>250,354 have a verified email</li>
+          <li>Free forever — you have already paid for these</li>
+          <li>Arrives complete: email, title, LinkedIn</li>
+          <li>Limited to companies your team has worked</li>
+        </ul>
+      </div>
+      <div class="mode">
+        <h3>Apollo's database <span class="badge badge-warn">1 credit each</span></h3>
+        <span class="big">~275M</span>
+        <p class="row-sub">everyone Apollo holds</p>
+        <ul>
+          <li>Searching and previewing is free</li>
+          <li>A credit is spent per <em>revealed</em> email, never before</li>
+          <li>Goes through the Suggested tab — you accept each person first</li>
+          <li>Reaches companies you have never touched</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 2 ───────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="sec-head">
+      <div class="grow"><h2 class="step">2 · Who to look for</h2>
+        <p class="row-sub">Personas come from the ICP this list will be worked for — change them
+          there, not here.</p></div>
+      <span class="badge badge-accent">EIA · Default</span>
+    </div>
+
+    <div class="filters">
+      <div class="f">
+        <label>Company size</label>
+        <div class="chips">
+          <span class="chip">1–10</span><span class="chip">11–50</span>
+          <span class="chip on">50–200</span><span class="chip">201–500</span>
+          <span class="chip">500+</span>
+        </div>
+        <p class="row-sub" style="margin-top:7px;">Apollo's own band. It is not returned on the
+          contact row, so it cannot be re-checked here.</p>
+      </div>
+
+      <div class="f">
+        <label>Personas · from the ICP</label>
+        <div class="chips">
+          <span class="chip on">economic buyer <span class="num">CEO, VP</span></span>
+          <span class="chip on">technical buyer <span class="num">CTO, CIO, IT head</span></span>
+        </div>
+        <p class="row-sub" style="margin-top:7px;">One persona per person, technical winning:
+          a <em>Founder &amp; CTO</em> is the technical buyer.</p>
+      </div>
+
+      <div class="f">
+        <label>Contacts per company</label>
+        <div class="chips">
+          <span class="chip">1 — the best match</span>
+          <span class="chip on">2 — one of each persona</span>
+        </div>
+      </div>
+
+      <div class="f">
+        <label>Email</label>
+        <div class="chips">
+          <span class="chip on">verified only</span>
+          <span class="chip">include risky</span>
+        </div>
+        <p class="row-sub" style="margin-top:7px;">Only <span class="mono">verified</span> passes the
+          send gate, so anything else is a contact you cannot write to.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 3 ───────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="sec-head">
+      <div class="grow"><h2 class="step">3 · What that leaves</h2>
+        <p class="row-sub">Recounted as you change anything above. Counting is free in both
+          modes — it is revealing that costs.</p></div>
+      <span class="badge badge-good">0 credits</span>
+    </div>
+
+    <div class="funnel">
+      <div class="fr"><span style="min-width:24ch;">All saved contacts</span>
+        <span class="bar"><span class="fill" style="width:100%"></span></span>
+        <span class="n">356,830</span></div>
+      <div class="fr"><span style="min-width:24ch;">Verified email</span>
+        <span class="bar"><span class="fill" style="width:70%"></span></span>
+        <span class="n">250,354</span></div>
+      <div class="fr"><span style="min-width:24ch;">Persona titles</span>
+        <span class="bar"><span class="fill" style="width:25%"></span></span>
+        <span class="n">87,911</span></div>
+      <div class="fr"><span style="min-width:24ch;">Company size band</span>
+        <span class="bar"><span class="fill" style="width:10%"></span></span>
+        <span class="n">36,170</span></div>
+      <div class="fr final"><span style="min-width:24ch;">Companies with both personas</span>
+        <span class="bar"><span class="fill" style="width:3%"></span></span>
+        <span class="n">71</span></div>
+    </div>
+
+    <p class="warn-note">
+      <strong>The pair requirement is the real filter.</strong> Measured on the under-50 band:
+      247 companies had two matching people, but only <strong>71</strong> had one of each persona —
+      the rest were two co-founding CTOs. Asking for one contact per company instead would give you
+      far more companies.
+    </p>
+  </div>
+
+  <!-- ── 4 ───────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="sec-head">
+      <div class="grow"><h2 class="step">4 · How many, and where they land</h2></div>
+    </div>
+
+    <div class="pick">
+      <div style="min-width:220px;">
+        <label style="font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:600;">How many contacts</label>
+        <div class="chips" style="margin-top:7px;">
+          <span class="chip">50</span><span class="chip on">100</span>
+          <span class="chip">200</span><span class="chip">max — 142</span>
+        </div>
+      </div>
+      <div style="min-width:260px;">
+        <label style="font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:600;">New list name</label>
+        <input type="text" value="Apollo · 50–200 · both personas" style="margin-top:7px;">
+      </div>
+    </div>
+
+    <div class="cost">
+      <span class="badge badge-good">0 credits</span>
+      <div>
+        <strong>100 contacts at 50 companies, nothing charged.</strong>
+        <p class="row-sub">They are already yours. Emails and LinkedIn URLs arrive with them, so
+          the list is reachable the moment it is created — no reveal step.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:16px;align-items:center;">
+      <button class="btn primary">Create the list and add 100 contacts</button>
+      <button class="btn">Preview the 100 first</button>
+      <button class="btn">Cancel</button>
+    </div>
+  </div>
+
+  <p class="caption">The same step 4, in Apollo-database mode</p>
+
+  <div class="card">
+    <div class="cost paid">
+      <span class="badge badge-warn">up to 200 credits</span>
+      <div>
+        <strong>200 people found. Nothing is revealed yet.</strong>
+        <p class="row-sub">They arrive on the <em>Suggested</em> tab as proposals — name, title and
+          whether Apollo holds an address. You accept the ones you want, and only the accepted ones
+          are revealed, one credit each. Your plan currently has
+          <strong class="mono">0</strong> credits.</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="btn primary">Create the list and add 200 suggestions</button>
+      <button class="btn">Cancel</button>
+    </div>
+  </div>
+
+  <p class="caption">Preview — what "Preview first" opens</p>
+
+  <div class="card">
+    <table class="data">
+      <thead><tr><th>Company</th><th>Person</th><th>Title</th><th>Persona</th><th>Email</th></tr></thead>
+      <tbody>
+        <tr><td>Spotlight Reporting</td><td>—</td><td>Founder &amp; CEO</td>
+            <td><span class="badge badge-accent">economic</span></td>
+            <td><span class="badge badge-good">verified</span></td></tr>
+        <tr><td>Spotlight Reporting</td><td>—</td><td>Chief Technology Officer</td>
+            <td><span class="badge badge-warn">technical</span></td>
+            <td><span class="badge badge-good">verified</span></td></tr>
+        <tr><td>LenderLogix</td><td>—</td><td>Co-Founder &amp; CEO</td>
+            <td><span class="badge badge-accent">economic</span></td>
+            <td><span class="badge badge-good">verified</span></td></tr>
+        <tr><td>LenderLogix</td><td>—</td><td>Co-Founder &amp; CTO</td>
+            <td><span class="badge badge-warn">technical</span></td>
+            <td><span class="badge badge-good">verified</span></td></tr>
+        <tr><td>Neurolabs</td><td>—</td><td>Co-Founder &amp; CEO</td>
+            <td><span class="badge badge-accent">economic</span></td>
+            <td><span class="badge badge-good">verified</span></td></tr>
+      </tbody>
+    </table>
+    <p class="row-sub" style="margin-top:12px;">
+      Names and addresses are shown in the real screen; they are left out of this mockup on purpose.
+      Nothing is written until <strong>Create</strong>.
+    </p>
+  </div>
+
+</div>
+</body>
+</html>

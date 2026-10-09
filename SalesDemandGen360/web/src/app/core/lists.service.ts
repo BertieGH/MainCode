@@ -192,6 +192,46 @@ export interface ImportRow {
   detail: string;
 }
 
+/** What to look for among the Apollo contacts this account already owns. */
+export interface ApolloBuildIn {
+  /** Apollo's own employee bands: `1-10`, `11-50`, `51-200`, `201-500`, … */
+  size_bands: string[];
+  /** Each company must field every one of these, or it is skipped. */
+  personas: string[];
+  verified_only: boolean;
+  per_company: number;
+  limit: number;
+}
+
+/** Where the numbers fall away. Every one of these is free to compute. */
+export interface ApolloFunnel {
+  saved_total: number;
+  verified: number;
+  titled: number;
+  in_band: number;
+  /** Read in this pass — bounded, so a sample of `in_band` rather than all. */
+  read: number;
+  companies: number;
+  /** Companies that can fill every requested persona. The real filter. */
+  usable_companies: number;
+  available: number;
+}
+
+export interface ApolloBuild {
+  ran: boolean;
+  blocked: string | null;
+  funnel: ApolloFunnel;
+  note: string;
+  list_id?: string | null;
+  created: number;
+  merged: number;
+  contacts: number;
+  /** Preview rows, carrying no name and no address — the question it answers
+   *  is "is this the right shape of list", which needs neither. */
+  sample: { company: string; domain: string; title: string | null;
+            persona: string; email_status: string | null }[];
+}
+
 export interface ImportReport {
   total_rows: number;
   committed: boolean;
@@ -379,6 +419,26 @@ export class ListsService {
 
   lists(sort: SortState): Observable<AccountList[]> {
     return this.http.get<AccountList[]>('/api/lists', { params: sortParams(sort) });
+  }
+
+  /**
+   * What these filters would give, from the Apollo contacts already owned.
+   *
+   * Costs nothing, which is why it is a separate call rather than a dry-run
+   * flag: a dry run that might spend money is not something anybody presses
+   * twice, and this screen recounts on every change.
+   */
+  previewFromApollo(body: ApolloBuildIn, deep = false): Observable<ApolloBuild> {
+    return this.http.post<ApolloBuild>('/api/lists/from-apollo/preview', body, {
+      params: deep ? { deep: 'true' } : {},
+    });
+  }
+
+  /** Create the list and fill it. Still no credits — these are already yours. */
+  buildFromApollo(label: string, body: ApolloBuildIn): Observable<ApolloBuild> {
+    return this.http.post<ApolloBuild>('/api/lists/from-apollo', body, {
+      params: { label },
+    });
   }
 
   createList(body: { label: string; description?: string; source?: string }) {

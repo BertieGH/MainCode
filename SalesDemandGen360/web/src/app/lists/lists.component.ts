@@ -12,6 +12,7 @@ import { apiError } from '../shared/api-error';
 
 import { catchError, firstValueFrom, forkJoin, map, of } from 'rxjs';
 import { DataTableComponent } from '../shared/data-table.component';
+import { ApolloBuilderComponent } from './apollo-builder.component';
 import { ColumnDef, RowAction } from '../shared/table-view';
 
 import { ConfirmService } from '../shared/confirm.service';
@@ -20,7 +21,7 @@ import { NotifyService } from '../shared/notify.service';
 @Component({
   selector: 'app-lists',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, SortableDirective, IconComponent, FilterPanelComponent, DataTableComponent],
+  imports: [CommonModule, FormsModule, RouterLink, SortableDirective, IconComponent, FilterPanelComponent, DataTableComponent, ApolloBuilderComponent],
   template: `
     <div class="head">
       <div>
@@ -30,9 +31,18 @@ import { NotifyService } from '../shared/notify.service';
           and everything downstream is a deliberate copy out of it.
         </p>
       </div>
-      <button class="btn btn-primary" (click)="creating.set(!creating())">
-        <app-icon name="plus" />New list
-      </button>
+      <div style="display:flex;gap:10px;">
+        <!-- Beside New list, not inside it: the CSV routes start from a name
+             and fill later, where this one starts from the people and names
+             the list at the end. Nesting it would make the shared Label field
+             mean two different things. -->
+        <button class="btn" (click)="fromApollo.set(!fromApollo()); creating.set(false)">
+          <app-icon name="plus" [size]="13" />From Apollo
+        </button>
+        <button class="btn btn-primary" (click)="creating.set(!creating()); fromApollo.set(false)">
+          <app-icon name="plus" />New list
+        </button>
+      </div>
     </div>
 
     <div class="card" *ngIf="creating()" style="margin-bottom:18px;max-width:520px;">
@@ -62,6 +72,10 @@ import { NotifyService } from '../shared/notify.service';
       </div>
     </div>
 
+
+    <app-apollo-builder *ngIf="fromApollo()"
+                        (built)="openBuilt($event)"
+                        (cancelled)="fromApollo.set(false)"></app-apollo-builder>
 
     <div class="card" *ngIf="error()" style="border-color:var(--critical);margin-bottom:18px;">
       <strong style="color:var(--critical);">{{ error() }}</strong>
@@ -258,6 +272,14 @@ export class ListsComponent implements OnInit {
   loading = signal(true);
   error = signal<string | null>(null);
   creating = signal(false);
+  fromApollo = signal(false);
+
+  /** Straight into the new list: it already has its people, so there is
+   *  nothing to do on this screen and the first question is who is in it. */
+  openBuilt(listId: string): void {
+    this.fromApollo.set(false);
+    void this.router.navigate(['/lists', listId]);
+  }
   /** Which create button is working — the two go to different places after. */
   creatingBusy = signal<'import' | 'empty' | null>(null);
   deleting = signal(false);

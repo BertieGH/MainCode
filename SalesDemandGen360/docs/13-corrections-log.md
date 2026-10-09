@@ -4658,3 +4658,67 @@ so a button is not left claiming progress it cannot see.
 Front end 367 pass; `ng build` exit 0.
 
 `queues/queue-detail.component.ts`, `accounts/account-detail.component.ts`.
+
+## §103 — Building a list out of the Apollo contacts already owned (2026-10-08)
+
+The owner's premise, three times over, was that the people on an Apollo-exported list are already
+contacts in the Apollo account and so free to reveal. Measured three ways — by company name, by
+email, by domain — it was wrong each time: **1 of 25**, and that one is the contact *we* revealed.
+
+The reason is visible in the data rather than arguable. All 25 imported contacts have **no email and
+no personal LinkedIn URL**, which are exactly the two fields Apollo withholds until a reveal. An
+export of a saved *search* looks like that; an export of *contacts* does not. Being in a saved list
+in Apollo's UI does not make somebody a contact, and it is the reveal, not the saving, that spends
+the credit.
+
+What that measurement did turn up is a real asset: **356,830 saved contacts, 250,354 with a verified
+email**, which are free to read however often. So rather than a harvest keyed to lists we already
+have — which would have imported four contacts, and I proposed it twice before measuring — the
+build goes the other way: pick people *out of* that store by ICP.
+
+### What it does
+
+**From Apollo**, beside *New list*, not inside it: the CSV routes start from a name and fill later,
+where this starts from the people and names the list at the end. Nesting it would make one Label
+field mean two different things.
+
+Filters are company size band, the ICP's personas, verified-only, contacts per company and how many
+— the last two typed, not chipped, at the owner's request. Personas are shown read-only, sourced
+from the ICP, because two places defining the same thing is two places to drift.
+
+Importing goes through `csv_import`, not a second write path: the candidates become rows in the
+shape an Apollo export has, and the importer already knows how to resolve by domain, merge a known
+company, refresh a headcount and attach a contact, all of it tested.
+
+### Three things the measurement changed
+
+**1 · One persona per person, technical winning.** The first version ranked each person on both
+ladders independently, so "Co-Founder & CTO" scored as an economic buyer. A company with two
+co-founding CTOs came out as a matched pair with one of them mislabelled. Of 247 companies in the
+under-50 band with two matching people, only **71** had one of each persona; the other 176 were that
+mistake. A pair is now two different people with two different personas, or the company is skipped.
+
+**2 · The preview is two speeds, because the costs differ by twenty times.** One call took a
+measured **64 seconds** — far too slow for a screen that recounts as you type. The coarse funnel is
+four `total_entries` queries and returns in **3 seconds**; counting companies that can field every
+persona means reading the pages behind those numbers, so it is a separate "Check availability" and
+the screen says which number it is still waiting for. Nothing in either is charged.
+
+**3 · The read is adaptive, because the yield is not linear.** A fixed pages-per-company ratio was
+tried and under-read badly: 1,300 contacts gave 38 usable companies where 4,000 gave 209 — three
+times the pages for five times the companies, because later pages mostly add a *second* person at a
+company already seen, which is exactly what turns an unusable company into a pair. It now reads in
+chunks and stops when it has enough: 2,000 contacts for a hundred-contact ask, **32 seconds**.
+
+That fix carried a second one. The note said "76 is all the filters leave" when the truth was "76 is
+all 1,300 contacts yielded, and there are 23,000 more" — different facts, and only one of them is a
+reason to widen the filters. `_note` now tells them apart on whether the pages were exhausted.
+
+Live, the 51–200 band: 24,705 contacts in band, 2,000 read, 53 companies with both personas, 106
+available for a 100 ask.
+
+Backend 1,868 pass. Front end 367 pass; `ng build` exit 0.
+
+`services/apollo_list_builder.py` (new), `api/lists.py`, `core/lists.service.ts`,
+`lists/apollo-builder.component.ts` (new), `lists/lists.component.ts`,
+`tests/test_apollo_list_builder.py` (new, 20), `mockups/apollo-list-builder.html` (new).
