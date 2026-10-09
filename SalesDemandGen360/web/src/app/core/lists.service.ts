@@ -196,6 +196,8 @@ export interface ImportRow {
 export interface ApolloBuildIn {
   /** Apollo's own employee bands: `1-10`, `11-50`, `51-200`, `201-500`, … */
   size_bands: string[];
+  /** Apollo's own industry names. Empty means every industry. */
+  industries: string[];
   /** Each company must field every one of these, or it is skipped. */
   personas: string[];
   verified_only: boolean;
@@ -428,6 +430,13 @@ export class ListsService {
    * flag: a dry run that might spend money is not something anybody presses
    * twice, and this screen recounts on every change.
    */
+  /** Apollo's industry names, in this account's order of volume. Served
+   *  rather than held here because a wrong name fails silently — an industry
+   *  Apollo does not know returns zero, exactly like a real one nobody is in. */
+  apolloIndustries(): Observable<string[]> {
+    return this.http.get<string[]>('/api/lists/from-apollo/industries');
+  }
+
   previewFromApollo(body: ApolloBuildIn, deep = false): Observable<ApolloBuild> {
     return this.http.post<ApolloBuild>('/api/lists/from-apollo/preview', body, {
       params: deep ? { deep: 'true' } : {},

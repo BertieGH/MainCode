@@ -62,6 +62,25 @@ import { apiError } from '../shared/api-error';
           </p>
         </div>
 
+        <div class="f wide">
+          <label for="ab-industry">Industry</label>
+          <div class="chips" id="ab-industry">
+            <button type="button" class="chip" *ngFor="let i of shownIndustries()"
+                    [class.on]="draft.industries.includes(i)" (click)="toggleIndustry(i)">
+              {{ shortIndustry(i) }}
+            </button>
+            <button type="button" class="chip more"
+                    *ngIf="industries().length > 8"
+                    (click)="showAllIndustries.set(!showAllIndustries())">
+              {{ showAllIndustries() ? 'fewer' : '+ ' + (industries().length - 8) + ' more' }}
+            </button>
+          </div>
+          <p class="row-sub hint">
+            None selected means every industry. Ordered by what this account actually holds —
+            IT services is 43,896 of them, and an alphabetical list would bury it.
+          </p>
+        </div>
+
         <div class="f">
           <label for="ab-per">Contacts per company</label>
           <input id="ab-per" class="field short" type="number" min="1" max="5"
@@ -96,8 +115,10 @@ import { apiError } from '../shared/api-error';
 
         <div class="f">
           <label for="ab-label">New list name</label>
+          <!-- A real value, not a placeholder: it tracks the filters until
+               the moment it is typed in, and then it is yours. -->
           <input id="ab-label" class="field" type="text" [(ngModel)]="label"
-                 placeholder="Apollo · 51–200 · both personas">
+                 (ngModelChange)="labelTyped()" placeholder="Name this list">
         </div>
       </div>
 
@@ -181,6 +202,8 @@ import { apiError } from '../shared/api-error';
       .sec-head .badge { flex: none; }
       .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
               gap: 18px 26px; }
+      .f.wide { grid-column: 1 / -1; }
+      .chip.more { background: none; border-style: dashed; color: var(--muted); }
       .f > label { display: block; font-size: .68rem; letter-spacing: .07em; font-weight: 600;
                    text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
       .hint { margin: 7px 0 0; max-width: 46ch; }
@@ -224,8 +247,14 @@ export class ApolloBuilderComponent {
   readonly personas = ['economic buyer', 'technical buyer'];
 
   label = '';
+  /** Once the name has been typed in, the suggestion stops overwriting it.
+   *  A field that rewrites itself under the cursor is worse than no help. */
+  private labelEdited = false;
+  industries = signal<string[]>([]);
+  showAllIndustries = signal(false);
   draft: ApolloBuildIn = {
     size_bands: ['51-200'],
+    industries: [],
     personas: ['economic buyer', 'technical buyer'],
     verified_only: true,
     per_company: 2,
@@ -245,7 +274,64 @@ export class ApolloBuilderComponent {
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   ngOnInit(): void {
+    this.suggestLabel();
     this.recount();
+    this.api.apolloIndustries().subscribe({
+      next: (rows) => this.industries.set(rows),
+      // A missing list is not worth an error on the screen: the filter is
+      // optional and everything else still works without it.
+      error: () => this.industries.set([]),
+    });
+  }
+
+  labelTyped(): void {
+    this.labelEdited = true;
+  }
+
+  /** A name made of the filters, so the common case is press-and-go.
+   *  "Apollo · 51–200 · IT services · both personas" says what is in the list
+   *  without anybody writing it down. */
+  private suggestLabel(): void {
+    if (this.labelEdited) return;
+    const bits = ['Apollo'];
+    if (this.draft.size_bands.length) bits.push(this.draft.size_bands.join(', '));
+    if (this.draft.industries.length) {
+      bits.push(
+        this.draft.industries.length > 2
+          ? `${this.draft.industries.length} industries`
+          : this.draft.industries.map((i) => this.shortIndustry(i)).join(', '),
+      );
+    }
+    bits.push(
+      this.draft.personas.length === 2
+        ? 'both personas'
+        : this.draft.personas[0] ?? 'any persona',
+    );
+    this.label = bits.join(' · ');
+  }
+
+  /** "information technology & services" is too long for a list name. */
+  shortIndustry(name: string): string {
+    return name.replace('information technology & services', 'IT services')
+      .replace('nonprofit organization management', 'nonprofits')
+      .replace('transportation/trucking/railroad', 'transport');
+  }
+
+  toggleIndustry(name: string): void {
+    this.draft.industries = this.draft.industries.includes(name)
+      ? this.draft.industries.filter((x) => x !== name)
+      : [...this.draft.industries, name];
+    this.recount();
+  }
+
+  /** The first eight carry nearly all of this account's volume; the rest are
+   *  behind a toggle so the card is not a wall of thirty-eight chips. */
+  shownIndustries(): string[] {
+    const all = this.industries();
+    if (this.showAllIndustries()) return all;
+    const top = all.slice(0, 8);
+    // Anything chosen stays visible even when it is further down the list.
+    return [...top, ...this.draft.industries.filter((i) => !top.includes(i))];
   }
 
   toggleBand(b: string): void {
@@ -270,6 +356,7 @@ export class ApolloBuilderComponent {
    *  each count is four queries plus up to forty pages against Apollo. Free,
    *  but not instant, and a count for "1" on the way to "100" is wasted. */
   recount(): void {
+    this.suggestLabel();
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => this.count(), 450);
   }

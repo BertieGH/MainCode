@@ -76,6 +76,34 @@ MAX_PAGES = 40
 #: a short ask stops early, large enough not to re-run the grouping per page.
 CHUNK = 4
 
+#: Apollo's industry names, **in this account's order of volume**, and only
+#: names verified to return something here.
+#:
+#: Checked rather than copied from a taxonomy, because a wrong name fails
+#: silently: `organization_industries=["zzz-not-real"]` returns 0, exactly like
+#: a real industry nobody is in. Two of the forty tried came back empty —
+#: `insurance brokers` and `electrical & electronic manufacturing` — and there
+#: is no way to tell a misspelling from an absence, so neither is offered.
+#:
+#: Ordered by what this account actually holds, verified and in a persona
+#: title: information technology & services 43,896, marketing & advertising
+#: 10,836, computer software 9,601. A list sorted alphabetically would bury
+#: the three that matter under thirty that do not.
+INDUSTRIES = (
+    "information technology & services", "marketing & advertising", "computer software",
+    "internet", "financial services", "insurance", "biotechnology",
+    "management consulting", "hospital & health care", "telecommunications",
+    "logistics & supply chain", "real estate", "banking", "construction", "machinery",
+    "education management", "higher education", "staffing & recruiting",
+    "medical devices", "retail", "oil & energy", "accounting",
+    "government administration", "transportation/trucking/railroad", "automotive",
+    "apparel & fashion", "architecture & planning", "civil engineering",
+    "consumer goods", "food & beverages", "legal services",
+    "mechanical or industrial engineering", "nonprofit organization management",
+    "pharmaceuticals", "renewables & environment", "semiconductors", "utilities",
+    "wholesale",
+)
+
 
 def persona_of(title: str | None) -> tuple[str | None, int]:
     """One persona per person, with the seniority within it.
@@ -228,7 +256,8 @@ def choose(
     return build
 
 
-async def counts(client, *, size_bands: tuple[str, ...], verified_only: bool) -> Funnel:
+async def counts(client, *, size_bands: tuple[str, ...], verified_only: bool,
+                 industries: tuple[str, ...] = ()) -> Funnel:
     """The coarse funnel — four one-row queries, and nothing else.
 
     **Split out from `search` because of the difference in cost.** These four
@@ -251,11 +280,14 @@ async def counts(client, *, size_bands: tuple[str, ...], verified_only: bool) ->
     verified = {"contact_email_status": ["verified"]} if verified_only else {}
     titles = {"person_titles": list(ASK_TITLES)}
     band = {"organization_num_employees_ranges": ranges} if ranges else {}
+    # An unselected industry list means every industry, not none. Sending an
+    # empty array would filter to nothing and look like an empty account.
+    trade = {"organization_industries": list(industries)} if industries else {}
 
     funnel.saved_total = await total({})
     funnel.verified = await total(verified) if verified_only else funnel.saved_total
     funnel.titled = await total({**verified, **titles})
-    funnel.in_band = await total({**verified, **titles, **band})
+    funnel.in_band = await total({**verified, **titles, **band, **trade})
     return funnel
 
 
@@ -304,7 +336,8 @@ async def search(client, *, size_bands: tuple[str, ...], verified_only: bool,
 
 
 async def gather(client, *, size_bands: tuple[str, ...], verified_only: bool,
-                 personas: tuple[str, ...], per_company: int, limit: int) -> Build:
+                 personas: tuple[str, ...], per_company: int, limit: int,
+                 industries: tuple[str, ...] = ()) -> Build:
     """Read until there is enough, or until the pages run out.
 
     **Adaptive, because the yield is not linear.** A fixed pages-per-company
@@ -329,6 +362,7 @@ async def gather(client, *, size_bands: tuple[str, ...], verified_only: bool,
         **verified,
         "person_titles": list(ASK_TITLES),
         **({"organization_num_employees_ranges": ranges} if ranges else {}),
+        **({"organization_industries": list(industries)} if industries else {}),
     }
 
     rows: list[dict] = []

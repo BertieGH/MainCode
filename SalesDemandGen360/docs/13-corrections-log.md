@@ -4722,3 +4722,48 @@ Backend 1,868 pass. Front end 367 pass; `ng build` exit 0.
 `services/apollo_list_builder.py` (new), `api/lists.py`, `core/lists.service.ts`,
 `lists/apollo-builder.component.ts` (new), `lists/lists.component.ts`,
 `tests/test_apollo_list_builder.py` (new, 20), `mockups/apollo-list-builder.html` (new).
+
+## §104 — Industry on the Apollo builder, and a list name worth keeping (2026-10-08)
+
+**Apollo does hold industry, and `contacts/search` filters on it.** Not as a field on the row —
+`organization` carries `naics_codes` and `sic_codes` but no industry string — but
+`organization_industries` takes Apollo's own names and honours them.
+
+Worth stating how that was established, because the first reading said the opposite. Two filters
+returned 197,309 and 197,321 against a baseline of 356,830, close enough to look like "has any
+industry tag" rather than a real filter. Testing with values that should differ settled it:
+
+```
+information technology & services   197,321
+restaurants                             606
+farming                                 357
+zzz-not-real                              0
+```
+
+An unknown name returns **zero**, which is the trap: it fails exactly like a real industry nobody is
+in. So the options are not copied from a published taxonomy — each of forty candidates was run
+against the live account, and only the 38 that return results are offered. The two dropped,
+`insurance brokers` and `electrical & electronic manufacturing`, may be misspellings or may be
+genuinely absent, and nothing distinguishes those from outside.
+
+They are ordered **by what this account holds**, not alphabetically: information technology &
+services is 43,896 of the verified, persona-titled contacts, marketing & advertising 10,836,
+computer software 9,601. Alphabetical would bury the three that matter under thirty that do not. The
+card shows the top eight plus a `+30 more`, and anything chosen stays visible when the rest collapse.
+
+Live: the 51–200 band narrows from 24,705 to **13,549** with IT services selected, in two seconds.
+
+### The list name was a placeholder pretending to be a default
+
+It read `Apollo · 51–200 · both personas` in grey and was worth nothing — the field was empty, Create
+stayed disabled, and the only way forward was to type the suggestion out by hand.
+
+It is now a real value built from the filters, and it follows them: picking an industry turns
+`Apollo · 51-200 · both personas` into `Apollo · 51-200 · IT services · both personas`. The moment
+anybody types in the field it stops following, because a field that rewrites itself under the cursor
+is worse than no help at all.
+
+Backend 20 builder tests pass. Front end 367 pass; `ng build` exit 0.
+
+`services/apollo_list_builder.py`, `api/lists.py`, `core/lists.service.ts`,
+`lists/apollo-builder.component.ts`.

@@ -374,6 +374,10 @@ class ApolloBuildIn(BaseModel):
     personas: list[str] = Field(
         default_factory=lambda: ["economic buyer", "technical buyer"], max_length=2
     )
+    #: Apollo's own industry names, from `apollo_list_builder.INDUSTRIES`.
+    #: Empty means every industry — an empty array sent to Apollo would filter
+    #: to nothing and read as an empty account.
+    industries: list[str] = Field(default_factory=list, max_length=12)
     #: Only `verified` passes the send gate, so anything else is a contact
     #: nobody may write to.
     verified_only: bool = True
@@ -411,16 +415,34 @@ async def _apollo_candidates(session: AsyncSession, payload: ApolloBuildIn):
         personas=tuple(payload.personas),
         per_company=payload.per_company,
         limit=payload.limit,
+        industries=tuple(payload.industries),
     )
     # The coarse counts are the four cheap queries; the rest came from the read.
     coarse = await builder.counts(
-        client, size_bands=tuple(payload.size_bands), verified_only=payload.verified_only
+        client,
+        size_bands=tuple(payload.size_bands),
+        verified_only=payload.verified_only,
+        industries=tuple(payload.industries),
     )
     build.funnel.saved_total = coarse.saved_total
     build.funnel.verified = coarse.verified
     build.funnel.titled = coarse.titled
     build.funnel.in_band = coarse.in_band
     return build, None
+
+
+@router.get("/lists/from-apollo/industries", response_model=list[str])
+async def apollo_industries():
+    """Apollo's industry names, in this account's order of volume.
+
+    Served rather than hard-coded in the screen so there is one list, and
+    because a wrong name fails *silently* — an industry Apollo does not know
+    returns zero, exactly like a real one nobody is in. Every name here was
+    checked against the live account and returns results.
+    """
+    from app.services import apollo_list_builder as builder
+
+    return list(builder.INDUSTRIES)
 
 
 @router.post("/lists/from-apollo/preview", response_model=ApolloBuildOut)
@@ -459,6 +481,7 @@ async def preview_from_apollo(
             client,
             size_bands=tuple(payload.size_bands),
             verified_only=payload.verified_only,
+            industries=tuple(payload.industries),
         )
         return ApolloBuildOut(
             ran=True,
