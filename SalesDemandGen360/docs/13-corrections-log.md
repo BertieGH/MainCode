@@ -4811,3 +4811,37 @@ A `perl` substitution had matched nothing and reported success, which is its hab
 Backend 1,870 pass.
 
 `services/apollo_list_builder.py`, `api/lists.py`, `tests/test_apollo_list_builder.py` (+2).
+
+## §106 — Create was disabled beside its own answer (2026-10-08)
+
+The owner found **Create the list** greyed out with a filled-in name, a successful deep read on
+screen and twenty preview rows beneath it, and asked whether it was the rate limit. Nearly: the rate
+limit was the trigger, the fault was mine.
+
+```ts
+canBuild() { return !!this.label.trim() && !!this.result()?.ran; }
+```
+
+`result()` is the **coarse** count, which runs on every keystroke. `deep()` is the expensive read
+that actually establishes a build will work. A rate limit on the cheap call — the one fired most
+often, and so the one most likely to be refused — disabled Create while the better evidence sat
+beside it, already paid for and already displayed.
+
+Two more faults came out of the same shape:
+
+**The screen went blank and said nothing.** The funnel was bound to `result()`, so when that answer
+failed the whole block disappeared: no numbers, no error, a disabled button and no reason given. The
+refusal was in `blocked`, rendered inside the funnel that had just vanished. It now reads from
+whichever answer is current, preferring the deep one, and a refusal from either shows on its own
+line.
+
+**`willTake` read the wrong answer too**, so the "up to N contacts" line went to zero for the same
+reason.
+
+The fix is one idea: **the deep answer supersedes the coarse one**, because it carries every number
+the coarse one has and the pair count besides. `shown()` prefers it, `canBuild()` accepts either,
+and only both failing is a refusal.
+
+Front end 377 pass (10 new); `ng build` exit 0.
+
+`lists/apollo-builder.component.ts`, `lists/apollo-builder.component.spec.ts` (new).

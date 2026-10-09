@@ -123,7 +123,7 @@ import { apiError } from '../shared/api-error';
       </div>
 
       <!-- the funnel — free, so it is always on screen -->
-      <div class="funnel" *ngIf="result() as r">
+      <div class="funnel" *ngIf="shown() as r">
         <ng-container *ngIf="r.ran && r.funnel as f">
           <div class="fr" *ngFor="let step of steps(deep()?.funnel || f)">
             <span class="what">{{ step.label }}</span>
@@ -142,7 +142,6 @@ import { apiError } from '../shared/api-error';
             {{ deep()?.note || r.note }}
           </p>
         </ng-container>
-        <p class="row-sub" *ngIf="!r.ran">{{ r.blocked }}</p>
       </div>
       <p class="row-sub counting" *ngIf="counting() || checking()">
         <span class="spin" aria-hidden="true"></span>
@@ -150,7 +149,7 @@ import { apiError } from '../shared/api-error';
            ? 'Reading the pages to count whole companies — free, but about a minute…'
            : 'Counting — free, no credits…' }}
       </p>
-      <p class="row-sub err" *ngIf="error()">{{ error() }}</p>
+      <p class="row-sub err" *ngIf="error() || refusal()">{{ error() || refusal() }}</p>
 
       <div class="acts">
         <button class="btn btn-primary" (click)="build()"
@@ -164,7 +163,7 @@ import { apiError } from '../shared/api-error';
           {{ checking() ? 'Checking…' : deep() ? 'Check again' : 'Check availability' }}
         </button>
         <button class="btn" (click)="cancelled.emit()">Cancel</button>
-        <span class="row-sub" *ngIf="result()?.ran">
+        <span class="row-sub" *ngIf="canBuild()">
           up to {{ willTake() }} contacts · 0 credits
         </span>
       </div>
@@ -423,9 +422,34 @@ export class ApolloBuilderComponent {
 
   /** Buildable without a deep check: Create reads the pages itself, and
    *  forcing the slow count first would make the common path take twice as
-   *  long for an answer the build already produces. */
+   *  long for an answer the build already produces.
+   *
+   *  **Either count will do.** This looked only at the fast one, so a
+   *  transient failure there — Apollo's rate limit, most often — disabled
+   *  Create while a *successful* deep read sat on the screen beside it. The
+   *  deep read is the better evidence that a build will work, and it was
+   *  being ignored because the cheaper call had since failed.
+   */
   canBuild(): boolean {
-    return !!this.label.trim() && !!this.result()?.ran;
+    return !!this.label.trim() && (!!this.result()?.ran || !!this.deep()?.ran);
+  }
+
+  /** Whichever answer is current, preferring the deep one — it has every
+   *  number the fast one has, and the pair count as well. */
+  shown(): ApolloBuild | null {
+    const d = this.deep();
+    return d?.ran ? d : this.result();
+  }
+
+  /** A refusal from either call. Shown on its own line rather than only
+   *  inside the funnel, which disappears when the count it belongs to fails
+   *  — so the screen went blank and said nothing at all. */
+  refusal(): string | null {
+    const r = this.result();
+    const d = this.deep();
+    if (d && !d.ran) return d.blocked ?? null;
+    if (r && !r.ran && !d?.ran) return r.blocked ?? null;
+    return null;
   }
 
   build(): void {
