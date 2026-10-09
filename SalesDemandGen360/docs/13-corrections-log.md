@@ -4910,3 +4910,72 @@ Backend 1,881 pass.
 
 `alembic/e7a4c91b35d8` (new), `services/csv_import.py`, `api/lists.py`,
 `tests/test_contact_import.py` (+9), `tests/test_verification.py`.
+
+## §108 — The families waited on each other, and then could not see their own run (2026-10-09)
+
+**Problem.** A research run took 79s an account, and a rep watching the progress
+bar was watching Google. Measured, 75.3s of that 79s was model time and 55.8s
+of *that* was five `company_research` searches waiting on each other — trade
+press does not depend on the company site, so nothing about them was ordered.
+
+**Cause, and the one that hid behind it.** `llm_family_runner` closed over the
+caller's session, so the families could not simply be gathered: every one reads
+its stage config and writes evidence through that session, and `AsyncSession`
+is not safe for concurrent use. A first attempt gathered them anyway and was
+reverted the same hour — SQLAlchemy reported it as "Session.add() is not
+currently supported within the execution stage of the flush process", which
+names a symptom and not the race.
+
+Splitting the runner so each family takes a session from a factory fixed that
+and exposed two more, both of which only exist once the families are in
+separate transactions:
+
+- **The run row was flushed, not committed.** Every evidence row carries
+  `run_id` under a foreign key, and a flush is invisible outside its own
+  transaction. Live, this turned a working run into five identical
+  `ForeignKeyViolation`s on `fk_evidence_run_id_run`: the research happened,
+  was paid for, and could not be stored.
+- **The dedup pre-read stopped being a guarantee.** Two families returning the
+  same passage are now two transactions, neither able to see the other's
+  insert; both pass the `existing` check and `evidence_dedup` correctly refuses
+  the second. That refusal was costing the family everything else it found.
+
+**Fix.** Three things, each small, and the order matters.
+
+`pipeline._run_family` is now module-level with its session as an argument, so
+`llm_family_runner(session_factory=...)` can give each call a session of its
+own and commit it. Evidence is immutable and stands alone, so a family that has
+found something has found it whether or not a later family fails.
+
+`run_research` gained `concurrent_families`, **off by default**. Only the caller
+knows whether its runner isolates sessions, and the pipeline must not guess:
+every pipeline test injects a fake runner that works on the session passed in,
+and defaulting to concurrent broke eight of them with a unique-constraint
+violation that was really a race. The route sets it beside the factory that
+makes it true. With it set, the run row is committed rather than flushed.
+
+`evidence._flush_keeping_duplicates` keeps the batch flush as the fast path,
+inside a savepoint, and only on a genuine `evidence_dedup` clash re-offers the
+rows one at a time in savepoints of their own. Two details were learned the
+hard way: the first version called `session.rollback()`, which would have
+discarded the coverage rows along with the evidence; and the retry must flush a
+*named* row, because a plain `flush()` flushes everything pending and puts the
+whole batch back behind one bad one. A session with no `begin_nested` — the
+stubs several tests store through — flushes exactly as before, because making
+every caller support savepoints to serve a conflict they cannot reach is the
+wrong trade.
+
+**Measured, live, on a fresh account (Iterate.ai).** 56s wall clock, 30 evidence
+rows across seven families, 4 signals, none dropped, qualified. Summed model
+time 94.6s against 43.1s elapsed between the first call and the last: the six
+research calls summed to 66.8s and cost 14.8s, the slowest one. 66.8 − 14.8 is
+52s, and 94.6 − 52 is 42.6s, which is the elapsed figure. Coverage recorded
+seven families `ran` and two `empty`, none failed, and all 32 evidence rows join
+a real `run` row.
+
+Running *accounts* concurrently remains no: a mistake should cost one account's
+spend rather than fifty.
+
+Backend 1,881 pass.
+
+`services/pipeline.py`, `services/evidence.py`, `api/lists.py`.

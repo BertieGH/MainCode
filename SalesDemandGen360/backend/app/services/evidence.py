@@ -146,13 +146,79 @@ async def store_found(
         session.add(row)
         outcome.stored.append(row)
 
-    await session.flush()
+    await _flush_keeping_duplicates(session, outcome)
     log.info(
         "evidence.stored account=%s stored=%d duplicate=%d stale=%d not_found=%d",
         account_id, outcome.count, outcome.duplicates, outcome.stale,
         len(batch.not_found),
     )
     return outcome
+
+
+async def _flush_keeping_duplicates(session, outcome) -> None:
+    """Flush, and treat a duplicate as a duplicate rather than a failure.
+
+    **The `existing` check above is the fast path, not the guarantee.** It
+    reads rows this transaction can see, and once families run concurrently —
+    each on its own session, because `AsyncSession` cannot be shared — two of
+    them returning the same passage are two transactions neither of which can
+    see the other's insert. Both pass the check and the `evidence_dedup` index
+    refuses the second, which is correct. What was wrong was letting that
+    refusal cost the family everything it found.
+
+    **The batch flush stays the fast path**, inside a savepoint so that a
+    rejection costs the savepoint rather than the transaction — the first
+    attempt at this called `session.rollback()`, which would have thrown away
+    the coverage rows along with the evidence. Only when the index actually
+    refuses something do the rows go in one at a time, each in a savepoint of
+    its own, so one duplicate costs one row.
+
+    Two consequences worth naming. A session with no `begin_nested` — the
+    stubs several tests store through — simply flushes, as it always did:
+    making every caller support savepoints to serve a conflict they cannot
+    reach is the wrong trade. And the retry flushes a named row rather than
+    the session, because a plain `flush()` would flush every pending row and
+    put the whole batch back behind one bad one.
+
+    Only a unique violation on this index counts as a duplicate. Any other
+    integrity error still raises: a constraint nobody anticipated must not be
+    filed away as a near-miss.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    begin_nested = getattr(session, "begin_nested", None)
+    if begin_nested is None:
+        await session.flush()
+        return
+
+    try:
+        async with begin_nested():
+            await session.flush()
+        return
+    except IntegrityError as exc:
+        if not _is_dedup_clash(exc):
+            raise
+
+    # The savepoint rolled back, which restores these rows to pending, so they
+    # can be offered again individually.
+    kept = []
+    for row in outcome.stored:
+        try:
+            async with begin_nested():
+                await session.flush([row])
+        except IntegrityError as exc:
+            if not _is_dedup_clash(exc):
+                raise
+            outcome.duplicates += 1
+            session.expunge(row)
+            continue
+        kept.append(row)
+    outcome.stored = kept
+
+
+def _is_dedup_clash(exc) -> bool:
+    """The `evidence_dedup` index refusing a passage we already hold."""
+    return "evidence_dedup" in str(getattr(exc, "orig", exc))
 
 
 def _to_row(

@@ -203,3 +203,23 @@ one account.
 
 At 1,000 accounts a week the saving is time, not money: identical calls, identical spend. 79s → 37s
 per account is roughly 11 hours a week of wall clock on a sequential run.
+
+### Done — 2026-10-09, and what the prediction got right
+
+Built, and verified live rather than predicted. The estimate above was 79s → ~37s; measured on a
+fresh account the run took **56s wall clock** for strictly more work than the 79s baseline, with
+**94.6s of summed model time inside 43.1s of elapsed model window**. The six research calls summed
+to 66.8s and cost 14.8s — the slowest one — which is the whole of the claim.
+
+The 56s/43.1s gap is the non-model work the estimate ignored: CRM resolution, the sweep's own page
+fetches, the profile write and the coverage rows. That is where the next saving is, if one is
+wanted, and it is not a model problem.
+
+Two faults only appeared once the families were in separate transactions, both now fixed and both
+written up in `docs/13` §108: the run row was flushed rather than committed, so every evidence
+insert failed its foreign key; and the dedup pre-read stopped being a guarantee, so a passage two
+families both found cost one of them everything else it had found.
+
+The lesson worth carrying: concurrency is **opt-in per caller**, because only the caller knows
+whether its runner isolates sessions. Defaulting it on broke eight tests whose fake runners share
+the caller's session, and the breakage read as a unique-constraint violation rather than as a race.

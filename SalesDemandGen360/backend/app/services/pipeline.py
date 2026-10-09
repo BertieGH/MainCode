@@ -14,9 +14,11 @@ the object the fan-out needs.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -256,6 +258,13 @@ async def run_research(
     run_extraction=None,
     signal_type_keys: tuple[str, ...] | frozenset[str] | set[str] = (),
     run_qualification=None,
+    #: Run the company families at the same time rather than one after another.
+    #: **Off by default, because only the caller knows whether it is safe.**
+    #: `AsyncSession` cannot be shared between concurrent callers, so this is
+    #: true only for a runner that opens a session per family — which is what
+    #: `llm_family_runner(session_factory=...)` does. A test's fake runner,
+    #: which works on the session passed in here, must stay sequential.
+    concurrent_families: bool = False,
 ) -> RunResult:
     """Resolve against the CRM, then run every planned family and record it.
 
@@ -292,6 +301,20 @@ async def run_research(
     )
     session.add(run)
     await session.flush()
+    if concurrent_families:
+        # **Committed, not just flushed, because the families cannot see a
+        # flush.** Every evidence row carries `run_id` under a foreign key, and
+        # a family working on a session of its own is a separate transaction:
+        # the run row pending in this one does not exist as far as it is
+        # concerned. Live, that turned a working run into five identical
+        # `ForeignKeyViolation`s on `fk_evidence_run_id_run` — the research
+        # happened, was paid for, and could not be stored.
+        #
+        # The run row is the right thing to commit early regardless. It is
+        # stamped at creation precisely so a run that failed halfway still has
+        # one, and until this commit that was only true if the caller got far
+        # enough to commit it.
+        await session.commit()
 
     result = RunResult(run_id=run.id)
 
@@ -419,7 +442,26 @@ async def run_research(
                 plan = ResearchPlan(families=[], orphan_types=plan.orphan_types)
 
     # --- 3. Each family, recorded whatever it returns ---
+    #
+    # **Searches together, rows one at a time.** Measured on one account: 79s
+    # wall clock, 75.3s of it model time, and 55.8s of *that* was five
+    # independent `company_research` calls waiting on Google one after
+    # another. They are independent sources — trade press does not depend on
+    # the company site — so run at once they cost the slowest, about fourteen
+    # seconds, for exactly the same spend.
+    #
+    # Concurrency is only safe because `llm_family_runner` was given a
+    # `session_factory`: each call does all its database work on a session of
+    # its own. Gathering them on this one does not work and is not a race you
+    # would notice in testing — SQLAlchemy reports it as "Session.add() is not
+    # currently supported within the execution stage of the flush process".
+    # The coverage rows below are still written here, in order, one at a time.
+    #
+    # Running *accounts* concurrently is a different question and still no:
+    # the route explains that a mistake should cost one account's spend rather
+    # than fifty. This is about the families inside one account.
     held = quarantined or {}
+    runnable = []
     for planned in plan.families:
         reason = held.get(planned.family)
         if reason is not None:
@@ -434,20 +476,48 @@ async def run_research(
                 skipped=reason,
             )
             continue
+        runnable.append(planned.family)
+
+    async def _attempt(family: str):
+        """One family, carrying its failure back rather than raising it.
+
+        Named rather than relying on `return_exceptions`, so the rule the
+        sequential version had is still visible: a fault costs one family,
+        never the run.
+        """
         try:
-            outcome = await run_family(account, planned.family)
-        except Exception as exc:  # noqa: BLE001 — injected runner; any fault must cost one family, not the run
+            return family, await run_family(account, family), None
+        except Exception as exc:  # noqa: BLE001 — injected runner; one family, not the run
+            return family, None, exc
+
+    # **Opt-in, because only the caller knows whether it is safe.** Gathering
+    # is correct when every call works on a session of its own — which is what
+    # `llm_family_runner(session_factory=...)` arranges. A fake runner sharing
+    # the caller's session, which is how every pipeline test is written, must
+    # still run one at a time, and defaulting to concurrent silently broke
+    # those: two coroutines inserting the same passage on one transaction,
+    # reported as a unique-constraint violation rather than as the race it was.
+    if concurrent_families and len(runnable) > 1:
+        attempts = await asyncio.gather(*(_attempt(f) for f in runnable))
+    else:
+        attempts = [await _attempt(f) for f in runnable]
+
+    # Recorded in plan order rather than completion order, so two runs of the
+    # same plan write the same rows and a difference between them means
+    # something happened rather than something finished first.
+    for family, outcome, exc in attempts:
+        if exc is not None:
             log.warning(
                 "pipeline.family_failed account=%s family=%s err=%s",
-                account.id, planned.family, exc,
+                account.id, family, exc,
             )
             reason = f"{type(exc).__name__}: {exc}"
-            result.failed_families[planned.family] = reason
+            result.failed_families[family] = reason
             await record_coverage(
                 session,
                 run_id=run.id,
                 account_id=account.id,
-                family=planned.family,
+                family=family,
                 evidence_count=0,
                 failed=reason,
             )
@@ -457,12 +527,12 @@ async def run_research(
             count, not_found, notes = outcome.stored, outcome.not_found, outcome.notes
         else:
             count, not_found, notes = int(outcome), (), ()
-        result.evidence_by_family[planned.family] = count
+        result.evidence_by_family[family] = count
         await record_coverage(
             session,
             run_id=run.id,
             account_id=account.id,
-            family=planned.family,
+            family=family,
             evidence_count=count,
             not_found=not_found,
             notes=notes,
@@ -904,8 +974,29 @@ def llm_sweep_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
     return run
 
 
-def llm_family_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
+def llm_family_runner(
+    session: AsyncSession,
+    *,
+    run_id: uuid.UUID | None = None,
+    session_factory: Any | None = None,
+):
     """The real runner: search a family, then store what it found.
+
+    **`session_factory` is what lets families run concurrently.** Measured on
+    one account, five independent `company_research` searches took 55.8s of a
+    79s run purely by waiting on each other. They cannot simply be gathered on
+    the caller's session, though: every one reads its stage config, permission
+    and API key through that session and then writes evidence back through it,
+    and `AsyncSession` is not safe for concurrent use — SQLAlchemy says so, and
+    said so here, with "Session.add() is not currently supported within the
+    execution stage of the flush process".
+
+    Given a factory, each call takes a session of its own for the whole of its
+    work and commits it. No two coroutines then share a connection, and the
+    caller's session is untouched until they have all finished.
+
+    Without one the behaviour is exactly as before, which is what keeps every
+    test that injects a fake runner — and the contact pass — working unchanged.
 
     `run_research` takes this as an argument rather than importing it, and that
     injection is the whole reason the pipeline is testable at all — the
@@ -924,94 +1015,114 @@ def llm_family_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None)
     """
 
     async def run(account: Account, family: str) -> FamilyOutcome:
-        # Imported here rather than at module scope: `stages` imports the
-        # Anthropic SDK, and the pipeline's own tests must keep importing
-        # without it.
-        from app.services import evidence as evidence_service
-        from app.services import sources as source_service
-        from app.services import stages
+        if session_factory is None:
+            return await _run_family(session, account, family, run_id=run_id)
+        # Its own session, its own transaction, committed here. Evidence is
+        # immutable and stands on its own, so a family that has found
+        # something has found it whether or not a later family fails.
+        async with session_factory() as own:
+            outcome = await _run_family(own, account, family, run_id=run_id)
+            await own.commit()
+            return outcome
 
-        # The registry, not the code constant: a source's kind is what decides
-        # whether this costs a model call or two HTTP requests, and the registry
-        # is where a person can see and change it.
-        known = (await source_service.by_key(session)).get(family)
-        if known is not None and known.kind == "fetch":
-            # Read rather than searched: no model call, and the passage is the
-            # company's own words with its own date. Each fetch source has its
-            # own reader — the feed is `site_sweep`, open roles are `job_boards`.
-            from app.services import job_boards, linkedin_serp, site_sweep
+    return run
 
-            # Keyed by the **registry** key. `c1f7e3b89d24` renamed
-            # `job_board` to `ats_boards` and this dict was not part of the
-            # rename, so the source went active with no reader and the next run
-            # that planned it would have raised. `tests/test_research_sources.py`
-            # now asserts every fetch source in the registry has one.
-            #
-            # `linkedin_index` is bound rather than named: it needs a stored
-            # credential and the source's own recency window, and resolving
-            # those here keeps every other reader's signature free of this
-            # one's requirements.
-            readers = {
-                "company_site": site_sweep.sweep_account,
-                "ats_boards": job_boards.sweep_account,
-                "linkedin_index": linkedin_serp.reader_for(session, known),
-            }
-            reader = readers.get(family)
-            if reader is None:
-                # Failed by name rather than handed to the wrong reader: a feed
-                # reader pointed at a job board reads a blog and calls it hiring.
-                raise RuntimeError(f"no reader for fetch source {family!r}")
-            swept = await reader(account)
-            notes = list(swept.notes)
-            found_page = getattr(swept, "linkedin_company", None)
-            if found_page and not getattr(account, "linkedin_url", None):
-                # The company's own homepage names its LinkedIn page, so this is
-                # the page LinkedIn searches identify it by from now on. Only
-                # when nothing is on record: a page a rep or an import set wins.
-                account.linkedin_url = found_page
-                notes.append(f"LinkedIn company page taken from its own homepage: {found_page}")
-            stored = await evidence_service.store_found(
-                session,
-                account_id=account.id,
-                batch=swept.batch,
-                run_id=run_id,
-                family=family,
-            )
-            log.info(
-                "pipeline.fetched account=%s family=%s stored=%d duplicate=%d stale=%d",
-                account.id, family, stored.count, stored.duplicates, stored.stale,
-            )
-            return FamilyOutcome(
-                stored=stored.count,
-                not_found=tuple(swept.misses),
-                notes=tuple(notes) + _stale_note(stored.stale),
-            )
 
-        brief = await search_brief(session, family)
-        if brief is not None:
-            result = await stages.research_topic(session, account=account, brief=brief)
-        else:
-            result = await stages.research_family(session, account=account, family=family)
-        batch, _ = keep_own_linkedin(
-            result.parsed, company_url=getattr(account, "linkedin_url", None)
-        )
-        outcome = await evidence_service.store_found(
+async def _run_family(
+    session: AsyncSession, account: Account, family: str, *, run_id: uuid.UUID | None
+) -> FamilyOutcome:
+    """One family against one session. The body `llm_family_runner` wraps.
+
+    Split out so the session it uses is an argument rather than a closure,
+    which is the whole mechanism behind running several at once.
+    """
+    # Imported here rather than at module scope: `stages` imports the
+    # Anthropic SDK, and the pipeline's own tests must keep importing
+    # without it.
+    from app.services import evidence as evidence_service
+    from app.services import sources as source_service
+    from app.services import stages
+
+    # The registry, not the code constant: a source's kind is what decides
+    # whether this costs a model call or two HTTP requests, and the registry
+    # is where a person can see and change it.
+    known = (await source_service.by_key(session)).get(family)
+    if known is not None and known.kind == "fetch":
+        # Read rather than searched: no model call, and the passage is the
+        # company's own words with its own date. Each fetch source has its
+        # own reader — the feed is `site_sweep`, open roles are `job_boards`.
+        from app.services import job_boards, linkedin_serp, site_sweep
+
+        # Keyed by the **registry** key. `c1f7e3b89d24` renamed
+        # `job_board` to `ats_boards` and this dict was not part of the
+        # rename, so the source went active with no reader and the next run
+        # that planned it would have raised. `tests/test_research_sources.py`
+        # now asserts every fetch source in the registry has one.
+        #
+        # `linkedin_index` is bound rather than named: it needs a stored
+        # credential and the source's own recency window, and resolving
+        # those here keeps every other reader's signature free of this
+        # one's requirements.
+        readers = {
+            "company_site": site_sweep.sweep_account,
+            "ats_boards": job_boards.sweep_account,
+            "linkedin_index": linkedin_serp.reader_for(session, known),
+        }
+        reader = readers.get(family)
+        if reader is None:
+            # Failed by name rather than handed to the wrong reader: a feed
+            # reader pointed at a job board reads a blog and calls it hiring.
+            raise RuntimeError(f"no reader for fetch source {family!r}")
+        swept = await reader(account)
+        notes = list(swept.notes)
+        found_page = getattr(swept, "linkedin_company", None)
+        if found_page and not getattr(account, "linkedin_url", None):
+            # The company's own homepage names its LinkedIn page, so this is
+            # the page LinkedIn searches identify it by from now on. Only
+            # when nothing is on record: a page a rep or an import set wins.
+            account.linkedin_url = found_page
+            notes.append(f"LinkedIn company page taken from its own homepage: {found_page}")
+        stored = await evidence_service.store_found(
             session,
             account_id=account.id,
-            batch=batch,
+            batch=swept.batch,
             run_id=run_id,
             family=family,
         )
         log.info(
-            "pipeline.family_done account=%s family=%s stored=%d duplicate=%d stale=%d "
-            "cache_read=%d",
-            account.id, family, outcome.count, outcome.duplicates, outcome.stale,
-            result.cache_read_tokens,
+            "pipeline.fetched account=%s family=%s stored=%d duplicate=%d stale=%d",
+            account.id, family, stored.count, stored.duplicates, stored.stale,
         )
         return FamilyOutcome(
-            stored=outcome.count,
-            not_found=tuple(batch.not_found),
-            notes=_stale_note(outcome.stale),
+            stored=stored.count,
+            not_found=tuple(swept.misses),
+            notes=tuple(notes) + _stale_note(stored.stale),
         )
 
-    return run
+    brief = await search_brief(session, family)
+    if brief is not None:
+        result = await stages.research_topic(session, account=account, brief=brief)
+    else:
+        result = await stages.research_family(session, account=account, family=family)
+    batch, _ = keep_own_linkedin(
+        result.parsed, company_url=getattr(account, "linkedin_url", None)
+    )
+    outcome = await evidence_service.store_found(
+        session,
+        account_id=account.id,
+        batch=batch,
+        run_id=run_id,
+        family=family,
+    )
+    log.info(
+        "pipeline.family_done account=%s family=%s stored=%d duplicate=%d stale=%d "
+        "cache_read=%d",
+        account.id, family, outcome.count, outcome.duplicates, outcome.stale,
+        result.cache_read_tokens,
+    )
+    return FamilyOutcome(
+        stored=outcome.count,
+        not_found=tuple(batch.not_found),
+        notes=_stale_note(outcome.stale),
+    )
+
