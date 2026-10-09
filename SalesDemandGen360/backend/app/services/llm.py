@@ -20,6 +20,7 @@ one fails silently when it is forgotten:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -252,6 +253,10 @@ async def _call_gemini[R: BaseModel](
     """
     from app.services import gemini
 
+    # Timed from the top so the number covers what the caller waited for,
+    # the quieter retry below included.
+    started = time.perf_counter()
+
     # Web stages arrive with `prefix.tools`. `gemini.call` turns them into
     # Google Search and refuses an answer it cannot show was searched — which
     # is what a web stage here used to return, confidently, from memory.
@@ -314,22 +319,30 @@ async def _call_gemini[R: BaseModel](
                 f"{second} (retried at {quieter} thinking after the first ran out of room)"
             ) from second
 
-    _log_usage(config, usage)
+    _log_usage(config, usage, time.perf_counter() - started)
     return CallResult(parsed=parsed, model=config.model, **usage)
 
 
-def _log_usage(config: StageConfig, usage: dict[str, int]) -> None:
+def _log_usage(
+    config: StageConfig, usage: dict[str, int], seconds: float | None = None
+) -> None:
     """One line, the same on every provider.
 
     A silent cache miss is the most expensive bug in the system and it is
     invisible without this — see the module docstring.
+
+    `seconds` is here because the same was true of time. A research run takes
+    two and a half minutes an account and nothing recorded where any of it
+    went, so "which call is slow" could be argued but not answered. Measuring
+    it costs one `perf_counter` per call.
     """
     log.info(
         "llm.call scenario=%s provider=%s model=%s effort=%s "
-        "in=%d out=%d cache_read=%d cache_write=%d",
+        "in=%d out=%d cache_read=%d cache_write=%d%s",
         config.scenario, config.provider, config.model, config.effort,
         usage["input_tokens"], usage["output_tokens"],
         usage["cache_read_tokens"], usage["cache_write_tokens"],
+        f" seconds={seconds:.1f}" if seconds is not None else "",
     )
     if usage["cache_read_tokens"] == 0 and usage["cache_write_tokens"] == 0:
         log.warning(
@@ -370,6 +383,9 @@ async def call_structured[R: BaseModel](
     translated and its output validated here — and every one of them returns
     the same `CallResult`, so nothing above this function knows which vendor
     ran.
+
+    Timed from here rather than inside each branch, so the number covers what
+    the caller actually waited for, retries included.
     """
     # Checked before the client is built, so a misconfigured provider is a
     # named error rather than a failed request against the wrong vendor.
@@ -388,6 +404,7 @@ async def call_structured[R: BaseModel](
         )
 
     client = client or _client(api_key)
+    started = time.perf_counter()
 
     request: dict[str, Any] = {
         "model": config.model,
@@ -421,7 +438,7 @@ async def call_structured[R: BaseModel](
 
     usage = _usage_of(response)
     # The one line that makes a silent cache miss visible. `docs/06 §5`.
-    _log_usage(config, usage)
+    _log_usage(config, usage, time.perf_counter() - started)
 
     return CallResult(
         parsed=response.parsed_output,
