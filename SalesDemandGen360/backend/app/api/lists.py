@@ -563,6 +563,11 @@ async def build_from_apollo(
             "Last Name": (c.full_name.split(" ", 1) + [""])[1],
             "Title": c.title or "",
             "Email": c.email or "",
+            # Apollo's own verdict, carried rather than assumed. Without it
+            # the importer marks every address rep-supplied and unverified —
+            # correct for a spreadsheet, and it made this feature produce
+            # contacts that cannot pass the send gate.
+            "Email Status": c.email_status or "",
             "Person Linkedin Url": c.linkedin_url or "",
         }
         for c in build.chosen
@@ -577,6 +582,9 @@ async def build_from_apollo(
         mapping=csv_import.suggest_mapping(list(rows[0].keys())),
         added_by="bertie",
         dry_run=False,
+        # These rows are provider output, not a rep's file: they were read
+        # from `contacts/search` moments ago and carry Apollo's verdict.
+        provider="apollo",
     )
     await session.commit()
     log.info(
@@ -588,7 +596,16 @@ async def build_from_apollo(
         funnel=asdict(build.funnel),
         note=build.note,
         list_id=new_list.id,
-        created=report.counts.get("created", 0),
+        # **`accounts_touched`, not `created` + `merged`.** Those two are
+        # *account-grain outcomes*, and this import is contact-grain — every
+        # row reports a contact outcome instead, so both are structurally
+        # zero and the build announced "0 accounts" for a list holding ten.
+        #
+        # §99 found and fixed exactly this on the import button, and it was
+        # written again here three days later. The counts dictionary makes it
+        # easy: `created` reads like the obvious field and is only correct on
+        # one of the two grains.
+        created=report.accounts_touched,
         merged=report.counts.get("merged", 0),
         contacts=report.counts.get("contact_created", 0)
         + report.counts.get("contact_updated", 0),

@@ -70,6 +70,12 @@ CONTACT_ALIASES: dict[str, tuple[str, ...]] = {
     "title": ("title", "job title", "position", "role", "designation",
               "job role", "job_title", "jobtitle"),
     "email": ("email", "email address", "work email", "e-mail"),
+    # Read **only** when the caller names a provider — see `_email_verdict`.
+    # On an ordinary CSV this column is a rep's assertion about an address,
+    # and trusting it would let a spreadsheet mark its own email verified and
+    # so skip the enrichment waterfall that would have checked it.
+    "email_status": ("email status", "email_status", "email confidence",
+                     "email state", "verification status"),
     # Apollo emits three, and a work number is the only one worth having:
     # a personal mobile is the wrong channel for cold B2B outreach, which
     # is why `apollo_people` never asks for one either.
@@ -283,6 +289,7 @@ async def run_import(
     mapping: dict[str, str | None],
     added_by: str,
     dry_run: bool,
+    provider: str | None = None,
 ) -> ImportReport:
     """Resolve every row against existing accounts and the target list.
 
@@ -348,7 +355,7 @@ async def run_import(
             account = accounts_by_key.get(key)
             result = await _upsert_contact(
                 session, account=account, row=row, cell=cell, row_number=i,
-                seen_people=seen_people, dry_run=dry_run,
+                seen_people=seen_people, dry_run=dry_run, provider=provider,
             )
             report.rows.append(result)
             _count_contact(report, result)
@@ -461,7 +468,7 @@ async def run_import(
         if grain == "contact":
             result = await _upsert_contact(
                 session, account=account, row=row, cell=cell, row_number=i,
-                seen_people=seen_people, dry_run=dry_run,
+                seen_people=seen_people, dry_run=dry_run, provider=provider,
             )
             result.name = name
             result.domain = domain
@@ -534,6 +541,36 @@ def _full_name(cell, row: dict[str, str]) -> str | None:
     return joined or None
 
 
+def _email_verdict(cell, row: dict[str, str], provider: str | None) -> tuple[str, str]:
+    """The address's standing, and who says so.
+
+    **`unverified` unless a named provider vouched for it.** A spreadsheet cell
+    is a rep's assertion: the enrichment waterfall skips a contact that already
+    has a verified email, so trusting one here means a wrong address is never
+    checked and the first thing that notices is a bounce.
+
+    `provider` is the opt-in that changes it, and only a caller that genuinely
+    has provider output passes it. The Apollo builder does — its rows are read
+    straight from `contacts/search`, carrying Apollo's own verdict — and
+    discarding that verdict made every contact it imported fail the send gate,
+    so a feature whose whole point was reachable people produced unreachable
+    ones.
+
+    The verdict is *carried, not assumed*: Apollo's `guessed` becomes `risky`
+    through the same `APOLLO_EMAIL_STATUS` map enrichment uses, and does not
+    satisfy the gate. An unrecognised value falls back to `unverified` rather
+    than being trusted.
+    """
+    if not provider:
+        return "unverified", "manual"
+    said = (cell(row, "email_status") or "").strip().lower()
+    if provider == "apollo":
+        from app.services.enrichment_clients import APOLLO_EMAIL_STATUS
+
+        return APOLLO_EMAIL_STATUS.get(said, "unverified"), provider
+    return ("verified" if said == "verified" else "unverified"), provider
+
+
 async def _upsert_contact(
     session: AsyncSession,
     *,
@@ -543,6 +580,7 @@ async def _upsert_contact(
     row_number: int,
     seen_people: dict[str, int],
     dry_run: bool,
+    provider: str | None = None,
 ) -> RowResult:
     """Write one person against an already-resolved account.
 
@@ -601,6 +639,7 @@ async def _upsert_contact(
     linkedin = _person_linkedin(cell(row, "contact_linkedin_url"))
     phone = cell(row, "phone")
 
+    status, source = _email_verdict(cell, row, provider)
     if existing is None:
         session.add(
             Contact(
@@ -610,9 +649,8 @@ async def _upsert_contact(
                 email=email,
                 phone=phone,
                 linkedin_url=linkedin,
-                # Rep-supplied, and unproven until a provider says otherwise.
-                email_status="unverified" if email else "unverified",
-                email_provider="manual" if email else None,
+                email_status=status,
+                email_provider=source if email else None,
                 phone_status="unverified",
                 phone_provider="manual" if phone else None,
             )
@@ -638,9 +676,30 @@ async def _upsert_contact(
         filled.append("phone")
     if email and not existing.email:
         existing.email = email
-        existing.email_status = "unverified"
-        existing.email_provider = "manual"
+        existing.email_status = status
+        existing.email_provider = source
         filled.append("email")
+    elif (
+        provider
+        and email
+        and existing.email
+        and email.lower() == (existing.email or "").lower()
+        and existing.email_provider in (None, "manual")
+    ):
+        # **A provider upgrading what only a rep had asserted.** The gap-fill
+        # rule above exists to stop a spreadsheet overwriting a checked
+        # address; this is the other direction, and refusing it left contacts
+        # stuck `unverified` on an address Apollo had just confirmed — ten
+        # imported, eight verified, two left unreachable purely because an
+        # earlier import had seen them first.
+        #
+        # Narrow on purpose: the same address, and only where nothing but a
+        # rep had vouched for it. A verdict already from a provider is left
+        # alone rather than being re-decided by whichever ran last.
+        if status != existing.email_status:
+            existing.email_status = status
+            filled.append(f"email {status} by {source}")
+        existing.email_provider = source
 
     return RowResult(
         row_number, None, None, "contact_updated",

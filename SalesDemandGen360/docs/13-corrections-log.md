@@ -4845,3 +4845,68 @@ and only both failing is a refusal.
 Front end 377 pass (10 new); `ng build` exit 0.
 
 `lists/apollo-builder.component.ts`, `lists/apollo-builder.component.spec.ts` (new).
+
+## §107 — The build worked, and then said and stored the wrong things (2026-10-08)
+
+Pressing **Create the list** returned `500 Internal Server Error`. Three faults behind it, each
+hidden by the one in front.
+
+### 1 · The database refused the source
+
+```
+new row for relation "account_list" violates check constraint ck_account_list_source_valid
+DETAIL: ... source = 'apollo'
+```
+
+`account_list.source` allowed `csv`, `manual` and `crm`. A list built from a data provider's stored
+contacts is none of those, so migration `e7a4c91b35d8` adds `apollo` rather than writing `csv` and
+moving on — the column exists to record where a list came from, and every list built this way would
+otherwise have claimed to be a file that never existed.
+
+The migration itself needed two goes: `op.drop_constraint(NAME, ...)` sent
+`ck_account_list_ck_account_list_source_valid`, because the metadata naming convention prefixes a
+name that is not wrapped in `op.f()`. The original migration used `op.f` for exactly this reason.
+
+### 2 · It reported "0 accounts" for a list holding ten
+
+`created` and `merged` are **account-grain outcomes**, and this import is contact-grain: every row
+reports a contact outcome, so both are structurally zero. `accounts_touched` is the field that is
+right on either grain.
+
+**§99 found and fixed precisely this on the import button, and it was written again here three days
+later.** `counts['created']` reads like the obvious field and is correct on only one of the two
+grains, which is the kind of mistake that will keep recurring until the name stops inviting it.
+
+### 3 · Every imported contact was unreachable — the one that mattered
+
+`csv_import` hard-codes `email_status="unverified"`, `email_provider="manual"`, and it is right to:
+a spreadsheet cell is a rep's assertion, the enrichment waterfall skips a contact that already has a
+verified address, and trusting one means a wrong address is never checked until it bounces.
+
+But these rows are **provider output**, read from `contacts/search` moments earlier and carrying
+Apollo's own verdict. Discarding it meant a feature whose entire premise was *free, reachable
+contacts* produced contacts that fail the send gate. The first build: 100 contacts, **0 verified**.
+
+`_email_verdict` adds an opt-in the caller must name. Default behaviour is unchanged — no provider,
+no trust — and `provider="apollo"` carries the verdict through the same `APOLLO_EMAIL_STATUS` map
+enrichment already uses, so `guessed` becomes `risky` and still does not satisfy the gate. An
+unrecognised status falls back to `unverified` rather than being believed.
+
+That left **8 of 10** verified. The two stragglers were people an earlier import had already
+created, so they took the gap-fill path, which refuses to overwrite — correctly, since that rule
+stops a spreadsheet downgrading a checked address. A provider *upgrading* an address only a rep had
+asserted is the other direction, and is now allowed: same address, and only where
+`email_provider` is `manual` or unset. A verdict already from a provider is left alone rather than
+being re-decided by whichever import ran last.
+
+### On a test that failed for the wrong reason
+
+`test_the_importer_writes_the_state_this_pass_looks_for` asserted
+`'email_status="unverified"' in inspect.getsource(...)`. The refactor turned that literal into a
+variable and the test broke while the behaviour it cares about was untouched. A test that fails on a
+refactor and passes on a regression is checking the wrong thing; it now asserts the verdict.
+
+Backend 1,881 pass.
+
+`alembic/e7a4c91b35d8` (new), `services/csv_import.py`, `api/lists.py`,
+`tests/test_contact_import.py` (+9), `tests/test_verification.py`.

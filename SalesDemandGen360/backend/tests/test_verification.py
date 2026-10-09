@@ -848,14 +848,41 @@ class TestImportedContactsAreEligible:
     them and the first thing to notice a wrong address would be a bounce.
     """
 
-    def test_the_importer_writes_the_state_this_pass_looks_for(self):
-        import inspect
-
+    def _verdict(self, row, provider=None):
         from app.services import csv_import
 
-        source = inspect.getsource(csv_import._upsert_contact)
-        assert 'email_status="unverified"' in source
-        assert 'email_provider="manual"' in source
+        mapping = csv_import.suggest_mapping(list(row.keys()))
+
+        def cell(r, field):
+            header = mapping.get(field)
+            return (r.get(header) or "").strip() if header else None
+
+        return csv_import._email_verdict(cell, row, provider)
+
+    def test_the_importer_writes_the_state_this_pass_looks_for(self):
+        """Asserted on the verdict rather than on the source text.
+
+        This read `'email_status="unverified"' in inspect.getsource(...)` and
+        broke the moment that literal became a variable — while the behaviour
+        it cares about was unchanged. A test that fails on a refactor and
+        passes on a regression is checking the wrong thing.
+        """
+        assert self._verdict({"Email": "a@x.test"}) == ("unverified", "manual")
+
+    def test_a_spreadsheet_claiming_verified_is_still_unverified(self):
+        """The substance: if the importer trusted the cell, the waterfall
+        would skip the contact and a bounce would be the first thing to
+        notice a wrong address."""
+        assert self._verdict(
+            {"Email": "a@x.test", "Email Status": "verified"}
+        ) == ("unverified", "manual")
+
+    def test_a_named_provider_is_the_one_exception(self):
+        """Apollo's rows carry Apollo's own verdict, and that is carried
+        rather than re-asserted — see `csv_import._email_verdict`."""
+        assert self._verdict(
+            {"Email": "a@x.test", "Email Status": "verified"}, provider="apollo"
+        ) == ("verified", "apollo")
 
 
 class _Account:

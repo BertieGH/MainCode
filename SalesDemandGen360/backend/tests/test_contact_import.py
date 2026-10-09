@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services import csv_import
 from app.services.csv_import import (
     ACCOUNT_ALIASES,
     CONTACT_ALIASES,
@@ -564,3 +565,155 @@ class TestReimportingRefreshesTheHeadcount:
         at = body.index("sizing.record_headcount", body.index("sizing.record_headcount") + 1)
         window = body[max(0, at - 400):at]
         assert "if not dry_run:" in window
+
+
+class TestWhoVouchedForAnAddress:
+    """`unverified` unless a named provider said otherwise.
+
+    A spreadsheet cell is a rep's assertion. The enrichment waterfall skips a
+    contact that already has a verified email, so trusting one would mean a
+    wrong address is never checked and the first thing that notices is a
+    bounce. But rows read straight from Apollo *are* provider output, and
+    discarding Apollo's verdict made every contact the Apollo builder imported
+    fail the send gate — a feature for reachable people producing unreachable
+    ones.
+    """
+
+    def _cell(self, mapping):
+        def cell(row, field):
+            header = mapping.get(field)
+            return (row.get(header) or "").strip() if header else None
+        return cell
+
+    def _verdict(self, row, provider):
+        mapping = suggest_mapping(list(row.keys()))
+        return csv_import._email_verdict(self._cell(mapping), row, provider)
+
+    def test_a_spreadsheet_cannot_vouch_for_itself(self):
+        row = {"Email": "a@x.test", "Email Status": "verified"}
+        assert self._verdict(row, None) == ("unverified", "manual")
+
+    def test_apollos_verified_is_carried(self):
+        row = {"Email": "a@x.test", "Email Status": "verified"}
+        assert self._verdict(row, "apollo") == ("verified", "apollo")
+
+    def test_apollos_guess_becomes_risky(self):
+        """Apollo pattern-matches a company's address format onto a name and
+        returns it beside addresses it has confirmed. A guess must not satisfy
+        the gate — the cost of a wrong one lands on the sending domain."""
+        row = {"Email": "a@x.test", "Email Status": "guessed"}
+        assert self._verdict(row, "apollo") == ("risky", "apollo")
+
+    def test_an_unavailable_address_is_invalid(self):
+        row = {"Email": "a@x.test", "Email Status": "unavailable"}
+        assert self._verdict(row, "apollo") == ("invalid", "apollo")
+
+    def test_a_status_apollo_never_sends_is_not_trusted(self):
+        row = {"Email": "a@x.test", "Email Status": "definitely-fine"}
+        assert self._verdict(row, "apollo") == ("unverified", "apollo")
+
+    def test_no_status_column_is_not_a_verdict(self):
+        row = {"Email": "a@x.test"}
+        assert self._verdict(row, "apollo") == ("unverified", "apollo")
+
+
+class TestAProviderUpgradingWhatARepAsserted:
+    """The gap-fill rule stops a spreadsheet overwriting a checked address.
+    This is the other direction, and refusing it left real contacts stuck.
+
+    Measured: a ten-contact Apollo build came back eight verified and two
+    `unverified`, the two being people an earlier import had already created
+    from a plain CSV. Apollo had just confirmed both addresses.
+    """
+
+    HEADERS = ["Company", "Website", "First Name", "Last Name", "Title", "Email",
+               "Email Status"]
+
+    def _row(self, status="", who="dana"):
+        # A domain per test. These share a database with every other test in
+        # the file, and an account is resolved by domain — reusing one let a
+        # contact from the previous test answer this one's question.
+        return {
+            "Company": f"Northwind {who}", "Website": f"{who}.northwind.example",
+            "First Name": "Dana", "Last Name": "Reyes", "Title": "CTO",
+            "Email": f"{who}@northwind.example", "Email Status": status,
+        }
+
+    async def _run(self, session, list_id, rows, provider=None):
+        from app.services.csv_import import run_import, suggest_mapping
+
+        return await run_import(
+            session, list_id=list_id, rows=rows,
+            mapping=suggest_mapping(self.HEADERS), added_by="tests",
+            dry_run=False, provider=provider,
+        )
+
+    @pytest.fixture
+    async def session_and_list(self):
+        import os
+        import uuid as _uuid
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        from app.models.account import AccountList
+
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        maker = async_sessionmaker(engine, expire_on_commit=False)
+        async with maker() as session:
+            row = AccountList(
+                label=f"verdict-{_uuid.uuid4().hex[:6]}", source="csv", created_by="tests"
+            )
+            session.add(row)
+            await session.flush()
+            yield session, row.id
+            await session.rollback()
+        await engine.dispose()
+
+    async def _status(self, session, list_id):
+        from sqlalchemy import select
+
+        from app.models.account import Account, AccountListMember, Contact
+
+        row = (
+            await session.execute(
+                select(Contact.email_status, Contact.email_provider)
+                .join(Account, Account.id == Contact.account_id)
+                .join(AccountListMember, AccountListMember.account_id == Account.id)
+                .where(AccountListMember.list_id == list_id)
+            )
+        ).first()
+        return row
+
+    async def test_a_csv_import_then_an_apollo_one_upgrades_the_address(
+        self, session_and_list
+    ):
+        session, list_id = session_and_list
+        await self._run(session, list_id, [self._row(who="upgrade")])
+        assert await self._status(session, list_id) == ("unverified", "manual")
+
+        await self._run(
+            session, list_id, [self._row("verified", who="upgrade")], provider="apollo"
+        )
+        assert await self._status(session, list_id) == ("verified", "apollo")
+
+    async def test_a_second_csv_cannot_upgrade_it(self, session_and_list):
+        """The rule this must not weaken: a spreadsheet claiming `verified`
+        about an address nobody checked is still just a rep's assertion."""
+        session, list_id = session_and_list
+        await self._run(session, list_id, [self._row(who="csvonly")])
+        await self._run(session, list_id, [self._row("verified", who="csvonly")])
+        assert await self._status(session, list_id) == ("unverified", "manual")
+
+    async def test_a_provider_verdict_is_not_re_decided_by_the_next_one(
+        self, session_and_list
+    ):
+        """Once a provider has vouched, a later import does not overturn it —
+        otherwise the standing of an address depends on whichever ran last."""
+        session, list_id = session_and_list
+        await self._run(
+            session, list_id, [self._row("verified", who="settled")], provider="apollo"
+        )
+        await self._run(
+            session, list_id, [self._row("guessed", who="settled")], provider="apollo"
+        )
+        assert await self._status(session, list_id) == ("verified", "apollo")
