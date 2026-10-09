@@ -151,3 +151,55 @@ produced a signal for KORE Power from a **Lead Controls Engineer** advert, found
 which is the argument for a waterfall rather than for more of the same reader.
 
 Deliberately unsequenced. It is behind everything in A–F and the owner said so.
+
+---
+
+## H · Research families, run concurrently — **measured as worth doing, and harder than it looks** (2026-10-09)
+
+Measured on one account, with the per-call timing added the same day:
+
+```
+signal_scan           13.5s    in=4,146    out=626
+company_research      13.8s    in=2,491    out=530     ┐
+company_research      14.1s    in=2,894    out=317     │
+company_research       8.6s    in=2,191    out=251     │  55.8s, one after another
+company_research      10.5s    in=4,499    out=319     │
+company_research       8.8s    in=2,455    out=271     ┘
+signal_extraction      6.0s    in=10,751   out=691
+
+7 calls · 75.3s of model time · 79s wall clock
+```
+
+So **95% of an account's wall time is model calls**, and **55.8s of the 79s is five independent
+searches queued behind each other**. Concurrently they would cost the slowest — about 14 seconds —
+taking the account to roughly **37s, a 53% cut at identical spend**.
+
+### Why the obvious version does not work
+
+`asyncio.gather` over the family loop was written, and reverted the same hour. `llm_family_runner`
+does not just search: its own docstring says "search a family, **then store what it found**". The
+coroutines therefore write evidence through the shared `AsyncSession`, and that is not safe for
+concurrent use — SQLAlchemy says so itself, and said so here:
+
+> `Session.add()` is not currently supported within the execution stage of the flush process
+
+with one coverage test failing beside it. Interleaving statements from several coroutines on one
+connection corrupts it, and a passing test suite would only have meant the race had not lost yet.
+
+### The shape that would work
+
+Split the runner's two jobs. `run_family` returns what it **found**; the pipeline stores it in the
+sequential pass that already exists for coverage rows. Searching at once does not require writing at
+once, and the writes are microseconds beside a fourteen-second search.
+
+That is a change to the injected-runner seam — the contact pass and the tests use the same contract
+— so it is a deliberate piece of work rather than a loop rewrite.
+
+**Not** on the table: running *accounts* concurrently. The route's docstring explains why, and it
+still holds — a mistake should cost one account's spend, not fifty. This is about families inside
+one account.
+
+### What it is worth
+
+At 1,000 accounts a week the saving is time, not money: identical calls, identical spend. 79s → 37s
+per account is roughly 11 hours a week of wall clock on a sequential run.
