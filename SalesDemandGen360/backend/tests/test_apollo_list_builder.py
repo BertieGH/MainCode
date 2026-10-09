@@ -193,3 +193,62 @@ class TestTheNoteTellsTwoDifferentShortfallsApart:
         build = alb.choose(self._some(3), per_company=2, limit=100)
         note = alb._note(build, limit=100, per_company=2, exhausted=False)
         assert "contacts read" in note and "Narrowing" in note
+
+
+class TestApolloCuttingUsOff:
+    """A rate limit thirty pages in must not throw away the twenty-nine.
+
+    Live, a deep read tripped Apollo's per-minute limit most of the way
+    through and the whole request failed with a 500 — the screen said
+    "Internal Server Error" for work that had very nearly finished. The same
+    reasoning as `OutOfCredits` applies: keep what came back, and say that the
+    read was cut short.
+    """
+
+    class _Client:
+        """Answers `pages` pages, then raises Apollo's rate limit."""
+
+        def __init__(self, pages: int):
+            self.pages = pages
+            self.calls = 0
+
+        async def _post(self, path, body=None, params=None):
+            from app.services.providers import ProviderError
+
+            if "contacts/search" not in path:
+                return {"pagination": {"total_entries": 0}}
+            self.calls += 1
+            if self.calls > self.pages:
+                raise ProviderError("Apollo rate limit reached — try again in a few minutes")
+            n = self.calls
+            return {"contacts": [
+                row(f"ceo{n}", "Chief Executive Officer", f"Co{n}", f"co{n}.test"),
+                row(f"cto{n}", "Chief Technology Officer", f"Co{n}", f"co{n}.test"),
+            ]}
+
+    async def test_what_was_read_survives_the_limit(self):
+        client = self._Client(pages=3)
+        build = await alb.gather(
+            client, size_bands=("51-200",), verified_only=True,
+            personas=("economic buyer", "technical buyer"), per_company=2, limit=100,
+        )
+        assert len(build.chosen) == 6, "three pages of a pair each"
+        assert "rate limit" in build.note
+        assert "Wait a minute" in build.note
+
+    async def test_a_different_provider_error_is_not_swallowed(self):
+        """Only a rate limit is partial. A rejected key is not a reason to
+        return half a list as though it were a result."""
+        import pytest
+
+        from app.services.providers import ProviderError
+
+        class Rejecting(self._Client.__mro__[0]):
+            async def _post(self, path, body=None, params=None):
+                raise ProviderError("Apollo rejected this key")
+
+        with pytest.raises(ProviderError):
+            await alb.gather(
+                Rejecting(pages=0), size_bands=(), verified_only=True,
+                personas=("economic buyer",), per_company=1, limit=10,
+            )

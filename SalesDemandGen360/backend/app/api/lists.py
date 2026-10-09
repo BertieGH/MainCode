@@ -21,6 +21,7 @@ from app.api.deps import (
     validate_sort,
 )
 from app.database import get_session
+from app.services.providers import ProviderError
 from app.models.account import (
     Account,
     Contact,
@@ -477,12 +478,19 @@ async def preview_from_apollo(
                 ran=False,
                 blocked="No Apollo key is configured, so there are no saved contacts to read.",
             )
-        funnel = await builder.counts(
-            client,
-            size_bands=tuple(payload.size_bands),
-            verified_only=payload.verified_only,
-            industries=tuple(payload.industries),
-        )
+        try:
+            funnel = await builder.counts(
+                client,
+                size_bands=tuple(payload.size_bands),
+                verified_only=payload.verified_only,
+                industries=tuple(payload.industries),
+            )
+        except ProviderError as exc:
+            # Apollo being busy is an answer about Apollo, not a fault in this
+            # request. Left to propagate it reached the screen as "Internal
+            # Server Error", which says nothing anybody can act on — where
+            # "rate limit reached, try again in a few minutes" is a next step.
+            return ApolloBuildOut(ran=False, blocked=str(exc))
         return ApolloBuildOut(
             ran=True,
             funnel=asdict(funnel),
@@ -490,7 +498,10 @@ async def preview_from_apollo(
                  f"companies can field every persona.",
         )
 
-    build, blocked = await _apollo_candidates(session, payload)
+    try:
+        build, blocked = await _apollo_candidates(session, payload)
+    except ProviderError as exc:
+        return ApolloBuildOut(ran=False, blocked=str(exc))
     if build is None:
         return ApolloBuildOut(ran=False, blocked=blocked)
     return ApolloBuildOut(
@@ -528,7 +539,10 @@ async def build_from_apollo(
     """
     from app.services import csv_import
 
-    build, blocked = await _apollo_candidates(session, payload)
+    try:
+        build, blocked = await _apollo_candidates(session, payload)
+    except ProviderError as exc:
+        return ApolloBuildOut(ran=False, blocked=str(exc))
     if build is None:
         return ApolloBuildOut(ran=False, blocked=blocked)
     if not build.chosen:

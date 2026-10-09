@@ -4767,3 +4767,47 @@ Backend 20 builder tests pass. Front end 367 pass; `ng build` exit 0.
 
 `services/apollo_list_builder.py`, `api/lists.py`, `core/lists.service.ts`,
 `lists/apollo-builder.component.ts`.
+
+## §105 — A rate limit became "Internal Server Error" (2026-10-08)
+
+The deep preview failed on screen with **Internal Server Error**. The cause, from the traceback:
+Apollo's per-minute rate limit, hit partway through the page read.
+
+Three separate faults, and only one of them is Apollo's.
+
+**1 · The error said nothing.** `apollo_people._post` raises a clear
+`ProviderError("Apollo rate limit reached — try again in a few minutes")`, and the route let it
+propagate, so FastAPI turned a sentence a rep could act on into five words they cannot. Both preview
+routes and the build route now catch it and answer `ran: false, blocked: <the message>` — the same
+shape already used for a missing key. Apollo being busy is a fact about Apollo, not a fault in the
+request.
+
+**2 · It threw away the work.** `gather` had read most of the pages before the limit struck and
+discarded all of them. It now keeps what came back and says the read was cut short:
+
+> *23 contacts at 11 companies — Apollo's rate limit stopped the read after 1,200 contacts. Wait a
+> minute and check again.*
+
+That is a **third** kind of shortfall, distinct from the two §103 already separated: not that the
+filters are narrow, nor that the read stopped by choice, but that Apollo stopped it. The advice is
+to wait rather than to change anything, and a note that said otherwise would send a rep to widen
+filters that are fine. Only a rate limit is treated this way — a rejected key still raises, because
+half a list returned as though it were a result is worse than an error.
+
+**3 · We were provoking it.** The loop issued up to forty requests as fast as the event loop could
+manage them. `PAGE_PAUSE` of a tenth of a second keeps the rate under ten a second, costs four
+seconds across a full read, and is the difference between asking Apollo for forty pages and
+hammering it.
+
+Verified live, after the window cleared: 13,549 in band, 1,600 read, 51 companies with both
+personas, 102 available for a 100 ask, 28 seconds, HTTP 200.
+
+### On the fix for the fix
+
+The first attempt added the `except` clauses and not the import, so the first request after it died
+on `NameError: name 'ProviderError' is not defined` — a 500 produced by the code meant to stop 500s.
+A `perl` substitution had matched nothing and reported success, which is its habit.
+
+Backend 1,870 pass.
+
+`services/apollo_list_builder.py`, `api/lists.py`, `tests/test_apollo_list_builder.py` (+2).

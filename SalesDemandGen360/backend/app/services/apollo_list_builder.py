@@ -28,9 +28,12 @@ buyer and a technical buyer — it is the same conversation twice.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
+
+from app.services.providers import ProviderError
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +78,15 @@ MAX_PAGES = 40
 #: Pages read before checking whether there is enough yet. Small enough that
 #: a short ask stops early, large enough not to re-run the grouping per page.
 CHUNK = 4
+
+#: Breathing room between pages.
+#:
+#: Apollo's limits are per minute, and forty requests as fast as the event loop
+#: can issue them trips them — measured, as a 429 in the middle of a deep read
+#: that had already done most of the work. A tenth of a second costs four
+#: seconds across a full read and keeps the rate under ten a second, which is
+#: roughly what the limit exists to stop.
+PAGE_PAUSE = 0.1
 
 #: Apollo's industry names, **in this account's order of volume**, and only
 #: names verified to return something here.
@@ -368,23 +380,39 @@ async def gather(client, *, size_bands: tuple[str, ...], verified_only: bool,
     rows: list[dict] = []
     build = Build()
     exhausted = False
+    limited = False
     page = 1
-    while page <= MAX_PAGES:
+    while page <= MAX_PAGES and not limited:
         for _ in range(CHUNK):
             if page > MAX_PAGES:
                 break
-            payload = await client._post(CONTACTS_SEARCH_PATH, body={**body, "page": page})
+            try:
+                payload = await client._post(CONTACTS_SEARCH_PATH, body={**body, "page": page})
+            except ProviderError as exc:
+                # **Keep what was read.** A rate limit thirty pages in is not a
+                # reason to discard the twenty-nine that worked — the same
+                # reasoning as `OutOfCredits` carrying everything revealed
+                # before it. The note then says the read was cut short, so a
+                # short answer is not mistaken for a complete one.
+                if "rate limit" not in str(exc).lower():
+                    raise
+                log.info("apollo_list_builder.rate_limited page=%d rows=%d", page, len(rows))
+                limited = True
+                break
             got = (payload or {}).get("contacts") or []
             page += 1
             if not got:
                 exhausted = True
                 break
             rows.extend(got)
+            await asyncio.sleep(PAGE_PAUSE)
         build = choose(rows, personas=personas, per_company=per_company, limit=limit)
         if exhausted or build.funnel.available >= limit:
             break
 
-    build.note = _note(build, limit=limit, per_company=per_company, exhausted=exhausted)
+    build.note = _note(
+        build, limit=limit, per_company=per_company, exhausted=exhausted, limited=limited
+    )
     log.info(
         "apollo_list_builder.gathered read=%d usable=%d available=%d exhausted=%s",
         len(rows), build.funnel.usable_companies, build.funnel.available, exhausted,
@@ -392,9 +420,18 @@ async def gather(client, *, size_bands: tuple[str, ...], verified_only: bool,
     return build
 
 
-def _note(build: Build, *, limit: int, per_company: int, exhausted: bool) -> str:
+def _note(build: Build, *, limit: int, per_company: int, exhausted: bool,
+          limited: bool = False) -> str:
     taken = len(build.chosen)
     companies = taken // max(per_company, 1)
+    if limited and taken < limit:
+        # A third shortfall, distinct from the other two: not that the filters
+        # are narrow, nor that we stopped early by choice, but that Apollo cut
+        # us off. The advice is to wait, not to change anything.
+        return (
+            f"{taken} contacts at {companies} companies — Apollo's rate limit stopped the "
+            f"read after {build.funnel.read:,} contacts. Wait a minute and check again."
+        )
     if taken >= limit:
         return f"{taken} contacts at {companies} companies"
     if exhausted:
