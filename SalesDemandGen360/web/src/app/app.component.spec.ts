@@ -110,15 +110,19 @@ describe('AppComponent', () => {
   it('links only the sections that exist', () => {
     settle(READY);
     const linked = cmp.nav.filter((n) => n.path).map((n) => n.label);
-    expect(linked).toEqual(['Account Lists', 'Campaign Queues', 'Outreach']);
+    expect(linked).toEqual(['Account Lists', 'Campaign Queues', 'Outreach', 'Sales Prep']);
   });
 
-  it('leaves Dashboard, Sales Prep and Learning inert', () => {
+  it('leaves Dashboard and Learning inert', () => {
     settle(READY);
-    // Their backing tables do not exist yet (Phases 12 and 13 are held), and a
-    // link to an empty screen reads as broken rather than as unbuilt.
+    // Their backing tables do not exist yet, and a link to an empty screen
+    // reads as broken rather than as unbuilt.
+    //
+    // Sales Prep left this list when /prep shipped. Its queue is still empty —
+    // that waits on outreach events — but the search path works and the screen
+    // says why the queue cannot fill, which is the opposite of looking broken.
     const unlinked = cmp.nav.filter((n) => !n.path).map((n) => n.label);
-    expect(unlinked).toEqual(['Dashboard', 'Sales Prep', 'Learning']);
+    expect(unlinked).toEqual(['Dashboard', 'Learning']);
   });
 
   it('renders unbuilt sections as inert spans, not dead links', () => {

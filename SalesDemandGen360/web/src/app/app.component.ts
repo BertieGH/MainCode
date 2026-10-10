@@ -60,7 +60,7 @@ export class AppComponent implements OnInit {
     { label: 'Account Lists', path: '/lists', gated: true },
     { label: 'Campaign Queues', path: '/queues', gated: true },
     { label: 'Outreach', path: '/campaigns', gated: true },
-    { label: 'Sales Prep', path: null, gated: false },
+    { label: 'Sales Prep', path: '/prep', gated: true },
     { label: 'Learning', path: null, gated: false },
   ];
 

@@ -36,6 +36,15 @@ export const routes: Routes = [
       import('./campaigns/campaign-detail.component').then((m) => m.CampaignDetailComponent),
   },
   {
+    path: 'prep',
+    loadComponent: () => import('./prep/prep.component').then((m) => m.PrepComponent),
+  },
+  {
+    path: 'prep/:id',
+    loadComponent: () =>
+      import('./prep/prep-detail.component').then((m) => m.PrepDetailComponent),
+  },
+  {
     path: 'settings',
     children: [
       { path: '', redirectTo: 'setup', pathMatch: 'full' },
