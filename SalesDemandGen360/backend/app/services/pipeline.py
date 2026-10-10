@@ -654,6 +654,22 @@ async def run_research(
     # The account says where its research stands. Without this the list read
     # `not_started` beside a report saying the account had just been researched.
     account.research_status = result.status
+    # **And when, which is a different question.** The column was declared
+    # beside `research_status` and never written — null on all 76 accounts,
+    # including ones researched minutes earlier — so nothing could say how old
+    # an account's picture was. Sales prep opens with research age, and a brief
+    # built on a stale picture is worse than no brief, so the age has to be
+    # answerable.
+    #
+    # Written on every outcome, failure included: "we looked, and it failed" is
+    # a different state from "nobody has looked", and only this distinguishes
+    # them. `research_status` carries which of the two it was.
+    #
+    # This is when we last *looked*. How fresh what we *found* is, is a
+    # separate question answered from the signals themselves, and conflating
+    # the two is how a one-day-old run gets read as a one-day-old picture when
+    # its newest signal is nine months old.
+    account.research_completed_at = datetime.now(UTC)
     if result.status == "failed":
         run.status = "failed"
         run.error = next(iter(result.failed_families.values()))

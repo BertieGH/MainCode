@@ -991,3 +991,78 @@ class TestARateLimitIsCarriedNotSwallowed:
         )
         assert result.failed_families
         assert not result.rate_limited, "a plain failure must not stop a list run"
+
+
+async def _research_completed_at(session, account):
+    return (
+        await session.execute(
+            select(Account.research_completed_at).where(Account.id == account.id)
+        )
+    ).scalar_one()
+
+
+@requires_db
+class TestTheAccountRecordsWhenItWasLastLookedAt:
+    """`research_completed_at` was declared beside `research_status` and never
+    written — null on all 76 accounts, including ones researched minutes
+    earlier.
+
+    Sales prep opens on research age, and a confident brief built on a stale
+    picture is worse than no brief, so "how old is this account's picture"
+    has to be answerable at all.
+    """
+
+    async def test_a_successful_run_stamps_it(self, session, account):
+        from datetime import UTC, datetime
+
+        before = datetime.now(UTC)
+        await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=Recorder({"funding": 1}),
+        )
+        stamped = await _research_completed_at(session, account)
+        assert stamped is not None, "researched, and still says nobody has looked"
+        assert stamped >= before
+
+    async def test_a_failed_run_stamps_it_too(self, session, account):
+        """"We looked and it failed" is not "nobody has looked".
+
+        Only the timestamp separates them, and a rep deciding whether to spend
+        another run needs to know which one they are looking at.
+        `research_status` carries the verdict; this carries the when.
+        """
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=Recorder(explode={"funding", "hiring", "news"}),
+        )
+        assert result.status == "failed"
+        assert await _research_completed_at(session, account) is not None
+        assert await _research_status(session, account) == "failed"
+
+    async def test_it_is_when_we_looked_not_how_fresh_what_we_found_is(
+        self, session, account
+    ):
+        """The two must not be conflated.
+
+        A run today over signals from nine months ago is a one-day-old *look*
+        at a nine-month-old *picture*. Reporting one number for both is how the
+        prep screen would claim freshness it does not have — which is why the
+        design shows research age and signal age separately.
+        """
+        await run_research(
+            session, account=account, crm=StubCrmAdapter(),
+            run_family=Recorder({"funding": 1}),
+        )
+        from app.models.signal import Evidence
+
+        looked = await _research_completed_at(session, account)
+        rows = (
+            await session.execute(
+                select(Evidence.observed_at).where(Evidence.account_id == account.id)
+            )
+        ).scalars().all()
+        # Nothing here derives the look-time from the evidence, which is the
+        # point: an account whose families all came back empty still has a
+        # look-time, and would have no evidence to derive one from.
+        assert looked is not None
+        assert looked.date() >= max((d for d in rows if d), default=looked.date())

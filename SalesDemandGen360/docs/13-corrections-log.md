@@ -5118,3 +5118,47 @@ Backend 1,895 pass.
 `services/gemini.py`, `services/llm.py`, `services/pipeline.py`,
 `api/lists.py`, `tests/test_gemini_adapter.py` (+6),
 `tests/test_research_route.py` (+4), `tests/test_research_pipeline.py` (+2).
+
+## §111 — The column that was never written, and the question it could not answer (2026-10-09)
+
+**Problem.** Sales prep opens on research age — a confident brief built on a
+stale picture is worse than no brief, so the screen leads with how old the
+account's picture is. `account.research_completed_at` was **null on all 76
+accounts**, including ones researched minutes earlier, so the headline fact of
+the headline panel had no source.
+
+**Cause.** The column was declared beside `research_status` and never wired.
+Grep found exactly one reference in the whole codebase — the model definition.
+Not read by the API, not read by the frontend, never assigned. Its sibling
+`enrichment_completed_at` is in the same state; the *status* columns beside both
+are maintained correctly (`complete` 51, `not_started` 16, `partial` 9), so the
+pattern is that the timestamps were added with the statuses and forgotten.
+
+**Fix.** One line, next to the `research_status` write it should always have
+sat beside. Stamped on **every** outcome including failure, because "we looked
+and it failed" is a different state from "nobody has looked" and only the
+timestamp separates them — `research_status` carries which of the two it was.
+
+A migration backfills from `run`, which has recorded `finished_at` per account
+all along. Nothing is invented: 60 accounts with a finished run got their real
+date, the 16 `not_started` stay null, which is the truth. The downgrade
+deliberately does nothing — clearing the column would also discard what the
+pipeline wrote afterwards, and there is no way to tell the two apart.
+
+**The distinction worth keeping.** This is when we last *looked*. How fresh
+what we *found* is, is a different question answered from the signals, and
+conflating them is how a one-day-old run gets read as a one-day-old picture
+when its newest signal is nine months old. Doist is exactly that case: research
+today, strongest signal one day, oldest signal nine months. The prep design
+shows the three separately for this reason, and a test asserts the look-time is
+not derived from the evidence — an account whose families all came back empty
+still has a look-time and has no evidence to derive one from.
+
+Considered and rejected: deriving `max(run.finished_at)` at read time instead.
+It is the same number, but the prep index needs it per row, and the empty-run
+case has no evidence to derive from.
+
+Backend 1,898 pass.
+
+`services/pipeline.py`, `alembic/b5d2f08c3a17` (new),
+`tests/test_research_pipeline.py` (+3).
