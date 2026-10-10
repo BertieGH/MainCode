@@ -1272,6 +1272,10 @@ async def generate_prep(
     thread: dict[str, Any],
     already_sent: list[dict[str, Any]],
     replies: list[str],
+    signals: list[dict[str, Any]] | None = None,
+    qualification: dict[str, Any] | None = None,
+    proof: list[dict[str, Any]] | None = None,
+    mode: str = "pre_engagement",
     client: Any | None = None,
 ) -> llm.CallResult[SalesPrepPayload]:
     """One brief, one contact, on demand.
@@ -1279,9 +1283,16 @@ async def generate_prep(
     Never in batch and never in advance: at 24 threads and roughly 3 meetings
     it is about 8x waste, and a brief written on day 0 for a call on day 18
     argues from a picture predating the entire conversation.
+
+    **The model is told what it does not know.** Signals carry their age and
+    confidence, qualification carries which dimensions the scorer could not
+    assess, and proof carries whether a measured outcome exists. Given only
+    conclusions it writes a confident brief; given the gaps it writes an
+    honest one, and the gaps are what the rep most needs on a call.
     """
     prefix = await load_prefix(session, "sales_prep", with_writing_samples=True)
     payload = {
+        "mode": mode,
         "account": _account_facts(account),
         "contact": {
             "full_name": contact.full_name,
@@ -1290,6 +1301,12 @@ async def generate_prep(
             "buying_role": contact.buying_role,
         },
         "thread": thread,
+        # Age and confidence travel with each one. A nine-month-old signal
+        # argued as current is the failure the whole freshness panel exists
+        # to prevent, and the model cannot avoid it without the dates.
+        "signals": signals or [],
+        "qualification": qualification or {},
+        "approved_proof": proof or [],
         "already_sent": already_sent,
     }
     content = stable_json(payload)

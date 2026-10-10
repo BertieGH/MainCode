@@ -103,6 +103,56 @@ export interface PrepProof {
   has_metric: boolean;
 }
 
+export interface BriefOpening {
+  label: string;
+  words: string;
+  use_when: string;
+  why_it_works: string;
+}
+
+export interface BriefQuestion {
+  question: string;
+  listening_for: string;
+  dimension: string | null;
+  /** What the answer changes. A question that changes nothing is cut. */
+  changes: string;
+  branches: string[];
+}
+
+export interface BriefObjection {
+  objection: string;
+  pre_empt: string;
+  likelihood: string;
+  /** `observed` only if the prospect actually said it. */
+  kind: 'anticipated' | 'observed';
+  follow_up: string | null;
+}
+
+export interface BriefNextStep {
+  condition: string;
+  action: string;
+}
+
+export interface Brief {
+  call_objective: string;
+  objective_excludes: string | null;
+  openings: BriefOpening[];
+  listen_for: string[];
+  next_steps: BriefNextStep[];
+  what_we_know: string[];
+  what_we_suspect: string[];
+  what_we_do_not_know: string[];
+  /** A trap, not a gap — what the rep must not treat as true. */
+  do_not_assume: string[];
+  elevator_pitch: string;
+  pitch_structure: Record<string, string>;
+  discovery_questions: BriefQuestion[];
+  objections: BriefObjection[];
+  already_said: string[];
+  their_replies: string[];
+  open_questions: string[];
+}
+
 export interface Prep {
   contact_id: string;
   contact_name: string;
@@ -129,9 +179,28 @@ export interface Prep {
   signals: PrepSignal[];
   thread: PrepThread | null;
   proof: PrepProof[];
-  brief: Record<string, unknown> | null;
+  brief: Brief | null;
+  brief_id: string | null;
+  brief_generated_at: string | null;
+  /** The mode the stored brief was written in, which can differ from `mode`. */
+  brief_mode: string | null;
+  /**
+   * Something has happened since the brief was written. Not wrong — older
+   * than the facts beside it, which is cheaper to say than to regenerate on
+   * every view.
+   */
+  brief_is_stale: boolean;
+  hypothesis_verdict: string | null;
+  outcome: string | null;
   /** Decided from the engagement ladder, not chosen by a rep. */
   mode: 'pre_engagement' | 'engagement_aware';
+}
+
+export interface GeneratedBrief {
+  prep_id: string;
+  mode: string;
+  brief: Brief;
+  generated_at: string;
 }
 
 export interface PrepRow {
@@ -173,6 +242,23 @@ export class PrepService {
 
   forContact(contactId: string): Observable<Prep> {
     return this.http.get<Prep>(`/api/prep/${contactId}`);
+  }
+
+  /** One contact, on demand. Never batched — see the API docstring. */
+  generate(contactId: string): Observable<GeneratedBrief> {
+    return this.http.post<GeneratedBrief>(`/api/prep/${contactId}/generate`, {});
+  }
+
+  /**
+   * What happened on the call. The hypothesis verdict is the measure worth
+   * watching: briefs whose hypotheses keep being rejected mean the signal
+   * interpretation or the account selection is wrong, not the prose.
+   */
+  verdict(
+    prepId: string,
+    body: { hypothesis_verdict?: string; outcome?: string; rep_note?: string },
+  ): Observable<GeneratedBrief> {
+    return this.http.post<GeneratedBrief>(`/api/prep/${prepId}/verdict`, body);
   }
 }
 

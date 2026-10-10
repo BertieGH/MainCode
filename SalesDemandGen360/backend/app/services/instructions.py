@@ -524,18 +524,44 @@ same argument are findings.
     "sales_prep": """
 # Task: brief the rep for a live conversation
 
-This is read ninety seconds before a call, so structure beats prose everywhere.
+Read ninety seconds before a call, so structure beats prose everywhere.
 
-Two sections carry most of the value and are the ones a generic brief omits:
-- What we have ALREADY SAID to this person, from the touches that actually sent. \
-The rep's first job is not to repeat the sequence at them.
-- What they said BACK. Their words, not a characterisation of them.
+## What this brief is for
 
-Discovery questions must be questions we do not already know the answer to, each \
-with what the answer would tell us so the rep can drop one when time is short. \
-Objections are paired with a pre-empt, not with a rebuttal to read aloud.
+The rep needs four things: what to try to achieve, how to open, what to ask, and what not to assume. A pitch they can read aloud is the least useful thing you can give them, because the call will not follow it.
 
-Cite only approved proof points.
+`call_objective` is one outcome, and it is the first thing they see. Write what the call should *establish*, not what it should *say*. Use `objective_excludes` for the thing an eager rep would otherwise attempt — usually convincing the prospect they have a problem.
+
+## The openings
+
+Give two or three, at different levels of exposure, and say in `use_when` who each is for. A junior can say "I can't tell from the outside — which is it?" to anyone; an opening that names a specific technical question needs a rep who can hold the answer. Each is spoken aloud, so: short, no clause stacking, no phrase the rep could not defend if asked what they meant.
+
+An opening observes and asks. It never diagnoses. "I noticed X, how are you handling Y?" is right; "your X is creating a Y problem" tells a founder about their own company and ends the call.
+
+## Facts, inferences, hypotheses, and traps
+
+Four separate lists, and the distinction is the point of the brief:
+
+- `what_we_know` — read from a source, and only that.
+- `what_we_suspect` — our reading of those facts. Never phrase it as fact.
+- `what_we_do_not_know` — named gaps.
+- `do_not_assume` — what the rep must not treat as true on the call. Always include that the prospect has the problem we hypothesise; research cannot establish whether a company *feels* something. If the contact is senior and the question is technical, include that they may be the wrong first conversation.
+
+## Questions
+
+Each needs what it validates, and what the answer *changes*. A question whose answer changes nothing does not earn a place. Add a branch or two where the answer should redirect the call — especially the branch where the answer kills the hypothesis, which the rep should take rather than re-framing the same pitch.
+
+## Objections
+
+Mark each `anticipated` unless the prospect actually said it, in which case `observed`. Never present a guess as something they raised. A pre-empt acknowledges and then asks; it does not argue. "That makes sense, I wouldn't want to duplicate what your team owns — are there areas where you need complementary capacity?" is a pre-empt. A rebuttal is not.
+
+## Proof
+
+Cite only approved proof points, and only where they actually fit. A case study that shows engineering execution does not evidence AI-integration capability; say so rather than implying otherwise. **No proof is better than unsupported proof.** If none fits, leave it out.
+
+## When there is a conversation already
+
+Two sections carry most of the value and are the ones a generic brief omits: what we have ALREADY SAID from touches that actually sent, and what they said BACK, in their words. The rep's first job is not to repeat the sequence at them. Never re-argue a point they have already heard and agreed with. If nothing has been sent, both lists are empty — do not invent a conversation.
 """,
 }
 

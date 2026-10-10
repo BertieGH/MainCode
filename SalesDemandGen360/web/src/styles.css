@@ -389,3 +389,61 @@ tr.withdrawn strong { font-weight: 400; }
   font-size: .84rem;
 }
 .empty strong { display: block; color: var(--text); margin-bottom: 5px; }
+
+
+/* ---------- a generated sales-prep brief ----------
+   Shared rather than scoped: a brief is rendered in more than one place —
+   the screen now, the pptx/docx/pdf exports next — and two renderings
+   drifting apart is how an opening a rep rehearsed on screen comes out
+   looking different in the document they carry into the room. */
+.hero .obj { font-family: 'Fraunces', Georgia, serif; font-size: 1.14rem;
+             line-height: 1.45; margin: 0; }
+.hero { background: var(--surface); border: 2px solid var(--accent);
+        border-radius: 14px; box-shadow: var(--shadow); padding: 20px 22px; }
+.open-line { background: var(--surface-2); border-left: 3px solid var(--accent);
+             border-radius: 0 8px 8px 0; padding: 13px 16px;
+             font-size: 0.92rem; line-height: 1.55; }
+.optpick button[aria-pressed='true'] { border-color: var(--accent);
+                  background: var(--accent-soft); color: var(--accent);
+                  font-weight: 600; }
+.optpick button { background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px; padding: 7px 13px; font: inherit;
+                  font-size: 0.79rem; color: var(--muted); cursor: pointer; }
+.optpick { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 11px; }
+.chips { display: flex; gap: 7px; flex-wrap: wrap; }
+.step2:last-child { border-bottom: none; }
+.step2 strong { flex: 0 0 38%; }
+.step2 { display: flex; gap: 12px; padding: 8px 0;
+         border-bottom: 1px solid var(--border); font-size: 0.84rem; }
+.stale { display: flex; gap: 14px; align-items: center; justify-content: space-between;
+         flex-wrap: wrap; background: var(--warn-soft); border: 1px solid var(--warn);
+         border-radius: 12px; padding: 13px 16px; margin-bottom: 16px;
+         font-size: 0.83rem; }
+.know > div.trap { border-color: var(--critical); }
+.know > div { border: 1px solid var(--border); border-radius: 11px;
+              padding: 14px 16px; background: var(--surface); }
+.know .trap h4 { color: var(--critical); }
+.know h4 { margin: 0 0 9px; font-size: 0.8rem; display: flex;
+           align-items: center; gap: 7px; }
+.know ul { margin: 0; padding-left: 17px; font-size: 0.81rem;
+           color: var(--muted); line-height: 1.6; }
+.know { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.q .qn { display: flex; gap: 10px; align-items: flex-start;
+         justify-content: space-between; }
+.q p.ask { margin: 0 0 9px; font-size: 0.9rem; line-height: 1.45; font-weight: 500; }
+.q dl { margin: 0; display: grid; grid-template-columns: auto 1fr;
+        gap: 4px 11px; font-size: 0.78rem; }
+.q dt { font-family: 'IBM Plex Mono', monospace; font-size: 0.64rem;
+        letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+.q dd { margin: 0; color: var(--muted); }
+.q { border: 1px solid var(--border); border-radius: 11px; padding: 14px 16px;
+     background: var(--surface); margin-bottom: 11px; }
+.branch { margin-top: 10px; border-top: 1px dashed var(--border-strong);
+          padding-top: 9px; font-size: 0.78rem; color: var(--muted); }
+.verdict .btn { margin: 0 6px 6px 0; }
+.verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+blockquote { margin: 9px 0; padding: 10px 14px; background: var(--surface-2);
+             border-left: 2px solid var(--accent); border-radius: 0 7px 7px 0;
+             font-size: 0.86rem; }
+@media (max-width: 740px) { .know { grid-template-columns: 1fr; } }
+@media (max-width: 740px) { .verdict { grid-template-columns: 1fr; } }

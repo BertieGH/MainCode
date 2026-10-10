@@ -50,6 +50,44 @@ class DiscoveryQuestion(BaseModel):
     dimension: Literal[
         "fit", "opportunity", "buyer", "commercial", "intent", "engagement"
     ] | None = None
+    #: What the answer changes about the approach. **A question whose answer
+    #: changes nothing does not earn a place in the three a rep actually
+    #: reads**, so this is required rather than decorative.
+    changes: str = Field(min_length=1)
+    #: Where to go next depending on what comes back. Two branches at most:
+    #: this is read on a call, not studied.
+    branches: list[str] = Field(default_factory=list, max_length=2)
+
+
+class Opening(BaseModel):
+    """One way to start, with when to use it.
+
+    **Three options rather than one line, because they are three levels of
+    exposure.** A junior BDE can say the honest-outsider opening to anyone; the
+    one that names a specific technical question needs someone who can hold the
+    answer. Giving a new rep a single opening they cannot defend is how a good
+    brief produces a bad call.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(min_length=1)
+    #: The words, as they would be said aloud. Not a paragraph.
+    words: str = Field(min_length=1, max_length=600)
+    use_when: str = Field(min_length=1)
+    why_it_works: str = Field(min_length=1)
+
+
+class NextStep(BaseModel):
+    """What to do, conditional on what the prospect actually says.
+
+    A brief that recommends one next step has assumed the call goes one way.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    condition: str = Field(min_length=1)
+    action: str = Field(min_length=1)
 
 
 class Objection(BaseModel):
@@ -60,10 +98,43 @@ class Objection(BaseModel):
     objection: str = Field(min_length=1)
     pre_empt: str = Field(min_length=1)
     likelihood: Literal["low", "medium", "high"] = "medium"
+    #: **Anticipated or actually raised.** A rep must never defend against a
+    #: concern nobody voiced; it invents an argument and loses the room. Only
+    #: a reply in evidence may be marked `observed`.
+    kind: Literal["anticipated", "observed"] = "anticipated"
+    #: A question that finds out whether the objection is a real barrier or a
+    #: preference with exceptions.
+    follow_up: str | None = None
 
 
 class SalesPrepPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    #: **The single most important outcome of this call.** The first thing on
+    #: the screen, because a rep who knows what they are trying to achieve can
+    #: improvise and one who knows only what to say cannot. One sentence.
+    call_objective: str = Field(min_length=1)
+    #: What this call is explicitly *not* for. Usually the thing an eager rep
+    #: would otherwise try: convincing the prospect they have a problem.
+    objective_excludes: str | None = None
+    #: Two or three ways in, at different levels of exposure.
+    openings: list[Opening] = Field(default_factory=list, max_length=3)
+    #: Possible findings, not expected answers — including the finding that
+    #: there is nothing here.
+    listen_for: list[str] = Field(default_factory=list)
+    next_steps: list[NextStep] = Field(default_factory=list)
+
+    #: Facts read from a source.
+    what_we_know: list[str] = Field(default_factory=list)
+    #: Our reading of those facts. Not established.
+    what_we_suspect: list[str] = Field(default_factory=list)
+    #: Named gaps.
+    what_we_do_not_know: list[str] = Field(default_factory=list)
+    #: **Things the rep must not treat as true on the call.** Distinct from
+    #: "what we do not know": an unknown is a gap, this is a trap. The more
+    #: specific and personalised a brief reads, the easier it is to walk in
+    #: believing its hypothesis is a finding.
+    do_not_assume: list[str] = Field(default_factory=list)
 
     elevator_pitch: str = Field(min_length=1)
     pitch_structure: PitchStructure
@@ -83,5 +154,31 @@ class SalesPrepPayload(BaseModel):
             raise ValueError(
                 "a prep brief with no discovery questions is a pitch script; "
                 "the call exists to learn something"
+            )
+        if not self.do_not_assume:
+            raise ValueError(
+                "a prep brief that names nothing the rep must not assume has "
+                "mistaken its own hypotheses for findings; research cannot "
+                "establish whether a company feels a problem, and the brief "
+                "has to say so"
+            )
+        if not self.openings:
+            raise ValueError(
+                "a brief with no opening leaves the rep to improvise the one "
+                "sentence that decides whether the call continues"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _an_objection_is_only_observed_if_they_said_it(self) -> SalesPrepPayload:
+        """`observed` means it is in the record, and the record is `their_replies`.
+
+        Without this the model can promote its own guess to something the
+        prospect said, and a rep answers an objection nobody raised.
+        """
+        if any(o.kind == "observed" for o in self.objections) and not self.their_replies:
+            raise ValueError(
+                "an objection is marked observed but nothing has been replied; "
+                "an anticipated objection must not be presented as one they raised"
             )
         return self

@@ -31,19 +31,24 @@ from datetime import UTC, date, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_session
+from app.api.deps import get_session, requires
 from app.models.account import Account, Contact
 from app.models.campaign import OutreachSequence
 from app.models.config import ProofPoint
 from app.models.content import Touch
 from app.models.context import Qualification
 from app.models.execution import OutreachEvent
+from app.models.prep import SalesPrep
 from app.models.signal import Evidence, Signal, signal_evidence
 from app.models.strategy import StrategyThread
+from app.services import stages
 from app.services.apollo_list_builder import persona_of
+from app.services.llm import LlmUnavailableError
+from app.services.providers import ProviderError
 
 router = APIRouter(tags=["prep"])
 
@@ -211,8 +216,21 @@ class PrepOut(BaseModel):
     thread: ThreadOut | None
     #: Only `is_approved` proof may appear in anything a rep says aloud.
     proof: list[ProofOut]
-    #: Absent until the stage runs. The screen is useful without it.
+    #: The most recent generated brief, if one exists. Absent until the stage
+    #: runs, and the screen is useful without it.
     brief: dict | None = None
+    brief_id: uuid.UUID | None = None
+    brief_generated_at: datetime | None = None
+    #: The mode the stored brief was *written* in, which can differ from the
+    #: mode the facts imply today — a reply arriving after generation is
+    #: exactly when a rep must be told the brief predates it.
+    brief_mode: str | None = None
+    #: True when something has happened since the brief was written. The brief
+    #: is not wrong, it is simply older than the facts beside it, and saying so
+    #: is cheaper than regenerating on every view.
+    brief_is_stale: bool = False
+    hypothesis_verdict: str | None = None
+    outcome: str | None = None
     #: Decided from the ladder, not chosen by hand: nothing sent means there is
     #: no conversation to be aware of, and a brief opening on an observation
     #: the prospect already answered wastes the call.
@@ -471,6 +489,27 @@ async def prep_for_contact(
         ).scalars()
     )
 
+    stored = (
+        await session.execute(
+            select(SalesPrep)
+            .where(SalesPrep.contact_id == contact.id)
+            .order_by(SalesPrep.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    # Compared against what was true when it was written, not against a
+    # timestamp: a brief written before three signals arrived is stale in the
+    # way that matters, and one written an hour ago with nothing new since is
+    # not stale at all.
+    brief_is_stale = bool(
+        stored
+        and (
+            stored.signal_count != len(signal_rows)
+            or stored.touches_sent != counts["sent"]
+            or stored.replies_seen != counts["replied"]
+        )
+    )
+
     # **The basis has to match what actually happened.** The first version of
     # this returned "inferred from job title" for every contact with a title
     # while `persona_role` came back null — asserting an inference nobody had
@@ -544,7 +583,13 @@ async def prep_for_contact(
             )
             for p in proof
         ],
-        brief=None,
+        brief=(stored.payload if stored else None),
+        brief_id=(stored.id if stored else None),
+        brief_generated_at=(stored.created_at if stored else None),
+        brief_mode=(stored.mode if stored else None),
+        brief_is_stale=brief_is_stale,
+        hypothesis_verdict=(stored.hypothesis_verdict if stored else None),
+        outcome=(stored.outcome if stored else None),
         mode="engagement_aware" if counts["replied"] else "pre_engagement",
     )
 
@@ -703,4 +748,139 @@ async def prep_index(
         ),
         results=rows,
         total=len(rows),
+    )
+
+
+class GenerateOut(BaseModel):
+    prep_id: uuid.UUID
+    mode: str
+    brief: dict
+    generated_at: datetime
+
+
+class VerdictIn(BaseModel):
+    #: Whether the brief's hypothesis survived contact with the prospect.
+    hypothesis_verdict: str | None = None
+    outcome: str | None = None
+    rep_note: str | None = None
+
+
+@router.post(
+    "/prep/{contact_id}/generate",
+    response_model=GenerateOut,
+    dependencies=[Depends(requires("llm"))],
+)
+async def generate_prep_brief(
+    contact_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Write the brief for this contact, now.
+
+    **One contact, on demand, never in batch and never in advance.** At two
+    dozen threads and a handful of meetings, generating for everyone is about
+    eightfold waste, and a brief written on day 0 for a call on day 18 argues
+    from a picture that predates the whole conversation.
+
+    The mode is decided here from what has actually been sent rather than
+    offered as a choice: a rep cannot know better than the record, and a brief
+    opening on an observation the prospect already answered wastes the call.
+    """
+    facts = await prep_for_contact(contact_id, session)
+    contact = await session.get(Contact, contact_id)
+    account = await session.get(Account, facts.account_id)
+    if contact is None or account is None:  # pragma: no cover — prep_for_contact 404s first
+        raise HTTPException(404, "No such contact.")
+
+    replies = list(
+        (
+            await session.execute(
+                select(OutreachEvent.preview)
+                .where(
+                    OutreachEvent.contact_id == contact_id,
+                    OutreachEvent.direction == "received",
+                )
+                .order_by(OutreachEvent.occurred_at)
+            )
+        ).scalars()
+    )
+
+    try:
+        result = await stages.generate_prep(
+            session,
+            account=account,
+            contact=contact,
+            thread=(facts.thread.model_dump(mode="json") if facts.thread else {}),
+            # Only touches that actually sent. A drafted message the prospect
+            # never received must not appear as something they have been told.
+            already_sent=[],
+            replies=[r for r in replies if r],
+            # Each signal carries its age and confidence. Given only the
+            # conclusions the model writes a confident brief; given the gaps it
+            # writes an honest one, and the gaps are what a rep needs on a call.
+            signals=[s.model_dump(mode="json") for s in facts.signals],
+            qualification=(
+                facts.qualification.model_dump(mode="json") if facts.qualification else {}
+            ),
+            proof=[p.model_dump(mode="json") for p in facts.proof],
+            mode=facts.mode,
+        )
+    except ProviderError as exc:
+        # A quota refusal is an answer, not an Internal Server Error.
+        raise HTTPException(503, str(exc)) from exc
+    except LlmUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    newest = max((s.observed_at for s in facts.signals if s.observed_at), default=None)
+    row = SalesPrep(
+        contact_id=contact_id,
+        account_id=account.id,
+        mode=facts.mode,
+        payload=result.parsed.model_dump(mode="json"),
+        research_completed_at=account.research_completed_at,
+        newest_signal_on=newest,
+        signal_count=len(facts.signals),
+        touches_sent=facts.engagement.counts.get("sent", 0),
+        replies_seen=facts.engagement.counts.get("replied", 0),
+    )
+    session.add(row)
+    await session.commit()
+
+    return GenerateOut(
+        prep_id=row.id,
+        mode=row.mode,
+        brief=row.payload,
+        generated_at=row.created_at,
+    )
+
+
+@router.post("/prep/{prep_id}/verdict", response_model=GenerateOut)
+async def record_verdict(
+    prep_id: uuid.UUID,
+    payload: VerdictIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """What happened on the call.
+
+    **The measure worth watching is the hypothesis verdict, not the outcome.**
+    Briefs whose hypotheses prospects keep rejecting mean the signal
+    interpretation or the account selection is wrong — not the writing — and
+    without this the system can only learn how persuasive its own prose looks.
+    """
+    row = await session.get(SalesPrep, prep_id)
+    if row is None:
+        raise HTTPException(404, "No such brief.")
+    if payload.hypothesis_verdict is not None:
+        row.hypothesis_verdict = payload.hypothesis_verdict
+    if payload.outcome is not None:
+        row.outcome = payload.outcome
+    if payload.rep_note is not None:
+        row.rep_note = payload.rep_note
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        # The CHECK constraints name the vocabulary; a typo is a 400, not a 500.
+        raise HTTPException(400, "Not a recognised verdict or outcome.") from exc
+    return GenerateOut(
+        prep_id=row.id, mode=row.mode, brief=row.payload, generated_at=row.created_at
     )

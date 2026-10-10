@@ -71,6 +71,7 @@ from app.models.governance import (  # noqa: F401
     ApprovalSample,
     Evaluation,
 )
+from app.models.prep import SalesPrep  # noqa: F401
 from app.models.research import ResearchCoverage  # noqa: F401
 from app.models.signal import (  # noqa: F401
     Evidence,

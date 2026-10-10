@@ -5162,3 +5162,87 @@ Backend 1,898 pass.
 
 `services/pipeline.py`, `alembic/b5d2f08c3a17` (new),
 `tests/test_research_pipeline.py` (+3).
+
+## §112 — Sales Prep, built (2026-10-10)
+
+Phase 12's screens, against design 2. What follows is what the real data
+changed about the design, and two bugs the build found in itself.
+
+**`research_completed_at` was never written** — §111, done first, because the
+screen opens on research age and the column it reads was null on all 76
+accounts.
+
+**Freshness is three questions.** Research, newest signal, engagement. Doist
+reads "looked 1 day, newest signal 2 days, oldest 262 days, never engaged" —
+one number would have said "fresh" and been wrong twice. `null` is *never* and
+`0` is *today*; a helper and a test keep them apart, because a screen printing
+"0 days" for a null tells a rep research is current when nobody has looked.
+
+**The score had to be unpacked, and the unpacking changed the verdict.** Doist
+scores 48.75 "low". Two of its six dimensions are zero for reasons that say
+nothing about the company: `fit` had no headcount, industry or country to
+compare, and `engagement` is structurally zero until a campaign runs. Across
+the four that could be assessed it averages **68.75**. The screen shows both
+and says which is which.
+
+The first cut of `assessed_average` returned 55, because it counted
+`engagement` as a real score. An absence is not a finding, and the rule is now
+explicit: `no_evidence`, and `outreach` with nothing sent, are unassessed;
+`contacts` is a genuine basis and stays in.
+
+**Two bugs the tests found, not the code review.**
+
+`persona_basis` returned "inferred from job title" for every contact with a
+title while `persona_role` came back null — asserting an inference nobody had
+made, which is precisely what the fact/inference/hypothesis labelling exists to
+prevent. It now derives with the same `persona_of` the Apollo builder pairs
+contacts with, so the screen and the list that produced the contact cannot
+disagree, and says "not established" when neither ladder recognises the title.
+
+Reply detection read `direction == "inbound"`, a value the column's own CHECK
+constraint does not permit. It could never have fired: a brief would have
+stayed in cold-approach mode after a prospect wrote back. The value is
+`received`, and a test inserting a real reply caught it.
+
+**`delivered` left the ladder.** The review's chain — drafted, approved, sent,
+delivered, replied — is right in principle, but LGM's vocabulary is
+`message_sent`, `message_received`, `unsubscribed`, `status_change` and
+`other`. It never reports delivery. That rung is not waiting on the webhook
+receiver; it is something the provider will not tell us, and listing it implied
+otherwise. It is reported as never observable, with the reason, beside
+`replied`, which is merely not-yet.
+
+**The brief is stored, not regenerated per view.** `sales_prep` keeps the
+payload with the context it was written from — research age, signal count, what
+had been sent. A brief is what somebody walked into a call holding; when its
+hypothesis turns out wrong the useful question is what it claimed *at the
+time*, and that does not survive rebuilding from today's signals. Staleness is
+measured against that recorded context rather than the clock: an hour-old brief
+with nothing new since is not stale, a minute-old one written before three
+signals arrived is.
+
+**The contract refuses an overconfident brief.** Validation rejects a brief
+with nothing in `do_not_assume`, one with no opening, a question that does not
+say what its answer changes, and an objection marked `observed` when nothing
+has been replied — the model promoting its own guess to something the prospect
+said is how a rep ends up answering an objection nobody raised.
+
+**Shared CSS, twice.** The epistemic tags and then the brief-rendering rules
+moved into `styles.css`. Both moves were prompted by the component CSS budget
+and both were right anyway: two screens inventing their own colours is how
+"hypothesis" starts looking like "fact" on one and not the other, and the
+pptx/docx/pdf exports will render the same brief.
+
+**Not verified live.** Generation returns a clean 503 — `gemini-3.1-pro-preview`
+has been refusing on `RESOURCE_EXHAUSTED` since §110, a different model from
+the one exhausted during the list run, so the cap is project-wide. The route,
+the storage, the staleness flag and the verdict round-trip were verified with
+the stage stubbed and with one brief inserted by hand, rendered, checked, and
+deleted. **What the model actually writes has not been seen.**
+
+Backend 1,936 pass; frontend 385; `ng build` clean.
+
+`api/prep.py` (new), `models/prep.py` (new), `schemas/prep.py`,
+`services/stages.py`, `services/instructions.py`, `alembic/c2f91a7e4db6` (new),
+`web/.../prep/*` (new), `web/.../core/prep.service.ts` (new), `web/src/styles.css`,
+`tests/test_prep.py` (+35), `web/.../prep.service.spec.ts` (new).

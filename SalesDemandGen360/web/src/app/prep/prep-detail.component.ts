@@ -230,12 +230,179 @@ import { apiError } from '../shared/api-error';
 
       <!-- the generated half -->
       <div class="seclabel">The call game plan</div>
-      <div class="empty">
+
+      <div class="empty" *ngIf="!p.brief">
         <strong>Not generated yet.</strong>
-        The objective, the opening, the three questions and the objections are written by
-        the sales prep stage, which is the next thing to build. Everything above is read
-        from what research already established.
+        The objective, the openings, the questions and the objections are written on
+        demand — one contact at a time, never in advance, because a brief written today
+        for a call in a fortnight argues from a picture that predates the conversation.
+        <div style="margin-top:12px">
+          <button class="btn btn-primary" (click)="generate(p)" [disabled]="busy()">
+            {{ busy() ? 'Writing…' : 'Generate the brief' }}
+          </button>
+        </div>
       </div>
+      <p class="err" *ngIf="genError()">{{ genError() }}</p>
+
+      <ng-container *ngIf="p.brief as b">
+        <div class="stale" *ngIf="p.brief_is_stale">
+          <div>
+            <strong>Written before the latest facts.</strong>
+            Something has changed since this was generated — a signal, a send, or a
+            reply. It is not wrong, it is older than what is above it.
+          </div>
+          <button class="btn btn-sm" (click)="generate(p)" [disabled]="busy()">
+            {{ busy() ? 'Writing…' : 'Regenerate' }}
+          </button>
+        </div>
+
+        <div class="hero">
+          <div class="seclabel" style="margin-top:0">Objective — one outcome</div>
+          <p class="obj">{{ b.call_objective }}</p>
+          <p class="row-sub" *ngIf="b.objective_excludes">
+            Not this call: {{ b.objective_excludes }}
+          </p>
+
+          <ng-container *ngIf="b.openings.length">
+            <div class="seclabel">Opening — pick one, say it out loud first</div>
+            <div class="optpick">
+              <button
+                *ngFor="let o of b.openings; let i = index"
+                [attr.aria-pressed]="i === opening()"
+                (click)="opening.set(i)">
+                {{ o.label }}
+              </button>
+            </div>
+            <div class="open-line">{{ b.openings[opening()].words }}</div>
+            <p class="row-sub">
+              <strong>Use when:</strong> {{ b.openings[opening()].use_when }}
+            </p>
+            <p class="row-sub">
+              <strong>Why it works:</strong> {{ b.openings[opening()].why_it_works }}
+            </p>
+          </ng-container>
+
+          <ng-container *ngIf="b.listen_for.length">
+            <div class="seclabel">Listen for — findings, not expected answers</div>
+            <div class="chips">
+              <span class="chip" *ngFor="let l of b.listen_for">{{ l }}</span>
+            </div>
+          </ng-container>
+
+          <ng-container *ngIf="b.next_steps.length">
+            <div class="seclabel">Next step — conditional on what you hear</div>
+            <div class="step2" *ngFor="let n of b.next_steps">
+              <strong>{{ n.condition }}</strong>
+              <span>{{ n.action }}</span>
+            </div>
+          </ng-container>
+        </div>
+
+        <div class="seclabel">What we know, suspect, and must not assume</div>
+        <div class="know">
+          <div *ngIf="b.what_we_know.length">
+            <h4><span class="ep ep-fact">fact</span> What we know</h4>
+            <ul><li *ngFor="let x of b.what_we_know">{{ x }}</li></ul>
+          </div>
+          <div *ngIf="b.what_we_suspect.length">
+            <h4><span class="ep ep-hyp">hypothesis</span> What we suspect</h4>
+            <ul><li *ngFor="let x of b.what_we_suspect">{{ x }}</li></ul>
+          </div>
+          <div *ngIf="b.what_we_do_not_know.length">
+            <h4><span class="ep ep-unk">unknown</span> What we do not know</h4>
+            <ul><li *ngFor="let x of b.what_we_do_not_know">{{ x }}</li></ul>
+          </div>
+          <div class="trap" *ngIf="b.do_not_assume.length">
+            <h4>Do not assume</h4>
+            <ul><li *ngFor="let x of b.do_not_assume">{{ x }}</li></ul>
+          </div>
+        </div>
+
+        <div class="seclabel" *ngIf="b.discovery_questions.length">
+          Questions — ranked, with what each one changes
+        </div>
+        <div class="q" *ngFor="let q of b.discovery_questions; let i = index">
+          <div class="qn">
+            <p class="ask">{{ q.question }}</p>
+            <span class="badge badge-accent">{{ i + 1 }}</span>
+          </div>
+          <dl>
+            <dt>Listening for</dt><dd>{{ q.listening_for }}</dd>
+            <dt>Changes</dt><dd>{{ q.changes }}</dd>
+          </dl>
+          <div class="branch" *ngIf="q.branches.length">
+            <div *ngFor="let br of q.branches">{{ br }}</div>
+          </div>
+        </div>
+
+        <ng-container *ngIf="b.objections.length">
+          <div class="seclabel">Objections</div>
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr><th>Objection</th><th>Type</th><th>Response</th><th>Follow-up</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let o of b.objections">
+                  <td>{{ o.objection }}</td>
+                  <td>
+                    <span
+                      class="badge"
+                      [ngClass]="o.kind === 'observed' ? 'badge-accent' : 'badge-neutral'">
+                      {{ o.kind }}
+                    </span>
+                  </td>
+                  <td>{{ o.pre_empt }}</td>
+                  <td class="muted">{{ o.follow_up }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="note">
+            Anticipated is kept apart from observed so you never defend against a concern
+            nobody raised.
+          </p>
+        </ng-container>
+
+        <ng-container *ngIf="b.already_said.length || b.their_replies.length">
+          <div class="seclabel">What we already said, and what came back</div>
+          <div class="card">
+            <ul><li *ngFor="let s of b.already_said">{{ s }}</li></ul>
+            <blockquote *ngFor="let r of b.their_replies">{{ r }}</blockquote>
+          </div>
+        </ng-container>
+
+        <div class="seclabel">After the call</div>
+        <div class="card">
+          <p class="row-sub" style="margin-top:0">
+            The hypothesis verdict is the measure worth watching. Hypotheses that keep
+            being rejected mean the interpretation or the account selection is wrong —
+            not the writing.
+          </p>
+          <div class="verdict">
+            <div>
+              <div class="seclabel" style="margin-top:0">Did the hypothesis hold?</div>
+              <button
+                class="btn btn-sm"
+                *ngFor="let v of verdicts"
+                [class.btn-primary]="p.hypothesis_verdict === v.key"
+                (click)="record(p, { hypothesis_verdict: v.key })">
+                {{ v.label }}
+              </button>
+            </div>
+            <div>
+              <div class="seclabel" style="margin-top:0">Outcome</div>
+              <button
+                class="btn btn-sm"
+                *ngFor="let o of outcomes"
+                [class.btn-primary]="p.outcome === o.key"
+                (click)="record(p, { outcome: o.key })">
+                {{ o.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </ng-container>
 
       <div class="exports">
         <button class="btn" disabled>Export .pptx</button>
@@ -321,8 +488,57 @@ export class PrepDetailComponent implements OnInit {
   prep = signal<Prep | null>(null);
   loading = signal(true);
   error = signal<string | null>(null);
+  busy = signal(false);
+  genError = signal<string | null>(null);
+  /** Which opening the rep has picked. Their choice, not the model's. */
+  opening = signal(0);
 
   readonly age = ageLabel;
+
+  readonly verdicts = [
+    { key: 'confirmed', label: 'Confirmed' },
+    { key: 'rejected', label: 'Rejected' },
+    { key: 'partly', label: 'Partly' },
+    { key: 'not_discussed', label: "Didn't come up" },
+  ];
+  readonly outcomes = [
+    { key: 'meeting_booked', label: 'Meeting booked' },
+    { key: 'follow_up', label: 'Follow-up' },
+    { key: 'no_need_now', label: 'No need now' },
+    { key: 'not_interested', label: 'Not interested' },
+  ];
+
+  generate(p: Prep): void {
+    this.busy.set(true);
+    this.genError.set(null);
+    this.api.generate(p.contact_id).subscribe({
+      next: () => {
+        // Re-read rather than patching the brief in: generating also moves
+        // the staleness flag and the stored mode, and a half-updated screen
+        // is how a stale brief starts looking fresh.
+        this.api.forContact(p.contact_id).subscribe({
+          next: (fresh) => {
+            this.prep.set(fresh);
+            this.opening.set(0);
+            this.busy.set(false);
+          },
+          error: () => this.busy.set(false),
+        });
+      },
+      error: (err) => {
+        this.genError.set(apiError(err, 'Could not write the brief.'));
+        this.busy.set(false);
+      },
+    });
+  }
+
+  record(p: Prep, body: { hypothesis_verdict?: string; outcome?: string }): void {
+    if (!p.brief_id) return;
+    this.api.verdict(p.brief_id, body).subscribe({
+      next: () => this.prep.set({ ...p, ...body }),
+      error: (err) => this.genError.set(apiError(err, 'Could not record that.')),
+    });
+  }
   /** `delivered` is shown although it is never counted — see the service. */
   readonly rungs = ['drafted', 'approved', 'sent', 'delivered', 'replied'];
 

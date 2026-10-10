@@ -399,9 +399,21 @@ Until then this phase stays closed on purpose. `docs/07` Q2 and Q3 are the track
 either lands, the corresponding row above becomes buildable independently — the webhook receiver
 and the CRM sync do not depend on each other.
 
-### Phase 12 — Sales Prep ⏸ **PENDING — held deliberately**
+### Phase 12 — Sales Prep — **BUILT (2026-10-10), minus the queue**
 
-**Held on 2026-09-05**, alongside Phase 13, to finish the frontend first.
+Held from 2026-09-05 to 2026-10-10. Built against design 2; see `docs/13` §111
+and §112 for what the real data changed about it.
+
+**What shipped:** the search path, the brief, generation on demand, and the
+post-call verdict. The *queue* did not, and could not: it fills from
+`meeting_booked` and reply events that arrive through the Phase 11 webhook
+receiver, and no event has ever been received. The screen says so in those
+words rather than showing an empty list, because "no event can arrive yet" is a
+build state and "nobody has replied" is a sales fact.
+
+**Not verified live.** Generation returns a clean 503 while the Gemini quota is
+exhausted project-wide. The route, storage, staleness and verdict round-trip
+are tested; what the model writes has not been seen.
 
 Not blocked by an external dependency the way Phase 11 is — this one is a sequencing choice. The
 `sales_prep` table does not exist, and the phase's centre of gravity is the **prep queue**, which is

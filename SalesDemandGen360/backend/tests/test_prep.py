@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.deps import get_session
@@ -30,7 +31,10 @@ from app.models.signal import Signal
 TEST_DB = os.environ.get("TEST_DATABASE_URL", "")
 requires_db = pytest.mark.skipif(not TEST_DB, reason="TEST_DATABASE_URL is not set")
 
-pytestmark = requires_db
+# `db` so the autouse fixture truncates between tests. Rollback alone is not
+# enough here: the generate route commits, which is the point of it, and a
+# committed brief would otherwise leak into the next test.
+pytestmark = [pytest.mark.db, requires_db]
 
 
 @pytest.fixture
@@ -43,6 +47,33 @@ async def session():
     await engine.dispose()
 
 
+def _flatten(app):
+    """Every route, through the router wrappers `app.routes` actually holds.
+
+    `app.routes` is a list of `_IncludedRouter` objects rather than routes, so
+    a flat scan finds nothing and silently does nothing — which is how the
+    first version of the gate override passed over the route it meant to
+    disable.
+    """
+    found = []
+    stack = list(app.routes)
+    seen = set()
+    while stack:
+        item = stack.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        # An included router is wrapped; its own routes hang off
+        # `original_router`, not off the wrapper.
+        inner = getattr(item, "original_router", None)
+        if inner is not None:
+            stack.extend(getattr(inner, "routes", []))
+        stack.extend(getattr(item, "routes", []) if inner is None else [])
+        if hasattr(item, "path"):
+            found.append(item)
+    return found
+
+
 @pytest.fixture
 async def api(session):
     app = create_app()
@@ -51,6 +82,17 @@ async def api(session):
         yield session
 
     app.dependency_overrides[get_session] = override
+
+    # **The setup gate is bypassed here, and asserted separately.** It is a
+    # route dependency bound at import, so it cannot be monkeypatched; and
+    # seeding a real model credential would make every test in this file
+    # depend on the credential store to check something about prep. The gate
+    # has its own tests, and `test_generation_is_gated_on_a_model` below
+    # asserts this route still carries it.
+    for route in _flatten(app):
+        for dep in getattr(route, "dependencies", []):
+            if getattr(dep.dependency, "__name__", "") == "_gate":
+                app.dependency_overrides[dep.dependency] = lambda: None
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -468,3 +510,261 @@ class TestTheIndex:
         row = body["results"][0]
         assert row["why_now"] == "Released todoist-mcp."
         assert row["why_now_kind"] == "signal"
+
+
+def _brief(**over) -> dict:
+    """A payload that satisfies the contract, so a test can vary one thing."""
+    base = {
+        "call_objective": "Find out whether the AI surface work creates a constraint.",
+        "objective_excludes": "Convincing him he has an ingestion problem.",
+        "openings": [
+            {
+                "label": "Honest outsider",
+                "words": "I can't tell from the outside whether this is easy or a headache.",
+                "use_when": "Lowest pressure — best if you are new.",
+                "why_it_works": "Cannot be contradicted, and invites a real answer.",
+            }
+        ],
+        "listen_for": ["who owns the context layer"],
+        "next_steps": [{"condition": "A constraint is confirmed", "action": "Propose discovery."}],
+        "what_we_know": ["Four AI releases since January."],
+        "what_we_suspect": ["Engineering may be split across both."],
+        "what_we_do_not_know": ["Whether any bottleneck exists."],
+        "do_not_assume": ["That he has a problem."],
+        "elevator_pitch": "Four AI surfaces in nine months is a roadmap question.",
+        "pitch_structure": {
+            "situation": "Four AI surfaces since January.",
+            "complication": "Each widens the ingestion surface.",
+            "angle": "Engineering backing for context integration.",
+            "proof": "9 days to 3.",
+            "ask": "Worth a conversation?",
+        },
+        "discovery_questions": [
+            {
+                "question": "Who owns the shared context layer?",
+                "listening_for": "Whether the work has its own headcount.",
+                "changes": "Identifies the real technical stakeholder.",
+                "branches": ["If borrowed, the capacity hypothesis is live."],
+            }
+        ],
+        "objections": [],
+        "already_said": [],
+        "their_replies": [],
+        "open_questions": [],
+    }
+    base.update(over)
+    return base
+
+
+@pytest.fixture
+def stubbed(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api import prep as prep_api
+    from app.schemas.prep import SalesPrepPayload
+
+    seen: dict = {}
+
+    async def fake(session, **kw):
+        seen.update(kw)
+        return SimpleNamespace(parsed=SalesPrepPayload.model_validate(_brief()))
+
+    monkeypatch.setattr(prep_api.stages, "generate_prep", fake)
+    return seen
+
+
+class TestGeneratingTheBrief:
+    """The stage is stubbed: these are about what the route does with a brief,
+    not about what the model writes."""
+
+    async def test_generation_is_gated_on_a_model(self):
+        """Bypassed in these tests, so its presence is checked rather than
+        assumed: an ungated generate route would spend on an installation that
+        has not finished setting up."""
+        from app.main import create_app
+
+        gated = [
+            r
+            for r in _flatten(create_app())
+            if getattr(r, "path", "").endswith("/prep/{contact_id}/generate")
+        ]
+        assert gated, "the generate route is missing"
+        names = [
+            getattr(d.dependency, "__name__", "") for d in gated[0].dependencies
+        ]
+        assert "_gate" in names
+
+    async def test_a_brief_is_stored_with_what_it_was_written_from(
+        self, api, session, contact, stubbed
+    ):
+        r = await api.post(f"/api/prep/{contact.id}/generate")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["mode"] == "pre_engagement"
+        assert body["brief"]["call_objective"]
+
+        from app.models.prep import SalesPrep
+
+        row = (await session.execute(select(SalesPrep))).scalars().one()
+        # The context travels with the brief, so a later review can tell a
+        # wrongly reasoned brief from a merely under-informed one.
+        assert row.research_completed_at is not None
+        assert row.touches_sent == 0
+        assert row.replies_seen == 0
+
+    async def test_the_model_is_given_the_gaps_not_only_the_conclusions(
+        self, api, session, contact, stubbed
+    ):
+        """Given only conclusions it writes a confident brief; given what the
+        scorer could not assess, an honest one."""
+        session.add(
+            Qualification(
+                account_id=contact.account_id,
+                fit_score=0,
+                opportunity_score=75,
+                priority_score=48.75,
+                priority_band="low",
+                scoring_config_version=8,
+                reasons={
+                    "fit": {"basis": "no_evidence", "score": 0.0, "reason": "nothing",
+                            "evidence_ids": []},
+                    "opportunity": {"basis": "evidence", "score": 75.0, "reason": "ai",
+                                    "evidence_ids": [str(uuid.uuid4())]},
+                },
+            )
+        )
+        await session.flush()
+        await api.post(f"/api/prep/{contact.id}/generate")
+        assert "fit" in stubbed["qualification"]["unassessed"]
+        assert stubbed["mode"] == "pre_engagement"
+
+    async def test_a_quota_refusal_is_a_503_not_a_500(
+        self, api, contact, monkeypatch
+    ):
+        from app.api import prep as prep_api
+        from app.services.llm import LlmUnavailableError
+
+        async def refuse(session, **kw):
+            raise LlmUnavailableError(
+                "Gemini returned HTTP 429, quota RESOURCE_EXHAUSTED",
+                rate_limited=True,
+                quota="RESOURCE_EXHAUSTED",
+            )
+
+        monkeypatch.setattr(prep_api.stages, "generate_prep", refuse)
+        r = await api.post(f"/api/prep/{contact.id}/generate")
+        assert r.status_code == 503
+        assert "RESOURCE_EXHAUSTED" in r.json()["detail"]
+
+    async def test_the_verdict_comes_back_to_the_brief(
+        self, api, session, contact, stubbed
+    ):
+        prep_id = (await api.post(f"/api/prep/{contact.id}/generate")).json()["prep_id"]
+        r = await api.post(
+            f"/api/prep/{prep_id}/verdict",
+            json={"hypothesis_verdict": "rejected", "outcome": "no_need_now"},
+        )
+        assert r.status_code == 200
+
+        from app.models.prep import SalesPrep
+
+        row = await session.get(SalesPrep, uuid.UUID(prep_id))
+        await session.refresh(row)
+        assert row.hypothesis_verdict == "rejected"
+        assert row.outcome == "no_need_now"
+
+    async def test_an_unrecognised_verdict_is_refused(self, api, contact, stubbed):
+        """The vocabulary is a CHECK constraint; a typo is a 400, not a 500."""
+        prep_id = (await api.post(f"/api/prep/{contact.id}/generate")).json()["prep_id"]
+        r = await api.post(
+            f"/api/prep/{prep_id}/verdict", json={"hypothesis_verdict": "sort of"}
+        )
+        assert r.status_code == 400
+
+
+class TestTheContractRefusesAnOverconfidentBrief:
+    """Validation is where the honesty rules are enforced, because a brief that
+    reads well and claims too much is the failure mode."""
+
+    async def test_a_brief_naming_nothing_to_doubt_is_refused(self):
+        from pydantic import ValidationError
+
+        from app.schemas.prep import SalesPrepPayload
+
+        with pytest.raises(ValidationError, match="must not assume"):
+            SalesPrepPayload.model_validate(_brief(do_not_assume=[]))
+
+    async def test_an_objection_cannot_be_observed_without_a_reply(self):
+        """Otherwise the model promotes its own guess to something they said,
+        and a rep answers an objection nobody raised."""
+        from pydantic import ValidationError
+
+        from app.schemas.prep import SalesPrepPayload
+
+        objection = {
+            "objection": "We build this in-house.",
+            "pre_empt": "That makes sense.",
+            "kind": "observed",
+        }
+        with pytest.raises(ValidationError, match="observed"):
+            SalesPrepPayload.model_validate(_brief(objections=[objection]))
+
+        # The same objection, honestly labelled, is fine.
+        ok = SalesPrepPayload.model_validate(
+            _brief(objections=[{**objection, "kind": "anticipated"}])
+        )
+        assert ok.objections[0].kind == "anticipated"
+
+    async def test_a_question_that_changes_nothing_cannot_be_asked(self):
+        from pydantic import ValidationError
+
+        from app.schemas.prep import SalesPrepPayload
+
+        with pytest.raises(ValidationError):
+            SalesPrepPayload.model_validate(
+                _brief(
+                    discovery_questions=[
+                        {"question": "How are you?", "listening_for": "tone"}
+                    ]
+                )
+            )
+
+
+class TestAStoredBriefComesBackWithIt:
+    """A generated brief that vanishes on reload has cost a model call for
+    nothing, and a brief shown beside facts that have moved on is worse than
+    one labelled as older than them."""
+
+    async def test_the_newest_brief_is_returned(self, api, contact, stubbed):
+        assert (await _get(api, contact))["brief"] is None
+        await api.post(f"/api/prep/{contact.id}/generate")
+        body = await _get(api, contact)
+        assert body["brief"]["call_objective"]
+        assert body["brief_generated_at"]
+        assert body["brief_mode"] == "pre_engagement"
+
+    async def test_a_fresh_brief_is_not_stale(self, api, contact, stubbed):
+        await api.post(f"/api/prep/{contact.id}/generate")
+        assert (await _get(api, contact))["brief_is_stale"] is False
+
+    async def test_a_new_signal_makes_the_brief_older_than_the_facts(
+        self, api, session, contact, stubbed
+    ):
+        """Staleness is measured against what was true when it was written,
+        not against the clock: an hour-old brief with nothing new since is not
+        stale, and a minute-old one written before three signals arrived is."""
+        await api.post(f"/api/prep/{contact.id}/generate")
+        session.add(
+            Signal(
+                account_id=contact.account_id,
+                signal_type="product_launch",
+                scope="company",
+                summary="Something new happened after the brief was written.",
+                strength="medium",
+                confidence=0.9,
+                observed_at=date.today(),
+                lifecycle_state="discovered",
+            )
+        )
+        await session.flush()
+        assert (await _get(api, contact))["brief_is_stale"] is True
