@@ -1,0 +1,706 @@
+"""Sales prep — what a rep needs to know before a call, one contact at a time.
+
+**This router serves the facts; generation comes later.** The screen is built
+around a brief the `sales_prep` stage writes, but everything underneath it —
+who the person is, how old the picture is, what each qualification dimension
+rests on, what has actually been sent — exists today and is worth reading on
+its own. A rep can open this before any model has run and still learn more than
+the account screen tells them.
+
+Two decisions shape the module, both from the design review.
+
+**Freshness is three questions, not one.** When we last looked, how old what we
+found is, and whether anything has ever been sent. Measured on one real
+account: researched today, strongest signal one day old, *oldest signal nine
+months old*, nothing ever sent. One number would have read as "fresh" and been
+wrong in two directions at once.
+
+**Engagement is a ladder, and every rung is a different claim.** A drafted
+message is not an approved one; an approved one is not sent; a sent one is not
+delivered; a delivered one is not interest. A rep who walks into a call
+believing the prospect read something they never received has been actively
+misled, so this reports the furthest rung actually reached and names the rungs
+it cannot observe rather than reporting them as zero.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, date, datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.api.deps import get_session
+from app.models.account import Account, Contact
+from app.models.campaign import OutreachSequence
+from app.models.config import ProofPoint
+from app.models.content import Touch
+from app.models.context import Qualification
+from app.models.execution import OutreachEvent
+from app.models.signal import Evidence, Signal, signal_evidence
+from app.models.strategy import StrategyThread
+from app.services.apollo_list_builder import persona_of
+
+router = APIRouter(tags=["prep"])
+
+#: The rungs in order, so "furthest reached" is a scan from the end. A rung is
+#: never inferred from an earlier one.
+#:
+#: **`delivered` is deliberately not here.** The review's chain — drafted,
+#: approved, sent, delivered, replied — is right in principle, but La Growth
+#: Machine's event vocabulary is `message_sent`, `message_received`,
+#: `unsubscribed`, `status_change` and `other`. It never reports delivery. So
+#: that rung is not "waiting on the webhook receiver"; it is a thing this
+#: provider will not tell us, and a ladder listing it would imply it is coming.
+#: `NEVER_OBSERVABLE` says so instead.
+LADDER = ("drafted", "approved", "sent", "replied")
+
+#: Rungs no amount of plumbing will fill, with the reason. Reported every time,
+#: because "we never learn this" has to be distinguishable from "not yet".
+NEVER_OBSERVABLE = {
+    "delivered": (
+        "La Growth Machine reports messages sent and received, never delivery, "
+        "so a send is the furthest thing we can confirm about reaching someone."
+    )
+}
+
+#: The six as the scorer computes them — ours, not the review's proposed
+#: taxonomy. These are already versioned in `scoring_config` and already carry
+#: a basis and evidence ids per dimension; renaming them would be a migration
+#: plus a re-score of the whole book for a vocabulary change.
+DIMENSIONS = ("fit", "opportunity", "buyer", "commercial", "intent", "engagement")
+
+
+class FreshnessOut(BaseModel):
+    """One of the three ages, and what it does *not* tell you."""
+
+    kind: str
+    #: Days, or None when it has never happened. Zero and None are different
+    #: answers — "today" against "never" — and a screen rendering both as 0
+    #: tells a rep research is current when nobody has looked.
+    days: int | None
+    at: datetime | None = None
+    detail: str
+
+
+class EngagementOut(BaseModel):
+    #: The furthest rung actually reached, or None when nothing was drafted.
+    reached: str | None
+    counts: dict[str, int]
+    #: Rungs this installation cannot observe. Named, so the screen can say
+    #: "we cannot see this" instead of showing zero and implying none.
+    unobservable: list[str] = []
+    #: Why, for the ones that will never be observable rather than merely not
+    #: yet. A rep told "delivery unknown" deserves to know it stays unknown.
+    unobservable_why: dict[str, str] = {}
+    detail: str
+
+
+class ProofOut(BaseModel):
+    id: uuid.UUID
+    kind: str
+    title: str
+    body: str | None
+    metrics: dict = {}
+    #: Whether a measured outcome is attached. A case study without one may
+    #: describe a capability but must not claim a result, and the screen has to
+    #: say which it is holding.
+    has_metric: bool
+
+
+class ThreadOut(BaseModel):
+    id: uuid.UUID
+    thread_status: str
+    problem_hypothesis: str
+    trigger_summary: str
+    positioning: str
+    cta: str
+    channel_sequence: list = []
+    #: How well the approach fits the context — **not** whether the problem is
+    #: real, and not how reliable the evidence is. Three different confidences
+    #: that one unlabelled number used to stand for.
+    strategy_confidence: float | None
+    without_live_trigger: bool = False
+    avoid_list: list = []
+
+
+class DimensionOut(BaseModel):
+    dimension: str
+    score: float
+    basis: str
+    reason: str
+    evidence_count: int
+
+
+class QualificationOut(BaseModel):
+    priority_score: float
+    priority_band: str
+    scoring_config_version: int
+    dimensions: list[DimensionOut]
+    man: dict = {}
+    #: The average across dimensions the scorer could actually assess.
+    #:
+    #: **The headline number is not a verdict on the account.** One real case
+    #: scores 49 "low" while averaging 68.75 over the four dimensions that were
+    #: actually assessable; the two zeroes are missing firmographics and the
+    #: fact that nobody has been contacted yet, neither of which says anything
+    #: about whether the company is worth calling. A rep shown only 49 draws
+    #: the wrong conclusion, so both are returned and labelled.
+    assessed_average: float | None
+    #: Dimensions the scorer had nothing to go on for. Not low scores — absent
+    #: ones, and the difference decides whether a rep researches or walks away.
+    unassessed: list[str] = []
+
+
+class SignalBriefOut(BaseModel):
+    id: uuid.UUID
+    signal_type: str
+    scope: str
+    summary: str
+    business_implication: str | None
+    strength: str
+    #: How reliably the source supports the fact. Distinct from the thread's
+    #: strategy confidence.
+    evidence_confidence: float
+    observed_at: date | None
+    expires_at: date | None
+    lifecycle_state: str
+    is_hypothesis: bool
+    age_days: int | None
+    evidence_count: int
+    sources: list[str] = []
+
+
+class PrepOut(BaseModel):
+    contact_id: uuid.UUID
+    contact_name: str
+    title: str | None
+    seniority: str | None
+    persona_role: str | None
+    buying_role: str | None
+    #: Whether the persona came from a source or from reading a job title.
+    #: "Economic buyer" inferred from "CEO" is a fair guess and not an org
+    #: chart, and a rep deciding who to call should know which they hold.
+    persona_basis: str
+    #: Carried so the screen can say a person is unreachable by email without
+    #: the address itself ever reaching the response. A prep brief needs no
+    #: address, and invariant 9 keeps it out.
+    email_status: str | None
+    do_not_contact: bool
+    do_not_contact_reason: str | None
+    linkedin_url: str | None
+
+    account_id: uuid.UUID
+    account_name: str
+    domain: str | None
+    industry: str | None
+    employee_count: int | None
+
+    #: Research, signals, engagement — in that order, because that is the order
+    #: in which a rep's trust in the brief degrades.
+    freshness: list[FreshnessOut]
+    engagement: EngagementOut
+    qualification: QualificationOut | None
+    #: The account's live signals, newest first, with this person's own
+    #: included: a call is with someone.
+    signals: list[SignalBriefOut]
+    thread: ThreadOut | None
+    #: Only `is_approved` proof may appear in anything a rep says aloud.
+    proof: list[ProofOut]
+    #: Absent until the stage runs. The screen is useful without it.
+    brief: dict | None = None
+    #: Decided from the ladder, not chosen by hand: nothing sent means there is
+    #: no conversation to be aware of, and a brief opening on an observation
+    #: the prospect already answered wastes the call.
+    mode: str
+
+
+def _days_since(when: datetime | date | None) -> int | None:
+    if when is None:
+        return None
+    if isinstance(when, datetime):
+        at = when if when.tzinfo else when.replace(tzinfo=UTC)
+        return max((datetime.now(UTC) - at).days, 0)
+    return max((date.today() - when).days, 0)
+
+
+@router.get("/prep/{contact_id}", response_model=PrepOut)
+async def prep_for_contact(
+    contact_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Everything the prep screen reads, in one round trip.
+
+    One request rather than six, for the same reason the account screen carries
+    its contacts' profiles: "who am I calling and what do we know about them"
+    is one question, asked once.
+    """
+    contact = (
+        await session.execute(
+            select(Contact)
+            .options(selectinload(Contact.account))
+            .where(Contact.id == contact_id)
+        )
+    ).scalar_one_or_none()
+    if contact is None:
+        raise HTTPException(404, "No such contact.")
+    account: Account = contact.account
+
+    # --- signals, and the two ages they carry ---
+    #
+    # Expired and superseded are both excluded: `drafting` refuses to cite
+    # either, so a brief must not argue from one.
+    signal_rows = list(
+        (
+            await session.execute(
+                select(Signal)
+                .where(
+                    Signal.account_id == account.id,
+                    Signal.lifecycle_state != "expired",
+                    Signal.superseded_by.is_(None),
+                )
+                .order_by(Signal.observed_at.desc().nullslast())
+            )
+        ).scalars()
+    )
+    dated = [s.observed_at for s in signal_rows if s.observed_at]
+    newest = max(dated) if dated else None
+    oldest = min(dated) if dated else None
+
+    looked = _days_since(account.research_completed_at)
+    freshness = [
+        FreshnessOut(
+            kind="research",
+            days=looked,
+            at=account.research_completed_at,
+            detail=(
+                f"last run {account.research_status}"
+                if looked is not None
+                else "nobody has looked at this account yet"
+            ),
+        ),
+        FreshnessOut(
+            kind="signals",
+            days=_days_since(newest),
+            detail=(
+                f"{len(signal_rows)} live · newest {_days_since(newest)}d · "
+                f"oldest {_days_since(oldest)}d"
+                if dated
+                else "no live signal — a brief here argues from no trigger"
+            ),
+        ),
+    ]
+
+    # --- the ladder ---
+    touches = list(
+        (
+            await session.execute(
+                select(Touch)
+                .join(OutreachSequence, OutreachSequence.id == Touch.sequence_id)
+                .where(OutreachSequence.contact_id == contact.id)
+            )
+        ).scalars()
+    )
+    events = list(
+        (
+            await session.execute(
+                select(OutreachEvent).where(OutreachEvent.contact_id == contact.id)
+            )
+        ).scalars()
+    )
+    counts = {
+        "drafted": sum(1 for t in touches if t.content_written_at is not None),
+        # Approval is at sequence level, never per touch (invariant 3). A touch
+        # only reaches `scheduled` through an approved sequence, so that is the
+        # observable rather than a per-touch flag that does not exist.
+        "approved": sum(1 for t in touches if t.status in {"scheduled", "sent"}),
+        "sent": sum(1 for t in touches if t.status == "sent"),
+        # `received`, not `inbound`. The first version read `direction ==
+        # "inbound"`, which the column's own CHECK constraint does not allow —
+        # so reply detection could never fire and the brief would have stayed
+        # in cold-approach mode after a prospect had written back. A test
+        # inserting a real reply caught it.
+        "replied": sum(1 for e in events if e.direction == "received"),
+    }
+    reached = next((rung for rung in reversed(LADDER) if counts.get(rung)), None)
+    sent_at = [t.sent_at for t in touches if t.sent_at]
+    freshness.append(
+        FreshnessOut(
+            kind="engagement",
+            days=_days_since(max(sent_at)) if sent_at else None,
+            at=max(sent_at) if sent_at else None,
+            detail=(
+                f"furthest rung reached: {reached}"
+                if reached
+                else f"{len(touches)} touch(es) planned, none sent"
+            ),
+        )
+    )
+    engagement = EngagementOut(
+        reached=reached,
+        counts=counts,
+        # Delivery is never knowable from this provider; replies are, but only
+        # once events start arriving. Until then a zero means "we cannot see
+        # it" rather than "there were none", and saying which is the difference
+        # between an honest brief and a confidently wrong one.
+        unobservable=(
+            list(NEVER_OBSERVABLE) if events else [*NEVER_OBSERVABLE, "replied"]
+        ),
+        unobservable_why=dict(NEVER_OBSERVABLE),
+        detail=(
+            "Nothing has been sent to this contact, so there is no conversation "
+            "to be aware of."
+            if not counts["sent"]
+            else f"{counts['sent']} sent · {counts['replied']} recorded reply/replies"
+        ),
+    )
+
+    # --- qualification, unpacked ---
+    qual = (
+        await session.execute(
+            select(Qualification)
+            .where(Qualification.account_id == account.id)
+            .order_by(Qualification.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    qual_out = None
+    if qual is not None:
+        reasons = qual.reasons or {}
+        dims: list[DimensionOut] = []
+        assessed: list[float] = []
+        unassessed: list[str] = []
+        for name in DIMENSIONS:
+            raw = reasons.get(name) or {}
+            score = float(getattr(qual, f"{name}_score", 0) or 0)
+            basis = str(raw.get("basis") or "unknown")
+            ids = raw.get("evidence_ids") or []
+            dims.append(
+                DimensionOut(
+                    dimension=name,
+                    score=score,
+                    basis=basis,
+                    reason=str(raw.get("reason") or ""),
+                    evidence_count=len(ids),
+                )
+            )
+            # **An absence is not a finding.** `no_evidence` is the scorer
+            # saying it had nothing to compare; `outreach` with nothing sent is
+            # the engagement dimension being structurally zero until a campaign
+            # runs. Neither says anything about whether the account is worth
+            # calling, and averaging them in drags the number toward a verdict
+            # the data does not support — on the real case it pulled 69 down to
+            # 55. `contacts` is a genuine basis and stays in.
+            if basis in {"no_evidence", "unknown"} or (
+                basis == "outreach" and not counts["sent"]
+            ):
+                unassessed.append(name)
+            else:
+                assessed.append(score)
+        qual_out = QualificationOut(
+            priority_score=float(qual.priority_score or 0),
+            priority_band=qual.priority_band or "low",
+            scoring_config_version=qual.scoring_config_version,
+            dimensions=dims,
+            man={
+                "money": qual.man_money,
+                "authority": qual.man_authority,
+                "need": qual.man_need,
+            },
+            assessed_average=(
+                round(sum(assessed) / len(assessed), 2) if assessed else None
+            ),
+            unassessed=unassessed,
+        )
+
+    # --- where each signal came from ---
+    #
+    # One query for every signal's sources rather than one per signal: a
+    # well-covered account holds dozens, and the screen opens with them.
+    source_rows = (
+        await session.execute(
+            select(signal_evidence.c.signal_id, Evidence.source_name)
+            .join(Evidence, Evidence.id == signal_evidence.c.evidence_id)
+            .where(Evidence.account_id == account.id)
+        )
+    ).all()
+    by_signal: dict[uuid.UUID, list[str]] = {}
+    for signal_id, source_name in source_rows:
+        names = by_signal.setdefault(signal_id, [])
+        if source_name and source_name not in names:
+            names.append(source_name)
+
+    signals_out = [
+        SignalBriefOut(
+            id=s.id,
+            signal_type=s.signal_type,
+            scope=s.scope,
+            summary=s.summary,
+            business_implication=s.business_implication,
+            strength=s.strength,
+            evidence_confidence=float(s.confidence or 0),
+            observed_at=s.observed_at,
+            expires_at=s.expires_at,
+            lifecycle_state=s.lifecycle_state,
+            is_hypothesis=s.is_hypothesis,
+            age_days=_days_since(s.observed_at),
+            evidence_count=len(by_signal.get(s.id, [])),
+            sources=by_signal.get(s.id, []),
+        )
+        for s in signal_rows
+    ]
+
+    thread = (
+        await session.execute(
+            select(StrategyThread)
+            .where(StrategyThread.contact_id == contact.id)
+            .order_by(StrategyThread.rank)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    proof = list(
+        (
+            await session.execute(
+                select(ProofPoint).where(ProofPoint.is_approved.is_(True))
+            )
+        ).scalars()
+    )
+
+    # **The basis has to match what actually happened.** The first version of
+    # this returned "inferred from job title" for every contact with a title
+    # while `persona_role` came back null — asserting an inference nobody had
+    # made, which is the exact failure the fact/inference/hypothesis labelling
+    # exists to prevent. `persona_role` is stored on 2 of 124 contacts, so for
+    # almost everyone the honest options are to derive it here or to say it is
+    # not established.
+    #
+    # Derived with the same `persona_of` the Apollo builder pairs contacts
+    # with, so the screen and the list that produced the contact cannot
+    # disagree about who someone is. It returns None for a title neither ladder
+    # recognises, and None is reported rather than guessed at.
+    if contact.persona_role:
+        persona = contact.persona_role
+        persona_basis = "recorded on the contact"
+    else:
+        persona, _rank = persona_of(contact.title)
+        persona_basis = (
+            "inferred from job title"
+            if persona
+            else "not established — the title matches no persona ladder"
+        )
+
+    return PrepOut(
+        contact_id=contact.id,
+        contact_name=contact.full_name,
+        title=contact.title,
+        seniority=contact.seniority,
+        buying_role=contact.buying_role,
+        persona_role=persona,
+        persona_basis=persona_basis,
+        email_status=contact.email_status,
+        do_not_contact=bool(contact.do_not_contact),
+        do_not_contact_reason=contact.do_not_contact_reason,
+        linkedin_url=contact.linkedin_url,
+        account_id=account.id,
+        account_name=account.name,
+        domain=account.domain,
+        industry=account.industry,
+        employee_count=account.employee_count,
+        freshness=freshness,
+        engagement=engagement,
+        qualification=qual_out,
+        signals=signals_out,
+        thread=(
+            ThreadOut(
+                id=thread.id,
+                thread_status=thread.thread_status,
+                problem_hypothesis=thread.problem_hypothesis,
+                trigger_summary=thread.trigger_summary,
+                positioning=thread.positioning,
+                cta=thread.cta,
+                channel_sequence=thread.channel_sequence or [],
+                strategy_confidence=(
+                    float(thread.confidence) if thread.confidence is not None else None
+                ),
+                without_live_trigger=bool(thread.without_live_trigger),
+                avoid_list=thread.avoid_list or [],
+            )
+            if thread is not None
+            else None
+        ),
+        proof=[
+            ProofOut(
+                id=p.id,
+                kind=p.kind,
+                title=p.title,
+                body=p.body,
+                metrics=p.metrics or {},
+                has_metric=bool(p.metrics),
+            )
+            for p in proof
+        ],
+        brief=None,
+        mode="engagement_aware" if counts["replied"] else "pre_engagement",
+    )
+
+
+class PrepRowOut(BaseModel):
+    contact_id: uuid.UUID
+    contact_name: str
+    title: str | None
+    persona_role: str | None
+    account_id: uuid.UUID
+    account_name: str
+    #: What changed, not that something did. A contact with no trigger says so
+    #: rather than being hidden from the list — the spec is explicit that prep
+    #: by search must not be gated on having a reason.
+    why_now: str
+    why_now_kind: str
+    #: Days since the account was last looked at, or None if never.
+    research_days: int | None
+    #: The furthest engagement rung reached, or None.
+    engagement: str | None
+    has_thread: bool
+    do_not_contact: bool
+
+
+class PrepIndexOut(BaseModel):
+    #: Those with a reason to prep now — a meeting booked, or a reply asking
+    #: for a call.
+    queue: list[PrepRowOut]
+    #: Why the queue is empty, when it is empty for a structural reason rather
+    #: than because nothing qualifies. The difference matters: "no events can
+    #: arrive yet" is a build state, "nobody has replied" is a sales fact.
+    queue_blocked: str | None
+    results: list[PrepRowOut]
+    total: int
+
+
+@router.get("/prep", response_model=PrepIndexOut)
+async def prep_index(
+    q: str | None = None,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+):
+    """Search any contact, plus the queue of those with a reason to prep.
+
+    **The queue is a convenience, not a gate.** A rep who wants to prepare
+    before there is a calendar invite should not be blocked by the data model,
+    so search covers every contact and the queue is additive.
+    """
+    stmt = (
+        select(Contact, Account)
+        .join(Account, Account.id == Contact.account_id)
+        .order_by(Contact.full_name)
+        .limit(max(1, min(limit, 200)))
+    )
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            Contact.full_name.ilike(like)
+            | Contact.title.ilike(like)
+            | Account.name.ilike(like)
+        )
+    pairs = (await session.execute(stmt)).all()
+
+    account_ids = {a.id for _c, a in pairs}
+    contact_ids = {c.id for c, _a in pairs}
+
+    # The newest live signal per account, for "why now". One query for the set
+    # rather than one per row.
+    newest: dict[uuid.UUID, Signal] = {}
+    if account_ids:
+        for s in (
+            await session.execute(
+                select(Signal)
+                .where(
+                    Signal.account_id.in_(account_ids),
+                    Signal.lifecycle_state != "expired",
+                    Signal.superseded_by.is_(None),
+                )
+                .order_by(Signal.observed_at.desc().nullslast())
+            )
+        ).scalars():
+            newest.setdefault(s.account_id, s)
+
+    threads: dict[uuid.UUID, StrategyThread] = {}
+    if contact_ids:
+        for t in (
+            await session.execute(
+                select(StrategyThread).where(StrategyThread.contact_id.in_(contact_ids))
+            )
+        ).scalars():
+            threads.setdefault(t.contact_id, t)
+
+    sent_by_contact: dict[uuid.UUID, int] = {}
+    if contact_ids:
+        for seq_contact, status in (
+            await session.execute(
+                select(OutreachSequence.contact_id, Touch.status)
+                .join(Touch, Touch.sequence_id == OutreachSequence.id)
+                .where(OutreachSequence.contact_id.in_(contact_ids))
+            )
+        ).all():
+            if status == "sent":
+                sent_by_contact[seq_contact] = sent_by_contact.get(seq_contact, 0) + 1
+
+    rows = []
+    for contact, account in pairs:
+        signal = newest.get(account.id)
+        thread = threads.get(contact.id)
+        if signal is not None:
+            why, kind = signal.summary, "signal"
+        elif thread is not None and thread.trigger_summary:
+            # A thread built without a live trigger says so in its own words;
+            # passing it through as a trigger would overstate it.
+            why = thread.trigger_summary
+            kind = "no_trigger" if thread.without_live_trigger else "thread"
+        else:
+            why, kind = "No active signal", "none"
+        persona = contact.persona_role or persona_of(contact.title)[0]
+        rows.append(
+            PrepRowOut(
+                contact_id=contact.id,
+                contact_name=contact.full_name,
+                title=contact.title,
+                persona_role=persona,
+                account_id=account.id,
+                account_name=account.name,
+                why_now=why,
+                why_now_kind=kind,
+                research_days=_days_since(account.research_completed_at),
+                engagement=("sent" if sent_by_contact.get(contact.id) else None),
+                has_thread=thread is not None,
+                do_not_contact=bool(contact.do_not_contact),
+            )
+        )
+
+    # The queue is driven by `meeting_booked` and positive-reply events. Until
+    # the webhook receiver exists nothing can arrive, so the emptiness is
+    # structural and the screen is told as much rather than left to imply that
+    # nobody qualifies.
+    any_event = (
+        await session.execute(select(OutreachEvent.id).limit(1))
+    ).scalar_one_or_none()
+    queue_rows = [r for r in rows if r.engagement == "sent"] if any_event else []
+
+    return PrepIndexOut(
+        queue=queue_rows,
+        queue_blocked=(
+            None
+            if any_event
+            else (
+                "The queue fills from meeting-booked and reply events, which arrive "
+                "through the outreach webhook receiver. No event has ever been "
+                "received, so nothing can be queued yet — search still works, and a "
+                "contact with no meeting can be prepped anyway."
+            )
+        ),
+        results=rows,
+        total=len(rows),
+    )
