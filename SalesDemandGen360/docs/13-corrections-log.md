@@ -5246,3 +5246,50 @@ Backend 1,936 pass; frontend 385; `ng build` clean.
 `services/stages.py`, `services/instructions.py`, `alembic/c2f91a7e4db6` (new),
 `web/.../prep/*` (new), `web/.../core/prep.service.ts` (new), `web/src/styles.css`,
 `tests/test_prep.py` (+35), `web/.../prep.service.spec.ts` (new).
+
+## §113 — It was never a rate limit (2026-10-10)
+
+**Problem.** Two days of work were shaped around a wrong diagnosis. §110 built
+a circuit breaker for "the model provider refused on quota", §112 shipped with
+"not verified live — the quota is exhausted", and a fifty-account run was
+abandoned on the understanding that it would reset. It does not reset.
+
+**What it actually says.** Asked for its message rather than its status, the
+API answers:
+
+> Your project has exceeded its monthly spending cap. Please go to AI Studio
+> at https://ai.studio/spend to manage your project spend cap.
+
+Not a rate limit. Not a daily quota. A **spend cap**, which clears when
+somebody raises it and not before — which is why waiting overnight changed
+nothing, and why all three configured models refused identically.
+
+**Cause.** `_quota_hint` read `quotaId`, `quotaMetric` and `retryDelay` and
+deliberately discarded `message`, under invariant 9: a rejection can quote the
+key that was sent. The structured fields were absent from every response, so
+the error read `HTTP 429, quota RESOURCE_EXHAUSTED` and nothing else — and
+`RESOURCE_EXHAUSTED` is what Google returns for both "too many requests this
+minute" and "this project has spent its cap". The two want opposite responses
+and only the discarded sentence separated them.
+
+The reasoning in §110 — "there is no machine-readable retry hint anywhere in
+the response" — was correct and beside the point. The answer was in the
+response the whole time, in the one field that was never read.
+
+**Fix.** The message is carried, with credential-shaped runs removed first:
+`AIza…` keys, bearer tokens, and any opaque run of 40 characters or more, then
+truncated to 300. `GeminiError.is_spend_cap` distinguishes the two 429s,
+`LlmUnavailableError` carries it, `RunResult.spend_capped` reaches the list
+loop, and the loop no longer offers to wait — a spend cap is not waited out,
+and the report now says "raise the project spend cap and re-run" instead of
+"re-run once the quota resets".
+
+**The rule, restated.** Invariant 9 is about credentials reaching logs, not
+about refusing to repeat a provider's own diagnosis. Redaction serves it.
+Silence served only ignorance, and cost two days plus a fifty-account run that
+stopped at eighteen.
+
+Backend 1,942 pass.
+
+`services/gemini.py`, `services/llm.py`, `services/pipeline.py`,
+`api/lists.py`, `tests/test_gemini_adapter.py` (+6).

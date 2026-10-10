@@ -1542,7 +1542,9 @@ async def run_research_for_list(
             # looking researched and empty.
             wait = result.rate_limit_retry_after
             daily = "perday" in (result.rate_limit_quota or "").lower().replace("_", "")
-            if not daily and wait is not None and wait <= RATE_LIMIT_MAX_WAIT:
+            # A spend cap is never waited out. It does not reset on a clock and
+            # no backoff reaches the other side of it.
+            if not result.spend_capped and not daily and wait is not None and wait <= RATE_LIMIT_MAX_WAIT:
                 log.warning(
                     "lists.research rate limited, waiting %.0fs quota=%s",
                     wait, result.rate_limit_quota or "unnamed",
@@ -1556,7 +1558,12 @@ async def run_research_for_list(
                 f"provider refused on quota ({named})"
                 + (f", retry after {wait:g}s" if wait is not None else "")
                 + ". The accounts not reached were not researched and nothing was "
-                "spent on them; re-run once the quota resets."
+                "spent on them; "
+                + (
+                    "raise the project spend cap and re-run."
+                    if result.spend_capped
+                    else "re-run once the quota resets."
+                )
             )
             log.warning("lists.research %s", report.stopped_early)
             break

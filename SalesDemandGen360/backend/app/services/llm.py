@@ -62,10 +62,15 @@ class LlmUnavailableError(RuntimeError):
         retry_after: float | None = None,
         quota: str | None = None,
         rate_limited: bool = False,
+        spend_capped: bool = False,
     ):
         self.retry_after = retry_after
         self.quota = quota
         self.rate_limited = rate_limited
+        #: A 429 no amount of waiting clears. Google says `RESOURCE_EXHAUSTED`
+        #: for both "too many this minute" and "this project has spent its
+        #: cap", and the two want opposite responses.
+        self.spend_capped = spend_capped
         super().__init__(message)
 
     @property
@@ -92,6 +97,7 @@ def _unavailable(exc: Exception, *, suffix: str = "") -> LlmUnavailableError:
         retry_after=getattr(exc, "retry_after", None),
         quota=getattr(exc, "quota", None),
         rate_limited=bool(getattr(exc, "is_rate_limit", False)),
+        spend_capped=bool(getattr(exc, "is_spend_cap", False)),
     )
 
 

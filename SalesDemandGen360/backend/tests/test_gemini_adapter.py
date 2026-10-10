@@ -581,3 +581,84 @@ class TestWhatA429Says:
             }
         )
         assert quota == "GenerateRequestsPerDayPerProjectPerModel"
+
+    def test_a_spend_cap_is_not_a_rate_limit(self):
+        """The two arrive identically and want opposite responses.
+
+        Measured against the live API: Google answers `429
+        RESOURCE_EXHAUSTED` both for "too many requests" and for "this project
+        has exceeded its monthly spending cap". With the message withheld, the
+        second read as the first for two days — a research run and a prep
+        brief were both waited out, and the cap does not reset on a clock.
+        """
+        from app.services.gemini import GeminiError, redacted
+
+        message = (
+            "Your project has exceeded its monthly spending cap. Please go to "
+            "AI Studio at https://ai.studio/spend to manage your project spend cap."
+        )
+        exc = GeminiError(
+            "Gemini returned HTTP 429",
+            status_code=429,
+            quota="RESOURCE_EXHAUSTED",
+            detail=redacted(message),
+        )
+        assert exc.is_rate_limit
+        assert exc.is_spend_cap, "a spend cap must be distinguishable from a rate limit"
+
+        ordinary = GeminiError(
+            "Gemini returned HTTP 429",
+            status_code=429,
+            quota="GenerateRequestsPerMinutePerProject",
+            detail=redacted("Quota exceeded for requests per minute."),
+        )
+        assert ordinary.is_rate_limit
+        assert not ordinary.is_spend_cap
+
+
+class TestRepeatingWhatTheProviderSaid:
+    """The message is carried now, because withholding it hid the diagnosis.
+
+    The rule it was withheld under — a rejection can quote the key that was
+    sent — is about keys reaching logs, not about refusing to repeat a
+    provider's own sentence. Redaction serves that rule; silence only served
+    ignorance.
+    """
+
+    def test_a_google_key_never_survives(self):
+        from app.services.gemini import redacted
+
+        out = redacted(
+            "Quota exceeded for key AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r on project 42"
+        )
+        assert "AIza" not in out
+        assert "[redacted]" in out
+        # And the part worth reading survives.
+        assert "Quota exceeded" in out and "project 42" in out
+
+    def test_a_bearer_token_never_survives(self):
+        from app.services.gemini import redacted
+
+        out = redacted("Unauthorized: bearer sk-abcdefghijklmnopqrstuvwxyz0123456789")
+        assert "sk-abcdefghij" not in out
+        assert "Unauthorized" in out
+
+    def test_any_long_opaque_run_is_removed(self):
+        """Not every secret announces itself with a prefix."""
+        from app.services.gemini import redacted
+
+        out = redacted("Rejected credential ZmFrZXNlY3JldGZha2VzZWNyZXRmYWtlc2VjcmV0MTIzNDU2")
+        assert "ZmFrZXNlY3JldGZha2V" not in out
+
+    def test_an_absent_message_stays_absent(self):
+        from app.services.gemini import redacted
+
+        assert redacted(None) is None
+        assert redacted("") is None
+
+    def test_a_long_message_is_cut_rather_than_carried_whole(self):
+        """An error line is for reading, not for pasting a page into a log."""
+        from app.services.gemini import redacted
+
+        prose = "Quota exceeded for this project and policy. " * 60
+        assert len(redacted(prose)) == 300

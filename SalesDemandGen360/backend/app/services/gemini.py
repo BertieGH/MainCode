@@ -45,6 +45,7 @@ behaviour should not be assumed to cost the same here.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import ssl
 from typing import Any
@@ -115,8 +116,12 @@ class GeminiError(RuntimeError):
         status_code: int | None = None,
         retry_after: float | None = None,
         quota: str | None = None,
+        detail: str | None = None,
     ):
         self.status_code = status_code
+        #: What the provider actually said, redacted. The field that would
+        #: have diagnosed a spend cap two days earlier.
+        self.detail = detail
         #: Seconds Google asked us to wait, from its `RetryInfo`. None when it
         #: did not say, which is not the same as zero.
         self.retry_after = retry_after
@@ -129,6 +134,17 @@ class GeminiError(RuntimeError):
     @property
     def is_rate_limit(self) -> bool:
         return self.status_code == 429
+
+    @property
+    def is_spend_cap(self) -> bool:
+        """A 429 that no amount of waiting will clear.
+
+        Google returns `RESOURCE_EXHAUSTED` both for "too many requests this
+        minute" and for "this project has spent its cap", and the two want
+        opposite responses: back off, or stop and tell somebody. Only the
+        message separates them.
+        """
+        return bool(self.detail and "spending cap" in self.detail.lower())
 
 
 #: Only these are read out of an error body, and only these. The body is
@@ -216,6 +232,40 @@ def _quota_hint(payload: Any) -> tuple[float | None, str | None]:
     # `if quota: break` fire on the first violation that named nothing, and
     # skip a later one that did.
     return retry_after, quota or fallback
+
+
+#: Anything shaped like a credential, removed before a provider's own words are
+#: repeated. Google API keys are `AIza` + 35 url-safe characters; the second
+#: pattern catches bearer tokens and the third any other long opaque run.
+_SECRETS = (
+    re.compile(r"AIza[0-9A-Za-z_\-]{30,}"),
+    re.compile(r"(?i)\b(?:bearer|token|key)\s+[0-9A-Za-z_\-\.]{12,}"),
+    re.compile(r"\b[0-9A-Za-z_\-]{40,}\b"),
+)
+
+
+def redacted(message: str | None, limit: int = 300) -> str | None:
+    """A provider's own sentence, with anything key-shaped taken out.
+
+    **Withholding the whole message cost two days.** The rule was that a
+    rejection can quote the key that was sent (invariant 9), so none of the
+    body was ever repeated — and for two days a research run and then a prep
+    brief failed with nothing but `HTTP 429 RESOURCE_EXHAUSTED`, which was read
+    as a rate limit and waited out. The actual sentence was *"Your project has
+    exceeded its monthly spending cap"*, which is not a rate limit, does not
+    reset, and is fixed in one click. It had been in every response all along.
+
+    So the message is carried, with credential-shaped runs removed first. The
+    invariant is about keys reaching logs, not about refusing to repeat the
+    provider's diagnosis, and redaction serves it where silence only served
+    ignorance.
+    """
+    if not message:
+        return None
+    out = message.strip()
+    for pattern in _SECRETS:
+        out = pattern.sub("[redacted]", out)
+    return out[:limit]
 
 
 class GeminiRefusedError(RuntimeError):
@@ -448,23 +498,28 @@ async def _post(
         raise GeminiError(f"could not reach Gemini: {type(exc).__name__}") from exc
 
     if response.status_code != 200:
-        # Never the body as text. A rejection can quote the key that was sent —
-        # the same rule the probes follow. Only the structured quota fields are
-        # read out of it, and `_quota_hint` names which.
+        # The structured fields, plus the provider's own sentence with
+        # anything key-shaped stripped. See `redacted` for why the sentence is
+        # carried rather than withheld.
         try:
-            retry_after, quota = _quota_hint(response.json())
+            body = response.json()
+            retry_after, quota = _quota_hint(body)
+            detail = redacted((body.get("error") or {}).get("message"))
         except Exception:  # noqa: BLE001 — a bad body must not replace the error
-            retry_after, quota = None, None
+            retry_after, quota, detail = None, None, None
         said = f"Gemini returned HTTP {response.status_code} for model {model!r}"
         if quota:
             said += f", quota {quota}"
         if retry_after is not None:
             said += f", retry after {retry_after:g}s"
+        if detail:
+            said += f" — {detail}"
         raise GeminiError(
             said,
             status_code=response.status_code,
             retry_after=retry_after,
             quota=quota,
+            detail=detail,
         )
     try:
         return response.json()

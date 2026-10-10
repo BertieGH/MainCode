@@ -78,6 +78,10 @@ class RunResult:
     #: therefore reached the next account sooner. Twenty-five calls in the
     #: final minute, all refused.
     rate_limited: bool = False
+    #: Set when the refusal was a spend cap rather than a rate limit. The two
+    #: read identically from the provider and want opposite responses: one is
+    #: waited out, the other needs a person to raise a limit.
+    spend_capped: bool = False
     #: The `quotaId` Google named, when it named one. `None` is not "no
     #: quota" — it is "it did not say", which a caller must treat differently
     #: from a per-minute ceiling it could wait out.
@@ -560,6 +564,8 @@ async def run_research(
                 # but the caller is now able to stop before it spends the same
                 # refusal forty more times.
                 result.rate_limited = True
+                if getattr(exc, "spend_capped", False):
+                    result.spend_capped = True
                 result.rate_limit_quota = (
                     getattr(exc, "quota", None) or result.rate_limit_quota
                 )
