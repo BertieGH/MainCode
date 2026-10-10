@@ -4979,3 +4979,64 @@ spend rather than fifty.
 Backend 1,881 pass.
 
 `services/pipeline.py`, `services/evidence.py`, `api/lists.py`.
+
+## §109 — The run that stopped, and the test that proved nothing (2026-10-09)
+
+**Problem.** The first fifty-account list run with the families concurrent
+stopped dead on the eighteenth account. Seventeen had completed cleanly — no
+failures, ~59s each, 438 evidence rows — and then nothing moved for half an
+hour, until it was killed. No error, no timeout, no rate limit. The run sat in
+`resolution` with five `company_research` calls already succeeded and paid for.
+
+**Cause.** `pg_stat_activity` named it in one line each:
+
+- the caller's session, **idle in transaction**, last statement
+  `INSERT INTO research_coverage`
+- a family's session, **active on `Lock/transactionid`, blocked by it**,
+  attempting `INSERT INTO evidence`
+
+The fast sweep stores its evidence on the *caller's* session. A family on a
+session of its own that finds the same passage must wait on that uncommitted
+row, because `evidence_dedup` cannot know whether a pending row will be
+committed. By then the caller is inside `asyncio.gather` waiting for exactly
+that family. Postgres sees one waiter and not a cycle, so it never declares a
+deadlock and nothing times out: it would have waited forever.
+
+This is a different bug from §108 wearing the same face. The savepoint retry
+there absorbs a clash with a **committed** row; here the blocker cannot commit
+until the blocked family returns, so no retry can reach it. Concurrency made a
+latent ordering assumption — "the caller may hold writes while it waits" —
+into a hang.
+
+**Fix.** The caller commits before the gather, so nothing of ours is pending
+while a family runs. The sweep's evidence and coverage are finished work
+regardless: evidence is immutable and stands on its own, which is the same
+reason each family commits its own. Family-against-family is safe without this
+and stays as it was — the blocker there is not waiting on anyone, so it commits
+promptly and the other takes the §108 savepoint path.
+
+**The test that proved nothing.** The first regression test probed
+`session.new` and `session.dirty`, and **passed with the fix removed**.
+`record_coverage` flushes, and a flushed-but-uncommitted row is precisely the
+hazard — it holds its lock while remaining invisible to every other
+transaction, so the pending set is empty exactly when the danger is greatest.
+Re-probed on `session.in_transaction()`, which is what a family would actually
+have to wait for, it fails without the fix and passes with it. The lesson is
+narrower than "write a test": a test for a concurrency fix has to be run
+against the unfixed code, or it only documents the fix.
+
+The hang itself is not tested through a hang — that needs two real connections
+and would fail by timing out. The rule is asserted instead: when the families
+are to run concurrently, the caller's session has no open transaction by the
+time the first one starts.
+
+**Verified on the same fifty-account list.** 25 minutes wall clock, 38 accounts
+attempted and 12 reused, 30 researched, **0 failed and 0 halted**, 559 evidence
+rows, 61 signals, 26 qualified. 226 successful model calls summing 2,155s of
+model time inside 25 minutes of clock, at 40.6s an account. No lock wait and no
+stall anywhere in the run. The rate limit it hit at the end is a separate
+problem — §110.
+
+Backend 1,883 pass.
+
+`services/pipeline.py`, `tests/test_research_pipeline.py` (+2).

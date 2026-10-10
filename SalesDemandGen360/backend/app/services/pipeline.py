@@ -441,6 +441,30 @@ async def run_research(
                 )
                 plan = ResearchPlan(families=[], orphan_types=plan.orphan_types)
 
+    if concurrent_families:
+        # **Nothing of ours may be uncommitted once a family starts.** The
+        # sweep above stores its evidence on *this* session, and a family on a
+        # session of its own that finds the same passage blocks on that
+        # uncommitted row — `evidence_dedup` cannot know yet whether it will be
+        # committed, so Postgres makes the second writer wait for the first
+        # transaction to end. That transaction is this one, and this one is
+        # about to sit inside `asyncio.gather` waiting for that family.
+        #
+        # Neither side can move and Postgres sees only one waiter, so it never
+        # declares a deadlock and nothing times out. Live, on the eighteenth
+        # account of a fifty-account list, the run stopped dead: five searches
+        # had succeeded and been paid for, and the run sat in `resolution` for
+        # half an hour until it was killed.
+        #
+        # The savepoint retry in `evidence.py` is no help here and could not
+        # be: it absorbs a clash with a *committed* row, and the blocker here
+        # cannot commit until the blocked family returns.
+        #
+        # So the sweep's evidence and coverage are committed before the gather.
+        # They are finished work either way — evidence is immutable and stands
+        # on its own, which is the same reason each family commits its own.
+        await session.commit()
+
     # --- 3. Each family, recorded whatever it returns ---
     #
     # **Searches together, rows one at a time.** Measured on one account: 79s

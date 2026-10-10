@@ -846,3 +846,104 @@ class TestEachPersonIsProfiledOnce:
         )
 
         assert result.contacts_profiled == 1, "the second person was skipped too"
+
+
+class TestNothingUncommittedWhileFamiliesRun:
+    """A family on its own session must never wait on this one.
+
+    The deadlock this guards was not theoretical and was not caught by any
+    test: on the eighteenth account of a fifty-account list, the run stopped
+    for half an hour until it was killed. The fast sweep stores its evidence on
+    the caller's session; a family on a session of its own that found the same
+    passage blocked on that uncommitted row, because `evidence_dedup` cannot
+    tell whether a pending row will be committed. The caller was by then inside
+    `asyncio.gather` waiting for exactly that family. Postgres sees one waiter,
+    not a cycle, so it never aborts either side and nothing times out.
+
+    The savepoint retry in `evidence.py` cannot help: it absorbs a clash with a
+    *committed* row, and here the blocker cannot commit until the blocked
+    family returns.
+
+    So the rule is stated as a rule rather than tested through a hang, which
+    would need two real connections and would fail by timing out: when the
+    families are to run concurrently, this session has nothing pending by the
+    time the first one starts.
+    """
+
+    async def test_the_session_is_clean_before_the_first_family_runs(
+        self, session, account
+    ):
+        from app.services.pipeline import FamilyOutcome
+
+        seen = []
+
+        async def runner(acc, family):
+            # **`session.new` is the wrong question.** `record_coverage` flushes,
+            # and a flushed-but-uncommitted row is precisely the hazard: it
+            # holds its lock while remaining invisible to every other
+            # transaction, so the pending set is empty exactly when the danger
+            # is greatest. The first version of this test probed `new` and
+            # passed with the fix removed.
+            #
+            # An open transaction is the real question, because that is what a
+            # family would have to wait for.
+            seen.append(session.in_transaction())
+            return FamilyOutcome(stored=1)
+
+        async def sweep(acc):
+            # Stands in for the real sweep, which stores evidence and coverage
+            # on this session. Nothing is committed here on purpose.
+            from app.services.pipeline import SweepOutcome
+
+            return SweepOutcome(found=2, stored=2, notes=("two pages read",))
+
+        await run_research(
+            session,
+            account=account,
+            crm=StubCrmAdapter(),
+            run_family=runner,
+            run_sweep=sweep,
+            concurrent_families=True,
+        )
+
+        assert seen, "no family ran, so the rule was not exercised"
+        assert not any(seen), (
+            "the caller held an open transaction while a family ran — a family "
+            "on its own session would block on it, and the caller is about to "
+            "wait for that family"
+        )
+
+    async def test_sequential_runs_are_left_alone(self, session, account):
+        """The commit belongs to the concurrent path and nothing else.
+
+        Committing mid-run when the families share this session would end the
+        caller's transaction for no reason, and every pipeline test — and the
+        contact pass — depends on it staying open.
+        """
+        from app.services.pipeline import FamilyOutcome
+
+        committed = []
+        original = session.commit
+
+        async def watched():
+            committed.append(True)
+            await original()
+
+        session.commit = watched
+        try:
+            await run_research(
+                session,
+                account=account,
+                crm=StubCrmAdapter(),
+                run_family=lambda acc, fam: _stored_one(),
+            )
+        finally:
+            session.commit = original
+
+        assert not committed, "a sequential run committed the caller's session"
+
+
+async def _stored_one():
+    from app.services.pipeline import FamilyOutcome
+
+    return FamilyOutcome(stored=1)
