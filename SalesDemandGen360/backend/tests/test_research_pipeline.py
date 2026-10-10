@@ -947,3 +947,47 @@ async def _stored_one():
     from app.services.pipeline import FamilyOutcome
 
     return FamilyOutcome(stored=1)
+
+
+class TestARateLimitIsCarriedNotSwallowed:
+    """A family's isolation must not hide a quota refusal from the caller.
+
+    Each family swallows its own failure so a fault costs one source rather
+    than the run, and that is right. But it also meant a 429 never reached the
+    list loop, which saw a `partial` account and moved straight on. Measured on
+    a fifty-account list: the last five accounts lost all five sources each,
+    and the call rate *rose* while it happened — a 429 fails in milliseconds,
+    so the loop reached the next account sooner. Twenty-five calls in the final
+    minute, every one refused.
+    """
+
+    async def test_the_quota_and_the_delay_reach_the_result(self, session, account):
+        from app.services.llm import LlmUnavailableError
+
+        async def runner(acc, family):
+            raise LlmUnavailableError(
+                "Gemini returned HTTP 429",
+                retry_after=37.0,
+                quota="GenerateRequestsPerDayPerProjectPerModel",
+                rate_limited=True,
+            )
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(), run_family=runner
+        )
+        assert result.rate_limited
+        assert result.rate_limit_quota == "GenerateRequestsPerDayPerProjectPerModel"
+        assert result.rate_limit_retry_after == 37.0
+        # The isolation still holds: the run recorded every family rather than
+        # raising out of the first one.
+        assert len(result.failed_families) > 1
+
+    async def test_an_ordinary_failure_is_not_a_rate_limit(self, session, account):
+        async def runner(acc, family):
+            raise RuntimeError("the provider is misconfigured")
+
+        result = await run_research(
+            session, account=account, crm=StubCrmAdapter(), run_family=runner
+        )
+        assert result.failed_families
+        assert not result.rate_limited, "a plain failure must not stop a list run"

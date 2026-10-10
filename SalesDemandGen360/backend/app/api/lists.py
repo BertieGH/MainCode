@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import asdict
@@ -1003,9 +1004,22 @@ class ResearchAccountOut(BaseModel):
     gaps: list[dict] = Field(default_factory=list)
 
 
+#: The longest a limited run will wait and carry on. Above this the loop stops
+#: and says so: a rep watching a progress bar needs an answer, and a wait
+#: measured in minutes is indistinguishable from the hang §109 was about.
+RATE_LIMIT_MAX_WAIT = 90.0
+
+
 class ResearchOut(BaseModel):
     ran: bool
     blocked: str | None = None
+    #: Set when the provider's quota ended the run before the list did. The
+    #: accounts not reached were not researched and nothing was spent on them.
+    stopped_early: str | None = None
+    #: Seconds spent waiting out a per-minute ceiling, when one was named and
+    #: short enough to wait for. Reported so a run that took twice as long as
+    #: usual explains itself.
+    rate_limit_waited: float | None = None
     #: Accounts on the list that tier 0 has not confirmed. Reported rather than
     #: attempted: research on an unverified company succeeds and is wrong.
     skipped_unresolved: int = 0
@@ -1510,6 +1524,42 @@ async def run_research_for_list(
                 ],
             )
         )
+
+        if result.rate_limited:
+            # **Stop, rather than buy the same refusal for every account
+            # left.** A 429 fails in milliseconds, so a limited run reaches
+            # the next account sooner than a healthy one — the call rate rises
+            # exactly when it must fall. Measured on a fifty-account list, the
+            # last five accounts each lost all five sources and the final
+            # minute held twenty-five calls, every one refused.
+            #
+            # A short per-minute ceiling is waited out once; anything else
+            # ends the loop. The accounts not reached are reported as not
+            # reached, which is honest and re-runnable — their families are
+            # untouched, so a later run researches them at full cost and no
+            # evidence has been lost. Converting them to `partial` at speed,
+            # which is what happened before, instead left forty accounts
+            # looking researched and empty.
+            wait = result.rate_limit_retry_after
+            daily = "perday" in (result.rate_limit_quota or "").lower().replace("_", "")
+            if not daily and wait is not None and wait <= RATE_LIMIT_MAX_WAIT:
+                log.warning(
+                    "lists.research rate limited, waiting %.0fs quota=%s",
+                    wait, result.rate_limit_quota or "unnamed",
+                )
+                report.rate_limit_waited = (report.rate_limit_waited or 0.0) + wait
+                await asyncio.sleep(wait)
+                continue
+            named = result.rate_limit_quota or "unnamed"
+            report.stopped_early = (
+                f"stopped after {report.attempted} of {len(ready)} accounts — the model "
+                f"provider refused on quota ({named})"
+                + (f", retry after {wait:g}s" if wait is not None else "")
+                + ". The accounts not reached were not researched and nothing was "
+                "spent on them; re-run once the quota resets."
+            )
+            log.warning("lists.research %s", report.stopped_early)
+            break
 
     await session.commit()
     return report

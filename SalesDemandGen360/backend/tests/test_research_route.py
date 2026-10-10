@@ -918,3 +918,89 @@ class TestResearchingNamedPeople:
         body = (await api.post(url(api), json={"contact_ids": [str(picked.id)]})).json()
         assert calls == []
         assert "do-not-contact" in body["blocked"]
+
+
+class TestAQuotaRefusalStopsTheRun:
+    """Forty more accounts must not each buy the same refusal.
+
+    Measured on a fifty-account list: once the quota was gone the last five
+    accounts lost all five sources each, and the final minute held twenty-five
+    calls, every one refused. A 429 fails in milliseconds, so a limited run
+    reaches the next account *sooner* than a healthy one — the call rate rises
+    exactly when it should fall, and the list finishes full of accounts that
+    look researched and are empty.
+    """
+
+    def _limited(self, api, *, quota, retry_after=None, after=1):
+        """Rate-limit the run from the `after`-th account onward."""
+        from app.services import pipeline
+
+        seen: list[str] = []
+
+        async def fake(session, *, account, crm, run_family, run_id=None, **kwargs):
+            seen.append(account.name)
+            limited = len(seen) >= after
+            return pipeline.RunResult(
+                run_id=run_id or uuid.uuid4(),
+                evidence_by_family={} if limited else {"funding": 2},
+                failed_families=(
+                    {"funding": "LlmUnavailableError: HTTP 429"} if limited else {}
+                ),
+                rate_limited=limited,
+                rate_limit_quota=quota if limited else None,
+                rate_limit_retry_after=retry_after if limited else None,
+            )
+
+        api.monkeypatch.setattr(pipeline, "run_research", fake)
+        api.monkeypatch.setattr(
+            pipeline, "llm_family_runner", lambda session, **k: ("runner", k.get("run_id"))
+        )
+        return seen
+
+    async def test_a_daily_quota_ends_the_run_at_that_account(self, api):
+        seen = self._limited(api, quota="GenerateRequestsPerDayPerProjectPerModel")
+        r = await api.post(f"{url(api)}?limit=50")
+        assert r.status_code == 200
+        body = r.json()
+        assert len(seen) == 1, f"kept going after a daily quota: {seen}"
+        assert body["stopped_early"]
+        assert "GenerateRequestsPerDayPerProjectPerModel" in body["stopped_early"]
+
+    async def test_a_long_delay_ends_the_run_rather_than_waiting(self, api):
+        """A wait a rep cannot distinguish from a hang is not a wait."""
+        from app.api.lists import RATE_LIMIT_MAX_WAIT
+
+        seen = self._limited(
+            api, quota="GenerateRequestsPerMinutePerProject",
+            retry_after=RATE_LIMIT_MAX_WAIT + 1,
+        )
+        body = (await api.post(f"{url(api)}?limit=50")).json()
+        assert len(seen) == 1
+        assert body["stopped_early"]
+
+    async def test_a_short_per_minute_ceiling_is_waited_out(self, api, monkeypatch):
+        """The one case worth continuing through, and it must not really sleep."""
+        import app.api.lists as lists_api
+
+        waited: list[float] = []
+
+        async def no_sleep(seconds):
+            waited.append(seconds)
+
+        monkeypatch.setattr(lists_api.asyncio, "sleep", no_sleep)
+        seen = self._limited(
+            api, quota="GenerateRequestsPerMinutePerProject", retry_after=2.0
+        )
+        body = (await api.post(f"{url(api)}?limit=50")).json()
+        assert len(seen) > 1, "a short ceiling should not end the run"
+        assert waited and all(w == 2.0 for w in waited)
+        assert body["stopped_early"] is None
+        assert body["rate_limit_waited"] == pytest.approx(2.0 * len(waited))
+
+    async def test_what_was_not_reached_is_not_called_researched(self, api):
+        """The accounts left are re-runnable, and the report says so."""
+        seen = self._limited(api, quota="GenerateRequestsPerDayPerProjectPerModel")
+        body = (await api.post(f"{url(api)}?limit=50")).json()
+        assert body["attempted"] == len(seen)
+        assert body["researched"] == 0
+        assert "nothing was spent" in body["stopped_early"]

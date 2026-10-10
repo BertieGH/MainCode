@@ -48,7 +48,51 @@ QUIETER_THINKING = {"max": "high", "xhigh": "high", "high": "medium", "medium": 
 
 
 class LlmUnavailableError(RuntimeError):
-    """No credentials, or the provider could not be reached."""
+    """No credentials, or the provider could not be reached.
+
+    `retry_after` and `quota` are set when the provider said why it refused.
+    A caller that can pause — the list loop — needs to tell a per-minute
+    ceiling from a per-day one, and `is_rate_limit` alone does not say.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after: float | None = None,
+        quota: str | None = None,
+        rate_limited: bool = False,
+    ):
+        self.retry_after = retry_after
+        self.quota = quota
+        self.rate_limited = rate_limited
+        super().__init__(message)
+
+    @property
+    def exhausted_for_the_day(self) -> bool:
+        """A quota that resets tomorrow, not in a minute.
+
+        Google names its quotas, and the name is the only reliable signal:
+        `GenerateRequestsPerDayPerProjectPerModel` cannot be waited out inside
+        a run, while a per-minute one can. Unknown counts as not daily — a
+        caller that pauses and retries loses a minute, where one that stops
+        early abandons accounts it could have researched.
+        """
+        return bool(self.quota) and "perday" in self.quota.lower().replace("_", "")
+
+
+def _unavailable(exc: Exception, *, suffix: str = "") -> LlmUnavailableError:
+    """A provider error, keeping whatever it said about why it refused.
+
+    One place rather than at each raise site, so a new call path cannot
+    silently drop the retry hint the way every path did until now.
+    """
+    return LlmUnavailableError(
+        f"{exc}{suffix}",
+        retry_after=getattr(exc, "retry_after", None),
+        quota=getattr(exc, "quota", None),
+        rate_limited=bool(getattr(exc, "is_rate_limit", False)),
+    )
 
 
 class NoAdapterError(RuntimeError):
@@ -290,7 +334,7 @@ async def _call_gemini[R: BaseModel](
         # first. Both deserve the same quieter second attempt.
         derailed = "maxOutputTokens" in str(exc) or "Timeout" in str(exc)
         if not derailed or not quieter:
-            raise LlmUnavailableError(str(exc)) from exc
+            raise _unavailable(exc) from exc
 
         # Thinking is charged against the output budget, so a call that hits
         # the ceiling spent it deciding rather than answering. Retrying
@@ -315,8 +359,9 @@ async def _call_gemini[R: BaseModel](
         except gemini.GeminiRefusedError as second:
             raise LlmRefusedError(second.reason, str(second)) from second
         except gemini.GeminiError as second:
-            raise LlmUnavailableError(
-                f"{second} (retried at {quieter} thinking after the first ran out of room)"
+            raise _unavailable(
+                second,
+                suffix=f" (retried at {quieter} thinking after the first ran out of room)",
             ) from second
 
     _log_usage(config, usage, time.perf_counter() - started)

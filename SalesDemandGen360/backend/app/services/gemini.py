@@ -100,7 +100,122 @@ EFFORT_TO_THINKING = {
 
 
 class GeminiError(RuntimeError):
-    """The call could not be completed. Carries no provider text."""
+    """The call could not be completed. Carries no provider text.
+
+    `retry_after` and `quota` are the exception. A bare "HTTP 429" cost a
+    fifty-account run its last five accounts and left no way to tell whether
+    to wait a minute or until tomorrow — the answer was in the response, and
+    being thrown away. These two fields carry it and nothing else.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+        quota: str | None = None,
+    ):
+        self.status_code = status_code
+        #: Seconds Google asked us to wait, from its `RetryInfo`. None when it
+        #: did not say, which is not the same as zero.
+        self.retry_after = retry_after
+        #: The `quotaId` that was exhausted, e.g.
+        #: `GenerateRequestsPerDayPerProjectPerModel`. The word "PerDay" in it
+        #: is the difference between backing off and stopping.
+        self.quota = quota
+        super().__init__(message)
+
+    @property
+    def is_rate_limit(self) -> bool:
+        return self.status_code == 429
+
+
+#: Only these are read out of an error body, and only these. The body is
+#: otherwise never touched, because a rejection can quote the key that was
+#: sent (invariant 9) and `message` is free text that may echo the request.
+#: Every field below is a Google-defined identifier or a duration, so none can
+#: carry a credential.
+_QUOTA_FIELDS = ("quotaId", "quotaMetric")
+
+
+def _quota_hint(payload: Any) -> tuple[float | None, str | None]:
+    """`(retry_after, quota_id)` out of a Google error body, defensively.
+
+    **Often both are absent, and that is the finding.** Measured against the
+    live API while actually rate limited, the 429 carried `code`, `message` and
+    `status` and no `details` at all — no `QuotaFailure`, no `RetryInfo` — and
+    its message held no quota identifier in any form, CamelCase or snake_case.
+    Google documents both details types and sends them in other cases, so the
+    parsing below earns its place; but on this tier the honest answer to "which
+    quota" is that the provider did not say. `error.status`, which is always
+    there, is carried instead so a quota refusal is at least distinguishable
+    from any other 429.
+
+    **Three other places were checked while live, and all three are empty.**
+    Worth recording so they are not tried again:
+
+    - no `Retry-After`, and no `X-RateLimit-*` header. The whole response
+      header set was captured and holds nothing about the limit, only
+      `x-gemini-service-tier: standard`.
+    - no delay in the message: `retry after Ns`, `please wait N seconds`,
+      `try again in N` and a bare `N seconds` all match nothing.
+    - no quota kind in the message either — no `per minute`, `per day`,
+      `per second` or `per hour`, in any case.
+
+    So when Google sends no `details`, there is no machine-readable retry hint
+    anywhere in the response, and a caller has to decide without one. The list
+    loop stops rather than guessing a delay: a blind backoff risks sleeping
+    through a quota that resets tomorrow, and this one had not reset after an
+    hour and a half.
+
+    Returns `(None, None)` for any shape that is not what is expected rather
+    than raising: this runs while handling an error, and a parse failure here
+    must not replace the error being reported.
+    """
+    if not isinstance(payload, dict):
+        return None, None
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        # `{"error": "..."}` is a shape Google does not send and a proxy might.
+        return None, None
+    # `RESOURCE_EXHAUSTED` when it is really quota. A Google-defined enum, so
+    # it cannot carry a credential. The fallback, not the answer: a named
+    # quota below replaces it.
+    status = error.get("status")
+    fallback = status if status == "RESOURCE_EXHAUSTED" else None
+
+    details = error.get("details")
+    if not isinstance(details, list):
+        return None, fallback
+
+    retry_after: float | None = None
+    quota: str | None = None
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        kind = str(detail.get("@type", ""))
+        if kind.endswith("RetryInfo"):
+            raw = str(detail.get("retryDelay") or "").removesuffix("s")
+            try:
+                retry_after = float(raw)
+            except ValueError:
+                pass
+        elif kind.endswith("QuotaFailure"):
+            for violation in detail.get("violations") or []:
+                if not isinstance(violation, dict):
+                    continue
+                for field in _QUOTA_FIELDS:
+                    value = violation.get(field)
+                    if isinstance(value, str) and value:
+                        quota = value
+                        break
+                if quota:
+                    break
+    # Kept apart from `fallback` on purpose: setting it up front made
+    # `if quota: break` fire on the first violation that named nothing, and
+    # skip a later one that did.
+    return retry_after, quota or fallback
 
 
 class GeminiRefusedError(RuntimeError):
@@ -333,10 +448,23 @@ async def _post(
         raise GeminiError(f"could not reach Gemini: {type(exc).__name__}") from exc
 
     if response.status_code != 200:
-        # Never the body. A rejection can quote the key that was sent — the
-        # same rule the probes follow.
+        # Never the body as text. A rejection can quote the key that was sent —
+        # the same rule the probes follow. Only the structured quota fields are
+        # read out of it, and `_quota_hint` names which.
+        try:
+            retry_after, quota = _quota_hint(response.json())
+        except Exception:  # noqa: BLE001 — a bad body must not replace the error
+            retry_after, quota = None, None
+        said = f"Gemini returned HTTP {response.status_code} for model {model!r}"
+        if quota:
+            said += f", quota {quota}"
+        if retry_after is not None:
+            said += f", retry after {retry_after:g}s"
         raise GeminiError(
-            f"Gemini returned HTTP {response.status_code} for model {model!r}"
+            said,
+            status_code=response.status_code,
+            retry_after=retry_after,
+            quota=quota,
         )
     try:
         return response.json()

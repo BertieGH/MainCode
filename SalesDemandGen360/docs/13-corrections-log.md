@@ -5040,3 +5040,81 @@ problem — §110.
 Backend 1,883 pass.
 
 `services/pipeline.py`, `tests/test_research_pipeline.py` (+2).
+
+## §110 — "HTTP 429" was the whole message, and the loop bought it forty times (2026-10-09)
+
+**Problem.** The fifty-account list run of §109 finished, and its last five
+accounts were empty. Each had lost all five sources to `HTTP 429`, and the
+report said only `LlmUnavailableError: Gemini returned HTTP 429 for model
+'gemini-3.5-flash-lite'`. Two separate faults behind one symptom.
+
+**Fault one: the loop sped up when it should have stopped.**
+
+```
+18:26–18:35   7–14 calls/min    0 errors
+18:36        21 calls          15 errors
+18:37        25 calls          25 errors
+```
+
+A 429 fails in milliseconds, so a limited account finished in seconds instead
+of sixty, so the loop reached the next one sooner. The call rate *rises*
+exactly when it must fall. Forty accounts would each have bought the same
+refusal and been filed as `partial` — researched-looking and empty.
+
+The family isolation is why nothing noticed: each family swallows its own
+failure so a fault costs one source rather than the run, which is right, and
+means a quota refusal never reaches the caller as an exception.
+
+**Fault two: the response was not read.** A bare 429 cannot be acted on. Wait
+a minute, or until tomorrow? The body is deliberately never logged as text —
+a rejection can quote the key that was sent (invariant 9) — and that rule had
+been applied to the whole body rather than to the part of it that is free text.
+
+**Fix.** `RunResult` carries `rate_limited`, `rate_limit_quota` and
+`rate_limit_retry_after`; the family isolation is untouched, so a limited run
+still keeps what its other families found. The list loop then stops, reports
+`stopped_early`, and says the accounts it did not reach were not researched and
+nothing was spent on them — true, re-runnable, and the opposite of forty
+accounts that look done. A named per-minute ceiling under
+`RATE_LIMIT_MAX_WAIT` (90s) is waited out once instead; anything longer or
+unnamed ends the run, because a wait a rep cannot tell from a hang is not a
+wait, and because sleeping through a quota that resets tomorrow locks up the
+request.
+
+`gemini._quota_hint` reads `quotaId`, `quotaMetric` and `retryDelay` out of an
+error body and nothing else. Every one is a Google-defined identifier or a
+duration, so none can carry a credential; `message`, the one field that can
+echo the request, is still never touched. A test asserts a planted key never
+appears in the raised error.
+
+**What the live API actually sends, which changes the answer.** Measured while
+genuinely rate limited:
+
+- `code`, `message`, `status` — and **no `details` at all**. No `QuotaFailure`,
+  no `RetryInfo`.
+- no `Retry-After` header, and no `X-RateLimit-*`. The full header set holds
+  nothing about the limit, only `x-gemini-service-tier: standard`.
+- nothing in the message: no `quotaId` or metric in any case style, no
+  `retry after Ns`, `please wait N seconds`, `try again in N`, bare
+  `N seconds`, and no `per minute`/`per day`/`per second`/`per hour`.
+
+So on this tier there is **no machine-readable retry hint anywhere in the
+response**, and the parsing above is for the cases Google documents and does
+send. `error.status` is carried as the fallback, so a quota refusal is at least
+distinguishable from any other 429 — which is why the live report now reads
+`quota (RESOURCE_EXHAUSTED)` rather than `(unnamed)`.
+
+Exponential backoff with jitter was considered and not added. Jitter stops
+concurrent clients retrying in lockstep; this loop is a single sequential
+waiter and families are never retried, so there is no herd. Without a way to
+tell a per-minute ceiling from a per-day one, a blind backoff risks sleeping
+through the latter — this quota had not reset after an hour and a half.
+
+**Verified live.** With the quota still exhausted, a fifty-account run stopped
+after one account and reported it, instead of attempting fifty.
+
+Backend 1,895 pass.
+
+`services/gemini.py`, `services/llm.py`, `services/pipeline.py`,
+`api/lists.py`, `tests/test_gemini_adapter.py` (+6),
+`tests/test_research_route.py` (+4), `tests/test_research_pipeline.py` (+2).

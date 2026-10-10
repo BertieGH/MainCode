@@ -450,3 +450,134 @@ class TestAgainstTheLiveApi:
         engagement = by_dimension["engagement"]
         assert engagement.basis == "no_evidence"
         assert engagement.score == 0
+
+
+class TestWhatA429Says:
+    """"HTTP 429" alone cannot be acted on.
+
+    It cost a fifty-account run its last five accounts, and left no way to
+    tell whether to wait a minute or until tomorrow — the answer was in the
+    response and was being discarded. The body is still never read as text,
+    because a rejection can quote the key that was sent (invariant 9). Only
+    Google's own structured identifiers are taken out of it.
+    """
+
+    def test_the_quota_and_the_retry_delay_are_read(self):
+        from app.services.gemini import _quota_hint
+
+        retry_after, quota = _quota_hint(
+            {
+                "error": {
+                    "code": 429,
+                    "status": "RESOURCE_EXHAUSTED",
+                    "message": "Quota exceeded for key AIzaSyFAKEKEYFAKEKEY",
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                            "violations": [
+                                {
+                                    "quotaMetric": "generativelanguage.googleapis.com/generate_content_requests",
+                                    "quotaId": "GenerateRequestsPerDayPerProjectPerModel",
+                                }
+                            ],
+                        },
+                        {
+                            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                            "retryDelay": "41s",
+                        },
+                    ],
+                }
+            }
+        )
+        assert quota == "GenerateRequestsPerDayPerProjectPerModel"
+        assert retry_after == 41.0
+
+    def test_the_message_is_never_carried(self):
+        """The one field that can echo the request is the one left behind."""
+        from app.services.gemini import GeminiError, _quota_hint
+
+        body = {
+            "error": {
+                "message": "Quota exceeded for key AIzaSyFAKEKEYFAKEKEY",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [{"quotaId": "GenerateRequestsPerMinutePerProject"}],
+                    }
+                ],
+            }
+        }
+        retry_after, quota = _quota_hint(body)
+        exc = GeminiError(
+            f"Gemini returned HTTP 429 for model 'x', quota {quota}",
+            status_code=429,
+            retry_after=retry_after,
+            quota=quota,
+        )
+        assert "AIzaSyFAKEKEYFAKEKEY" not in str(exc)
+        assert "AIzaSyFAKEKEYFAKEKEY" not in repr(exc.__dict__)
+        assert exc.is_rate_limit
+
+    def test_a_shape_that_is_not_what_is_expected_is_not_an_error(self):
+        """This runs while handling an error; it must not replace one."""
+        from app.services.gemini import _quota_hint
+
+        for junk in (None, "", [], {"error": "nope"}, {"error": {"details": "nope"}},
+                     {"error": {"details": [None, 7, {"@type": "RetryInfo"}]}}):
+            assert _quota_hint(junk) == (None, None)
+
+    def test_a_per_day_quota_is_told_from_a_per_minute_one(self):
+        from app.services.llm import LlmUnavailableError
+
+        daily = LlmUnavailableError(
+            "429", quota="GenerateRequestsPerDayPerProjectPerModel", rate_limited=True
+        )
+        minutely = LlmUnavailableError(
+            "429", quota="GenerateRequestsPerMinutePerProject", rate_limited=True
+        )
+        unnamed = LlmUnavailableError("429", rate_limited=True)
+
+        assert daily.exhausted_for_the_day
+        assert not minutely.exhausted_for_the_day
+        # Unknown counts as not daily: a caller that waits a minute loses a
+        # minute, where one that stops abandons accounts it could have done.
+        assert not unnamed.exhausted_for_the_day
+
+    def test_a_body_that_names_nothing_still_says_it_was_quota(self):
+        """Measured against the live API: this is the common shape.
+
+        While genuinely rate limited, Google returned `code`, `message` and
+        `status` and no `details` at all — and the message held no quota
+        identifier in any form. `RESOURCE_EXHAUSTED` is then the only honest
+        answer, and it is still worth carrying: it separates a quota refusal
+        from any other 429.
+        """
+        from app.services.gemini import _quota_hint
+
+        retry_after, quota = _quota_hint(
+            {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "..."}}
+        )
+        assert retry_after is None
+        assert quota == "RESOURCE_EXHAUSTED"
+
+    def test_a_named_quota_beats_the_fallback(self):
+        """And a violation that names nothing must not shadow one that does."""
+        from app.services.gemini import _quota_hint
+
+        _, quota = _quota_hint(
+            {
+                "error": {
+                    "status": "RESOURCE_EXHAUSTED",
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                            "violations": [
+                                {"subject": "project:1"},
+                                {"quotaId": "GenerateRequestsPerDayPerProjectPerModel"},
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+        assert quota == "GenerateRequestsPerDayPerProjectPerModel"

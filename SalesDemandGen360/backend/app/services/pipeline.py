@@ -66,6 +66,23 @@ class RunResult:
     #: Families whose runner raised, with the reason. Kept apart from
     #: `evidence_by_family` because a failure is not a zero.
     failed_families: dict[str, str] = field(default_factory=dict)
+    #: Set when a family failed because the provider refused on quota.
+    #:
+    #: **A family swallows its own failure, which is why this exists.** Each
+    #: one is isolated so a fault costs one source rather than the run, and
+    #: that is right — but it means a rate limit never reaches the caller as
+    #: an exception, and a list loop sees only a `partial` account and moves
+    #: straight on to the next. Measured on a fifty-account list: the last
+    #: five accounts lost all five sources each, and the call rate *rose*
+    #: while it happened, because a 429 fails in milliseconds and the loop
+    #: therefore reached the next account sooner. Twenty-five calls in the
+    #: final minute, all refused.
+    rate_limited: bool = False
+    #: The `quotaId` Google named, when it named one. `None` is not "no
+    #: quota" — it is "it did not say", which a caller must treat differently
+    #: from a per-minute ceiling it could wait out.
+    rate_limit_quota: str | None = None
+    rate_limit_retry_after: float | None = None
     #: Families not run because an earlier run answered them inside the reuse
     #: window. Neither a gap nor a failure: the answer exists, it is just older.
     reused: tuple[str, ...] = ()
@@ -537,6 +554,20 @@ async def run_research(
             )
             reason = f"{type(exc).__name__}: {exc}"
             result.failed_families[family] = reason
+            if getattr(exc, "rate_limited", False):
+                # Recorded on the result, not raised. The family isolation
+                # stands — this run keeps whatever its other families found —
+                # but the caller is now able to stop before it spends the same
+                # refusal forty more times.
+                result.rate_limited = True
+                result.rate_limit_quota = (
+                    getattr(exc, "quota", None) or result.rate_limit_quota
+                )
+                retry_after = getattr(exc, "retry_after", None)
+                if retry_after is not None:
+                    result.rate_limit_retry_after = max(
+                        retry_after, result.rate_limit_retry_after or 0.0
+                    )
             await record_coverage(
                 session,
                 run_id=run.id,
