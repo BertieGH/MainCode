@@ -19,6 +19,9 @@ the cache raise instead.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import dataclasses
 import logging
 import time
 import uuid
@@ -359,6 +362,58 @@ async def _run[R](
     return result
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class CallContext:
+    """Who the call about to be made is for.
+
+    All optional, because the stages differ in what they know. Research knows
+    its run and account; drafting knows its campaign; a trial from a settings
+    screen knows none of them.
+    """
+
+    run_id: uuid.UUID | None = None
+    account_id: uuid.UUID | None = None
+    #: Only where the call concerns one named person. The contact pass
+    #: searches for everybody in a family at once and leaves this unset.
+    contact_id: uuid.UUID | None = None
+    campaign_id: uuid.UUID | None = None
+    #: `company` | `contact` | `campaign`. The discriminator `contact_id`
+    #: cannot be, because one contact call covers many people.
+    scope: str | None = None
+
+
+#: Attribution for whatever call the current task is about to make.
+#:
+#: **A context variable rather than an argument, because `_record_call` runs
+#: in a transaction of its own.** Threading an owner down to it would mean a
+#: parameter on every stage function, every helper between, and every test
+#: that calls one — and a stage that forgot to pass it would write an
+#: unattributed row that looks exactly like a correct one.
+#:
+#: Safe under the concurrent family runner for the reason context variables
+#: exist: `asyncio` copies the context when a task is created, so each family
+#: gathered by `run_research` reads the value its parent set and a contact
+#: pass setting `contact_id` cannot leak into a sibling.
+_call_context: contextvars.ContextVar[CallContext] = contextvars.ContextVar(
+    "llm_call_context", default=CallContext()
+)
+
+
+@contextlib.contextmanager
+def attributed(**fields):
+    """Attribute every model call made inside this block.
+
+    Fields merge onto whatever is already set, so a contact pass inside a run
+    adds `contact_id` without having to restate the run it belongs to.
+    """
+    current = _call_context.get()
+    token = _call_context.set(dataclasses.replace(current, **fields))
+    try:
+        yield
+    finally:
+        _call_context.reset(token)
+
+
 async def _record_call(
     session: AsyncSession,
     config,
@@ -396,6 +451,7 @@ async def _record_call(
         duration_ms=int((time.monotonic() - started) * 1000),
         ok=error is None,
         error=error,
+        **dataclasses.asdict(_call_context.get()),
     )
     try:
         # Bound to the caller's own engine rather than the app's global

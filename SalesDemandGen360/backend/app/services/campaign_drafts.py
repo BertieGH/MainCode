@@ -371,9 +371,17 @@ async def write(session: AsyncSession, sequence: OutreachSequence, *, draft=None
         async def draft(**kwargs):
             return await stages.draft_arc(session, **kwargs)
 
-    result = await draft(
-        account=account, contact=contact, thread=_thread_payload(thread), shape=cadence, signals=signals,
-    )
+    # A draft is the one campaign call that is also about one person, so it
+    # carries both — the campaign the bill belongs to and who it was for.
+    with stages.attributed(
+        account_id=account.id,
+        contact_id=contact.id,
+        campaign_id=sequence.campaign_id,
+        scope="campaign",
+    ):
+        result = await draft(
+            account=account, contact=contact, thread=_thread_payload(thread), shape=cadence, signals=signals,
+        )
     draft_set: DraftSet = result.parsed
     model = getattr(result, "model", "") or None
 

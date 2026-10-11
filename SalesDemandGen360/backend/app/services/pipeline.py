@@ -776,13 +776,16 @@ def llm_signal_extractor(session: AsyncSession, *, run_id: uuid.UUID | None = No
     async def run(account: Account, evidence: list, type_keys: list[str], contacts: list):
         from app.services import extraction, stages
 
-        result = await stages.extract_signals(
-            session,
-            account=account,
-            evidence=evidence,
-            type_keys=type_keys,
-            contacts=contacts,
-        )
+        with stages.attributed(
+            run_id=run_id, account_id=account.id, scope="company"
+        ):
+            result = await stages.extract_signals(
+                session,
+                account=account,
+                evidence=evidence,
+                type_keys=type_keys,
+                contacts=contacts,
+            )
         outcome = await extraction.store_batch(
             session, account_id=account.id, batch=result.parsed, run_id=run_id
         )
@@ -896,9 +899,15 @@ def llm_contact_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None
         from app.services import evidence as evidence_service
         from app.services import stages
 
-        result = await stages.research_contacts(
-            session, account=account, family=family, people=people
-        )
+        # One search for everybody in the family, so no person's id goes on
+        # the row. `scope` is what splits this half of a research bill off —
+        # a null `contact_id` here would otherwise read as company work.
+        with stages.attributed(
+            run_id=run_id, account_id=account.id, scope="contact"
+        ):
+            result = await stages.research_contacts(
+                session, account=account, family=family, people=people
+            )
         batch = result.parsed
         known = {str(p.id): p.id for p in people}
 
@@ -993,13 +1002,18 @@ def llm_profile_runner(session: AsyncSession):
         # Anthropic SDK, and the pipeline's own tests must keep importing
         # without it.
         from app.services import profiles
+        from app.services.stages import attributed
 
         if person is None:
-            return await profiles.build_company(session, account=account) is not None
-        return (
-            await profiles.build_contact(session, account=account, person=person)
-            is not None
-        )
+            with attributed(account_id=account.id, scope="company"):
+                return await profiles.build_company(session, account=account) is not None
+        # The one research call that really is about one person, so this is
+        # the one place `contact_id` is honest rather than a convenient guess.
+        with attributed(account_id=account.id, contact_id=person.id, scope="contact"):
+            return (
+                await profiles.build_contact(session, account=account, person=person)
+                is not None
+            )
 
     return run
 
@@ -1024,7 +1038,10 @@ def llm_sweep_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
         from app.services import evidence as evidence_service
         from app.services import stages
 
-        result = await stages.signal_scan(session, account=account)
+        with stages.attributed(
+            run_id=run_id, account_id=account.id, scope="company"
+        ):
+            result = await stages.signal_scan(session, account=account)
         batch = result.parsed
         outcome = await evidence_service.store_found(
             session,
@@ -1092,15 +1109,22 @@ def llm_family_runner(
     """
 
     async def run(account: Account, family: str) -> FamilyOutcome:
-        if session_factory is None:
-            return await _run_family(session, account, family, run_id=run_id)
-        # Its own session, its own transaction, committed here. Evidence is
-        # immutable and stands on its own, so a family that has found
-        # something has found it whether or not a later family fails.
-        async with session_factory() as own:
-            outcome = await _run_family(own, account, family, run_id=run_id)
-            await own.commit()
-            return outcome
+        from app.services.stages import attributed
+
+        # Set here rather than once around the whole run, because this is the
+        # function `asyncio.gather` turns into a task: a task copies the
+        # context at creation, so each family carries its own attribution and
+        # none of them can write over a sibling's.
+        with attributed(run_id=run_id, account_id=account.id, scope="company"):
+            if session_factory is None:
+                return await _run_family(session, account, family, run_id=run_id)
+            # Its own session, its own transaction, committed here. Evidence
+            # is immutable and stands on its own, so a family that has found
+            # something has found it whether or not a later family fails.
+            async with session_factory() as own:
+                outcome = await _run_family(own, account, family, run_id=run_id)
+                await own.commit()
+                return outcome
 
     return run
 

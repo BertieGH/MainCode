@@ -3,7 +3,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
-import { ConfigService, Monitoring } from '../core/config.service';
+import { CampaignCost, ConfigService, Monitoring, RunCost } from '../core/config.service';
 import { apiError } from '../shared/api-error';
 
 /**
@@ -160,6 +160,88 @@ import { apiError } from '../shared/api-error';
         </table>
       </div>
 
+      <!-- Said rather than hidden. An empty section reads as "nothing to see";
+           this is "the column exists and the past cannot be put in it", which
+           is a different thing and stops being true after the next run. -->
+      <ng-container *ngIf="!d.dearest_runs.length && d.unattributed_calls">
+        <div class="seclabel">What each research cost</div>
+        <div class="pending">
+          No run in this window can be priced on its own.
+          {{ d.unattributed_calls }} call{{ d.unattributed_calls === 1 ? '' : 's' }}
+          here {{ d.unattributed_calls === 1 ? 'was' : 'were' }} made before the ledger
+          recorded which run they belonged to, and a guess would be a ranking of
+          invented numbers. The next research fills this.
+        </div>
+      </ng-container>
+
+      <ng-container *ngIf="d.dearest_runs.length || d.cheapest_runs.length">
+        <div class="seclabel">What each research cost</div>
+        <div class="ranks">
+          <div class="rank">
+            <h4>Dearest {{ d.dearest_runs.length }}</h4>
+            <p class="rank-why">
+              Almost always a family retrying or a sweep crawling a large site. Open one
+              and read its calls against its evidence: a lot of both earned the bill.
+            </p>
+            <ng-container
+              *ngTemplateOutlet="runTable; context: { rows: d.dearest_runs, cur: d.currency }"
+            ></ng-container>
+          </div>
+          <div class="rank" *ngIf="d.cheapest_runs.length">
+            <h4>Cheapest {{ d.cheapest_runs.length }}</h4>
+            <p class="rank-why">
+              <strong>The more useful list.</strong> A run that cost almost nothing
+              usually found almost nothing — and on every other screen that looks
+              exactly like a run that went well.
+            </p>
+            <ng-container
+              *ngTemplateOutlet="runTable; context: { rows: d.cheapest_runs, cur: d.currency }"
+            ></ng-container>
+          </div>
+        </div>
+        <p class="note">
+          Company and contact are split by what the call was for, not by whether it
+          names a person: one contact search covers everybody in a family, so most
+          calls about people name nobody.
+          <span *ngIf="d.unattributed_calls">
+            {{ d.unattributed_calls }} call{{ d.unattributed_calls === 1 ? '' : 's' }} in
+            this window belong to no run and are in neither list<span
+              *ngIf="d.attributed_since"
+            >
+              — attribution began {{ d.attributed_since | date: 'd MMM' }}, and nothing
+              before it can be placed</span
+            >.
+          </span>
+        </p>
+      </ng-container>
+
+      <ng-container *ngIf="d.campaigns.length">
+        <div class="seclabel">What each campaign cost to produce</div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Campaign</th><th class="num">Calls</th><th class="num">Failed</th>
+                <th class="num">People</th><th class="num">Per person</th>
+                <th class="num">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let c of d.campaigns; trackBy: byCampaign">
+                <td><strong>{{ c.name }}</strong></td>
+                <td class="num">{{ c.calls }}</td>
+                <td class="num" [class.danger]="c.failed > 0">{{ c.failed || '—' }}</td>
+                <td class="num">{{ c.contacts || '—' }}</td>
+                <td class="num">{{ perPerson(c, d.currency) }}</td>
+                <td class="num">
+                  {{ c.cost === null ? 'unpriced' : money(c.cost, d.currency) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ng-container>
+
       <ng-container *ngIf="d.failures.length">
         <div class="seclabel">Families that failed</div>
         <div class="table-wrap">
@@ -183,6 +265,42 @@ import { apiError } from '../shared/api-error';
         Nothing ran in this window.
       </div>
     </ng-container>
+
+    <!-- One table, two lists. Written once because the columns are the point:
+         cost beside calls, evidence and searches is what turns "this was dear"
+         into a reason. -->
+    <ng-template #runTable let-rows="rows" let-cur="cur">
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Account</th><th class="num">Calls</th>
+              <th class="num" title="Company families, then contact families">Co / Pe</th>
+              <th class="num">Failed</th><th class="num">Evidence</th>
+              <th class="num">SERP</th><th class="num">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let r of rows; trackBy: byRun">
+              <td>
+                <a [routerLink]="['/accounts', r.account_id]">{{ r.account_name }}</a>
+                <div class="row-sub">{{ r.started_at | date: 'd MMM HH:mm' }}</div>
+              </td>
+              <td class="num">{{ r.calls }}</td>
+              <td class="num mono">{{ r.company_calls }} / {{ r.contact_calls }}</td>
+              <td class="num" [class.danger]="r.failed > 0">{{ r.failed || '—' }}</td>
+              <!-- Beside the money on purpose: a dear run with little evidence is a
+                   retry loop, and a cheap run with none is the finding. -->
+              <td class="num" [class.danger]="!r.evidence">{{ r.evidence || '0' }}</td>
+              <td class="num">{{ r.serp_credits || '—' }}</td>
+              <td class="num">
+                {{ r.cost === null ? 'unpriced' : money(r.cost, cur) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ng-template>
   `,
   styles: [
     `
@@ -190,6 +308,16 @@ import { apiError } from '../shared/api-error';
               gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
       .head h2 { font-size: 1.15rem; margin-bottom: 4px; }
       .sub { color: var(--muted); font-size: 0.85rem; margin: 0; max-width: 72ch; }
+      .pending { border: 1px dashed var(--border); border-radius: 11px;
+                 padding: 14px 16px; color: var(--muted); font-size: 0.85rem;
+                 line-height: 1.55; max-width: 76ch; }
+      .ranks { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+      @media (max-width: 1100px) { .ranks { grid-template-columns: 1fr; } }
+      .rank h4 { font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem;
+                 letter-spacing: 0.05em; text-transform: uppercase;
+                 color: var(--faint); font-weight: 500; margin: 0 0 4px; }
+      .rank-why { color: var(--muted); font-size: 0.8rem; margin: 0 0 9px;
+                  max-width: 56ch; line-height: 1.5; }
       .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
       @media (max-width: 880px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
       .tile { border: 1px solid var(--border); border-radius: 11px;
@@ -246,6 +374,18 @@ export class CostHealthComponent implements OnInit {
     const symbol = currency === 'USD' ? '$' : `${currency} `;
     return `${symbol}${value.toFixed(2)}`;
   }
+
+  /** Per-person cost, which is the figure that compares two campaigns of
+   *  different sizes. Blank rather than zero when either half is missing —
+   *  a division nobody can check is worse than no number. */
+  perPerson(c: CampaignCost, currency: string): string {
+    if (c.cost === null || !c.contacts) return '—';
+    return this.money(c.cost / c.contacts, currency);
+  }
+
+  // Keyed, or patching the array rebuilds every row.
+  byRun = (_: number, r: RunCost) => r.run_id;
+  byCampaign = (_: number, c: CampaignCost) => c.campaign_id;
 
   big(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;

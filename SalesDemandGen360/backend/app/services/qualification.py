@@ -493,15 +493,21 @@ def llm_qualifier(
         )
 
         async def narrate(acc, signals, previous):
-            result = await stages.read_context(
-                session, account=acc, signals=signals, previous=previous
-            )
+            with stages.attributed(
+                run_id=run_id, account_id=acc.id, scope="company"
+            ):
+                result = await stages.read_context(
+                    session, account=acc, signals=signals, previous=previous
+                )
             return result.parsed
 
         async def assess(acc, ctx, evidence):
-            result = await stages.assess_dimensions(
-                session, account=acc, context=ctx, evidence=evidence
-            )
+            with stages.attributed(
+                run_id=run_id, account_id=acc.id, scope="company"
+            ):
+                result = await stages.assess_dimensions(
+                    session, account=acc, context=ctx, evidence=evidence
+                )
             return result.parsed
 
         return await run_qualification(

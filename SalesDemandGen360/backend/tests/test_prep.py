@@ -676,6 +676,19 @@ class TestGeneratingTheBrief:
         assert row.hypothesis_verdict == "rejected"
         assert row.outcome == "no_need_now"
 
+    async def test_the_debrief_note_comes_back(self, api, session, contact, stubbed):
+        """Which question opened it up, and what we had wrong. Free text,
+        because the useful part of a debrief is never in a fixed vocabulary —
+        and it has to survive the reload or nobody writes a second one."""
+        prep_id = (await api.post(f"/api/prep/{contact.id}/generate")).json()["prep_id"]
+        r = await api.post(
+            f"/api/prep/{prep_id}/verdict",
+            json={"rep_note": "Question 2 opened it. He owns the layer himself."},
+        )
+        assert r.status_code == 200
+        body = await _get(api, contact)
+        assert body["rep_note"].startswith("Question 2 opened it")
+
     async def test_an_unrecognised_verdict_is_refused(self, api, contact, stubbed):
         """The vocabulary is a CHECK constraint; a typo is a 400, not a 500."""
         prep_id = (await api.post(f"/api/prep/{contact.id}/generate")).json()["prep_id"]

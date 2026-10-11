@@ -1007,25 +1007,35 @@ async def generate_prep_brief(
     )
 
     try:
-        result = await stages.generate_prep(
-            session,
-            account=account,
-            contact=contact,
-            thread=(facts.thread.model_dump(mode="json") if facts.thread else {}),
-            # Only touches that actually sent. A drafted message the prospect
-            # never received must not appear as something they have been told.
-            already_sent=[],
-            replies=[r for r in replies if r],
-            # Each signal carries its age and confidence. Given only the
-            # conclusions the model writes a confident brief; given the gaps it
-            # writes an honest one, and the gaps are what a rep needs on a call.
-            signals=[s.model_dump(mode="json") for s in facts.signals],
-            qualification=(
-                facts.qualification.model_dump(mode="json") if facts.qualification else {}
-            ),
-            proof=[p.model_dump(mode="json") for p in facts.proof],
-            mode=facts.mode,
-        )
+        # Prep is the stage a human waits on, and the only one aimed at one
+        # person with no run behind it. Attributed so the cost screen can say
+        # whose brief took sixteen seconds.
+        with stages.attributed(
+            account_id=account.id, contact_id=contact.id, scope="contact"
+        ):
+            result = await stages.generate_prep(
+                session,
+                account=account,
+                contact=contact,
+                thread=(facts.thread.model_dump(mode="json") if facts.thread else {}),
+                # Only touches that actually sent. A drafted message the
+                # prospect never received must not appear as something they
+                # have been told.
+                already_sent=[],
+                replies=[r for r in replies if r],
+                # Each signal carries its age and confidence. Given only the
+                # conclusions the model writes a confident brief; given the
+                # gaps it writes an honest one, and the gaps are what a rep
+                # needs on a call.
+                signals=[s.model_dump(mode="json") for s in facts.signals],
+                qualification=(
+                    facts.qualification.model_dump(mode="json")
+                    if facts.qualification
+                    else {}
+                ),
+                proof=[p.model_dump(mode="json") for p in facts.proof],
+                mode=facts.mode,
+            )
     except ProviderError as exc:
         # A quota refusal is an answer, not an Internal Server Error.
         raise HTTPException(503, str(exc)) from exc

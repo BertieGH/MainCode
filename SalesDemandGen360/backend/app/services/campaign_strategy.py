@@ -439,7 +439,10 @@ async def build(
 
     if synthesise is None:
         async def synthesise(**kwargs):
-            return await stages.synthesise_strategy(session, **kwargs)
+            # Attributed at the call rather than around `build`, which also
+            # reads and writes: only what the model does costs anything.
+            with stages.attributed(campaign_id=campaign.id, scope="campaign"):
+                return await stages.synthesise_strategy(session, **kwargs)
 
     # `chosen_by_rep` is governance, not an instruction: told that the weights
     # had left somebody out, the model dropped them and argued nobody — which

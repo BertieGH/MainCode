@@ -500,6 +500,40 @@ export interface StuckRun {
   open_seconds: number;
 }
 
+export interface RunCost {
+  run_id: string;
+  account_id: string;
+  account_name: string;
+  started_at: string;
+  status: string;
+  calls: number;
+  failed: number;
+  /**
+   * Split by scope, not by whether a row names a contact: one contact search
+   * covers everybody in a family, so most contact rows name nobody.
+   */
+  company_calls: number;
+  contact_calls: number;
+  grounded_calls: number;
+  serp_credits: number;
+  evidence: number;
+  /**
+   * Null when any model in the run has no price. Not zero — unpriced is not
+   * free, and sorting it as cheap would manufacture the finding that a cheap
+   * run is one that found nothing.
+   */
+  cost: number | null;
+}
+
+export interface CampaignCost {
+  campaign_id: string;
+  name: string;
+  calls: number;
+  failed: number;
+  contacts: number;
+  cost: number | null;
+}
+
 export interface Monitoring {
   window_days: number;
   since: string;
@@ -518,6 +552,23 @@ export interface Monitoring {
   price_version: number | null;
   serp_credits: number;
   serp_calls: number;
+  /**
+   * The two ends of one ranking. Dearest first in the first list, cheapest
+   * first in the second, and never the same run in both. Under five runs in
+   * the window the second is empty — everything is in the first, in order,
+   * which is the honest view of a short window.
+   */
+  dearest_runs: RunCost[];
+  cheapest_runs: RunCost[];
+  campaigns: CampaignCost[];
+  /**
+   * Calls belonging to no run and no campaign. Every ranking above excludes
+   * them, so a large number here means the rankings describe a fraction of
+   * the bill.
+   */
+  unattributed_calls: number;
+  /** When attribution began. Before it, every call reads as unattributed. */
+  attributed_since: string | null;
   failures: { reason: string; rows: number }[];
   /**
    * When the grounded flag began being recorded. Null means never: anything

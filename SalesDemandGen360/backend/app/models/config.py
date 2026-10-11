@@ -369,6 +369,35 @@ class LlmCall(Base):
     #: and a prospect's own words.
     error: Mapped[str | None] = mapped_column(Text)
 
+    # ---- who the call was for -------------------------------------------
+    #
+    # **Ids, not foreign keys.** This writer is deliberately outside the
+    # caller's transaction, so that a failed call's row survives the rollback
+    # that follows it — and `run_research` only flushes the run row on its
+    # sequential path. A separate transaction cannot see a flush, so a real
+    # reference here raised `ForeignKeyViolation`, the guard that keeps
+    # bookkeeping from breaking the work it measures swallowed it, and the
+    # row was lost. Measured: zero rows for a flushed-but-uncommitted run.
+    #
+    # The consequence — spend outliving the account it was spent on — is the
+    # right answer anyway. What was spent happened.
+    #
+    # All nullable, because the stages differ in what they know, and null on
+    # every row written before these columns existed: a run nobody recorded
+    # cannot be attributed later, and a guess would be a confident wrong
+    # number on a cost screen.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    #: Set only where the call genuinely concerns one person — a profile
+    #: build, a sales prep, a draft. The contact *pass* searches for everybody
+    #: in a family at once and leaves this null, which is why it cannot double
+    #: as the company/contact discriminator. `scope` does that.
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    #: `company` | `contact` | `campaign`, or null on history and on calls
+    #: belonging to none of them. What splits a research bill in two.
+    scope: Mapped[str | None] = mapped_column(Text)
+
     __table_args__ = (
         CheckConstraint(
             "input_tokens >= 0 AND output_tokens >= 0", name="tokens_non_negative"
