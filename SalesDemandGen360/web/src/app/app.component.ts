@@ -96,18 +96,28 @@ export class AppComponent implements OnInit {
    *    strategy time.
    */
   settingsNav = [
-    { label: 'API settings', path: '/settings/setup', gated: false },
+    { label: 'API config', path: '/settings/setup', gated: false },
     { label: 'Model config', path: '/settings/models', gated: true },
     // Beside Model config on purpose: one says how hard a stage thinks, the
     // other says what it is asked to do, and people look for them together.
-    { label: 'Prompts', path: '/settings/prompts', gated: true },
-    { label: 'ICP profiles', path: '/settings/icp-profiles', gated: true },
+    { label: 'Prompts config', path: '/settings/prompts', gated: true },
     { label: 'Services & proof', path: '/settings/services', gated: true },
-    { label: 'Writing samples', path: '/settings/writing', gated: true },
+    // An ICP is written in terms of the services it buys, so it sits under
+    // them rather than beside Scoring, which only consumes it.
+    { label: 'ICP profiles', path: '/settings/icp-profiles', gated: true },
     { label: 'Signal types', path: '/settings/signal-types', gated: true },
-    { label: 'Research', path: '/settings/research', gated: true },
+    // Was "Research", which named the activity rather than the thing being
+    // configured: the screen sets which sources are read and what each is
+    // worth.
+    { label: 'Sources & weights', path: '/settings/research', gated: true },
+    { label: 'Writing samples', path: '/settings/writing', gated: true },
     { label: 'Scoring', path: '/settings/scoring', gated: true },
     { label: 'Sales rules', path: '/settings/rules', gated: true },
+    // Last, and inert until the screen exists: what was spent and what is
+    // stuck is a thing you go looking for, not something passed on the way to
+    // somewhere else. Shown disabled rather than hidden, like Dashboard and
+    // Learning, because a link to a route with no component is a dead click.
+    { label: 'Monitoring', path: null, gated: false },
   ];
 
   ngOnInit(): void {

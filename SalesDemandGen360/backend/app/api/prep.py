@@ -235,6 +235,12 @@ class SignalBriefOut(BaseModel):
     #: The passages themselves, so a rep can read what was actually written
     #: rather than our summary of it.
     evidence: list[EvidenceOut] = []
+    #: Why this signal matters *here*, derived rather than written.
+    #:
+    #: Omitted when nothing cites it, which is itself worth seeing: a signal
+    #: the strategy does not rest on and no dimension scored from is one we
+    #: paid to find and have not used.
+    relevance: str | None = None
     #: What a rep said about this signal, if they have said anything.
     rep_verdict: str | None = None
 
@@ -290,6 +296,9 @@ class PrepOut(BaseModel):
     brief_is_stale: bool = False
     hypothesis_verdict: str | None = None
     outcome: str | None = None
+    #: Which question opened it up, what we had wrong. Free text, because the
+    #: useful part of a debrief is never in a fixed vocabulary.
+    rep_note: str | None = None
     last_run: LastRunOut | None = None
     #: The lists this account is on. A refresh needs to know which ICPs decide
     #: what to look for; with exactly one the route resolves it itself.
@@ -298,6 +307,33 @@ class PrepOut(BaseModel):
     #: no conversation to be aware of, and a brief opening on an observation
     #: the prospect already answered wastes the call.
     mode: str
+
+
+def _relevance(
+    signal: Signal,
+    trigger_ids: set[str],
+    evidence_by_signal: dict[uuid.UUID, list["EvidenceOut"]],
+    dimension_of_evidence: dict[str, list[str]],
+) -> str | None:
+    """Why this signal matters here, read off what actually cites it.
+
+    Derived rather than written, because a sentence the model composes about
+    its own importance is not a fact about anything. The strategy names the
+    signal it rests on, and the scorer names the evidence each dimension used;
+    both are already stored, and between them they say whether a signal is
+    load-bearing or merely true.
+    """
+    if str(signal.id) in trigger_ids:
+        return "The trigger this approach rests on."
+    dims: list[str] = []
+    for passage in evidence_by_signal.get(signal.id, []):
+        for name in dimension_of_evidence.get(str(passage.id), []):
+            if name not in dims:
+                dims.append(name)
+    if dims:
+        joined = " and ".join([", ".join(dims[:-1]), dims[-1]] if len(dims) > 1 else dims)
+        return f"Scored the {joined} dimension{'s' if len(dims) > 1 else ''}."
+    return None
 
 
 def _days_since(when: datetime | date | None) -> int | None:
@@ -498,6 +534,26 @@ async def prep_for_contact(
             unassessed=unassessed,
         )
 
+    thread = (
+        await session.execute(
+            select(StrategyThread)
+            .where(StrategyThread.contact_id == contact.id)
+            .order_by(StrategyThread.rank)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    trigger_ids = {str(x) for x in (thread.trigger_signal_ids or [])} if thread else set()
+
+    # Which dimensions each evidence row helped score, so a signal that is not
+    # the trigger can still say what it is doing here.
+    dimension_of_evidence: dict[str, list[str]] = {}
+    if qual is not None:
+        for name, raw in (qual.reasons or {}).items():
+            if not isinstance(raw, dict):
+                continue
+            for eid in raw.get("evidence_ids") or []:
+                dimension_of_evidence.setdefault(str(eid), []).append(name)
+
     # --- where each signal came from ---
     #
     # One query for every signal's sources rather than one per signal: a
@@ -574,19 +630,11 @@ async def prep_for_contact(
             evidence_count=len(evidence_by_signal.get(s.id, [])),
             sources=by_signal.get(s.id, []),
             evidence=evidence_by_signal.get(s.id, []),
+            relevance=_relevance(s, trigger_ids, evidence_by_signal, dimension_of_evidence),
             rep_verdict=verdicts.get(s.id),
         )
         for s in signal_rows
     ]
-
-    thread = (
-        await session.execute(
-            select(StrategyThread)
-            .where(StrategyThread.contact_id == contact.id)
-            .order_by(StrategyThread.rank)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
 
     proof = list(
         (
@@ -734,6 +782,7 @@ async def prep_for_contact(
         brief_is_stale=brief_is_stale,
         hypothesis_verdict=(stored.hypothesis_verdict if stored else None),
         outcome=(stored.outcome if stored else None),
+        rep_note=(stored.rep_note if stored else None),
         last_run=last_run,
         list_ids=lists,
         mode="engagement_aware" if counts["replied"] else "pre_engagement",
@@ -908,6 +957,9 @@ class VerdictIn(BaseModel):
     #: Whether the brief's hypothesis survived contact with the prospect.
     hypothesis_verdict: str | None = None
     outcome: str | None = None
+    #: Which question opened it up, what we had wrong. Free text, because the
+    #: useful part of a debrief is never in a fixed vocabulary.
+    rep_note: str | None = None
     last_run: LastRunOut | None = None
     #: The lists this account is on. A refresh needs to know which ICPs decide
     #: what to look for; with exactly one the route resolves it itself.

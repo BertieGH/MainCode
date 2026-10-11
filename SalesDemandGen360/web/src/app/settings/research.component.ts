@@ -46,7 +46,7 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-      <h2 style="font-size:1.15rem;">Research</h2>
+      <h2 style="font-size:1.15rem;">Sources &amp; weights</h2>
       <button class="act-btn" (click)="help.set(!help())"
               [attr.aria-expanded]="help()" aria-controls="research-help"
               [attr.aria-label]="help() ? 'Hide help' : 'About research settings'"

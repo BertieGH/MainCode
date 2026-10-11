@@ -128,7 +128,11 @@ describe('AppComponent', () => {
   it('renders unbuilt sections as inert spans, not dead links', () => {
     settle(READY);
     const disabled = fixture.nativeElement.querySelectorAll('.nav-item.disabled');
-    expect(disabled.length).toBe(cmp.nav.filter((n) => !n.path).length);
+    // Both navs: Dashboard and Learning in the main one, Monitoring in settings.
+    const unbuilt =
+      cmp.nav.filter((n) => !n.path).length +
+      cmp.settingsNav.filter((n) => !n.path).length;
+    expect(disabled.length).toBe(unbuilt);
     // A disabled entry must not be an anchor — an <a> with no href still looks
     // clickable and reports as a link to assistive technology.
     disabled.forEach((el: Element) => expect(el.tagName).toBe('SPAN'));
@@ -150,33 +154,64 @@ describe('AppComponent', () => {
     // the second half moved to ICP profiles — which absorbed the remaining two
     // identity fields rather than leaving a near-empty screen behind.
     expect(cmp.settingsNav.map((n) => n.label)).toEqual([
-      'API settings',
+      'API config',
       'Model config',
-      'Prompts',
-      'ICP profiles',
+      'Prompts config',
       'Services & proof',
-      'Writing samples',
+      'ICP profiles',
       'Signal types',
-      'Research',
+      'Sources & weights',
+      'Writing samples',
       'Scoring',
       'Sales rules',
+      'Monitoring',
     ]);
   });
 
-  it('puts signal types before research', () => {
+  it('puts signal types before the sources they are read out of', () => {
     settle(READY);
-    // Research derives its plan from the active signal types, so configuring
-    // them the other way round means picking families for signals that do not
-    // exist yet.
+    // A plan is derived from the active signal types, so configuring them the
+    // other way round means picking sources for signals that do not exist yet.
+    // "Research" was renamed "Sources & weights": it named the activity rather
+    // than the thing the screen configures.
     const labels = cmp.settingsNav.map((n) => n.label);
-    expect(labels.indexOf('Signal types')).toBeLessThan(labels.indexOf('Research'));
+    expect(labels.indexOf('Signal types')).toBeLessThan(
+      labels.indexOf('Sources & weights'),
+    );
   });
 
-  it('gives every settings entry a route', () => {
+  it('keeps an ICP under the services it is written in terms of', () => {
     settle(READY);
-    // A settings item with a null path renders as a dead link, which reads as
-    // a broken screen rather than as one not built yet.
-    expect(cmp.settingsNav.filter((n) => !n.path)).toEqual([]);
+    const labels = cmp.settingsNav.map((n) => n.label);
+    expect(labels.indexOf('Services & proof')).toBeLessThan(
+      labels.indexOf('ICP profiles'),
+    );
+  });
+
+  it('puts monitoring last', () => {
+    settle(READY);
+    // What was spent and what is stuck is a thing you go looking for, not
+    // something passed on the way to somewhere else.
+    const labels = cmp.settingsNav.map((n) => n.label);
+    expect(labels[labels.length - 1]).toBe('Monitoring');
+  });
+
+  it('renders an unbuilt settings entry inert rather than as a dead link', () => {
+    settle(READY);
+    // This used to assert that every settings entry had a route, because a
+    // null path rendered as a live link to nowhere — a broken screen rather
+    // than an unbuilt one. The nav now has the same inert branch the main one
+    // has, so the rule is what it always meant: no dead links.
+    const unbuilt = cmp.settingsNav.filter((n) => !n.path).map((n) => n.label);
+    expect(unbuilt).toEqual(['Monitoring']);
+
+    const labels = [...fixture.nativeElement.querySelectorAll('.nav-item.disabled')].map(
+      (el: Element) => el.textContent?.trim(),
+    );
+    expect(labels).toContain('Monitoring');
+    [...fixture.nativeElement.querySelectorAll('.nav-item.disabled')].forEach(
+      (el: Element) => expect(el.tagName).toBe('SPAN'),
+    );
   });
 
   describe('the setup gate', () => {
@@ -190,8 +225,10 @@ describe('AppComponent', () => {
       settle(NOT_READY);
       // Locking the way out of an incomplete setup would be a trap: this is
       // where the missing credentials get entered.
+      // Monitoring is ungated too — it is where somebody looks when the
+      // pipeline is refusing to run, which is exactly when setup is unfinished.
       const open = cmp.settingsNav.filter((n) => !cmp.disabled(n)).map((n) => n.label);
-      expect(open).toEqual(['API settings']);
+      expect(open).toEqual(['API config', 'Monitoring']);
     });
 
     it('unlocks everything once ready', () => {

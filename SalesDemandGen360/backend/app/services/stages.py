@@ -392,6 +392,7 @@ async def _record_call(
         output_tokens=getattr(result, "output_tokens", 0) or 0,
         cache_read_tokens=getattr(result, "cache_read_tokens", 0) or 0,
         cache_write_tokens=getattr(result, "cache_write_tokens", 0) or 0,
+        grounded=bool(getattr(result, "grounded", False)),
         duration_ms=int((time.monotonic() - started) * 1000),
         ok=error is None,
         error=error,

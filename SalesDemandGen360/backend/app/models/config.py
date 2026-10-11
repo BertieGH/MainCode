@@ -354,6 +354,16 @@ class LlmCall(Base):
     cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    #: Whether this call carried the search tool.
+    #:
+    #: **Grounding is billed per request, not per token**, and on this
+    #: installation it is about four fifths of what a research run costs. The
+    #: ledger recorded tokens and duration — most of a call and almost none of
+    #: its cost — which is why a spend cap arrived as a surprise instead of as
+    #: a number climbing on a screen.
+    grounded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     ok: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     #: The provider's reason, never a payload — prompts carry account research
     #: and a prospect's own words.

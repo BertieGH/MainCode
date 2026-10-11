@@ -155,6 +155,14 @@ class CallResult[R]:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     model: str = ""
+    #: Whether the call carried the search tool.
+    #:
+    #: Billed per request rather than per token, and on this installation
+    #: roughly four fifths of what a research call costs. The ledger recorded
+    #: tokens and duration — most of a call and almost none of its bill —
+    #: which is why a spend cap arrived as a surprise rather than as a number
+    #: climbing on a screen.
+    grounded: bool = False
 
     @property
     def cache_hit(self) -> bool:

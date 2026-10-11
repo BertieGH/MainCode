@@ -32,7 +32,7 @@ import { apiError } from '../shared/api-error';
   template: `
     <div class="head">
       <div style="display:flex;align-items:center;gap:8px;">
-        <h2 style="font-size:1.15rem;">Prompts</h2>
+        <h2 style="font-size:1.15rem;">Prompts config</h2>
         <button class="act-btn" (click)="help.set(!help())"
                 [attr.aria-expanded]="help()" aria-controls="prompts-help"
                 title="What this screen changes, and what it cannot change">

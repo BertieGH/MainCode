@@ -613,6 +613,14 @@ async def call[R: BaseModel](
         "cache_read_tokens": 0,
         "cache_write_tokens": 0,
     }
+    # Set once, outside the repair loop, because it is a property of the
+    # request rather than a quantity to accumulate — and because adding a
+    # boolean to a dict the loop sums with `+=` would have counted it.
+    #
+    # Grounding is billed per request and is roughly four fifths of what a
+    # research call costs here. The ledger recorded tokens and duration, which
+    # is most of a call and almost none of its bill.
+    grounded = bool(getattr(prefix, "tools", None))
 
     async with _client(STAGE_TIMEOUT_SECONDS.get(scenario, TIMEOUT_SECONDS)) as client:
         body = request()
@@ -655,6 +663,6 @@ async def call[R: BaseModel](
                     parsed, client=client, model=model, api_key=api_key,
                     body=body, prompt_tokens=usage_of(payload)["input_tokens"],
                 )
-            return parsed, totals
+            return parsed, {**totals, "grounded": grounded}
 
     raise GeminiError("unreachable")  # pragma: no cover

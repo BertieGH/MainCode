@@ -46,13 +46,18 @@
       </ng-container>
     </nav>
 
-    <div class="nav-label">Configure</div>
+    <div class="nav-label">Settings</div>
     <nav class="nav">
       <ng-container *ngFor="let n of settingsNav">
-        <a class="nav-item" *ngIf="!disabled(n)" [routerLink]="n.path"
+        <a class="nav-item" *ngIf="n.path && !disabled(n)" [routerLink]="n.path"
            routerLinkActive="on">{{ n.label }}</a>
-        <span class="nav-item disabled" *ngIf="disabled(n)"
+        <span class="nav-item disabled" *ngIf="n.path && disabled(n)"
               [title]="lockReason()">{{ n.label }}</span>
+        <!-- Same as the main nav: a section with no path is unbuilt, and is
+             shown inert rather than hidden or linked. Without this branch a
+             null path rendered as a live link to nowhere. -->
+        <span class="nav-item disabled" *ngIf="!n.path"
+              title="Not built yet">{{ n.label }}</span>
       </ng-container>
     </nav>
 
