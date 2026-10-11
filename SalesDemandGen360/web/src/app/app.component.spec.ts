@@ -128,7 +128,9 @@ describe('AppComponent', () => {
   it('renders unbuilt sections as inert spans, not dead links', () => {
     settle(READY);
     const disabled = fixture.nativeElement.querySelectorAll('.nav-item.disabled');
-    // Both navs: Dashboard and Learning in the main one, Monitoring in settings.
+    // Dashboard and Learning in the main nav; every settings entry has a
+    // screen, so that nav contributes none. Dashboard's child is a link and
+    // is not counted here.
     const unbuilt =
       cmp.nav.filter((n) => !n.path).length +
       cmp.settingsNav.filter((n) => !n.path).length;
@@ -163,7 +165,6 @@ describe('AppComponent', () => {
       'Writing samples',
       'Weights & scoring',
       'Sales rules',
-      'Monitoring',
     ]);
   });
 
@@ -187,18 +188,43 @@ describe('AppComponent', () => {
     );
   });
 
-  it('puts monitoring last', () => {
+  it('reads what a run cost beside the pipeline, not beside its knobs', () => {
     settle(READY);
-    // What was spent and what is stuck is a thing you go looking for, not
-    // something passed on the way to somewhere else.
-    const labels = cmp.settingsNav.map((n) => n.label);
-    expect(labels[labels.length - 1]).toBe('Monitoring');
+    // It was last in Settings, which put "what did that cost" next to the
+    // switches that configure a run rather than next to the run. A cost is
+    // an outcome, so it belongs under Dashboard — and Dashboard has no page
+    // of its own, so the child is the only thing in that group you can open.
+    expect(cmp.settingsNav.map((n) => n.label)).not.toContain('Monitoring');
+
+    const dashboard = cmp.nav.find((n) => n.label === 'Dashboard');
+    expect(dashboard?.children?.map((c) => c.label)).toEqual(['API cost']);
+    expect(dashboard?.children?.[0].path).toBe('/dashboard/api-cost');
+  });
+
+  it('renders a child entry as a link under its parent', () => {
+    settle(READY);
+    // The parent is an inert span; a child that did not render would leave
+    // the group unreachable with nothing on screen saying so.
+    const child = [...fixture.nativeElement.querySelectorAll('.nav-item.child')];
+    expect(child.map((el: Element) => el.textContent?.trim())).toEqual(['API cost']);
+    expect(child[0].tagName).toBe('A');
+  });
+
+  it('never shuts the cost screen, whatever setup is missing', () => {
+    settle(NOT_READY);
+    // Same reason API config stays open: this is where somebody looks when
+    // the pipeline is refusing to run, which is exactly when setup is
+    // unfinished. Its parent is inert for want of a page, not for want of
+    // credentials, so the gate must not reach the child through it.
+    const child = cmp.nav.find((n) => n.label === 'Dashboard')?.children?.[0];
+    expect(child && cmp.disabled(child)).toBe(false);
   });
 
   it('every settings entry has a route today', () => {
     settle(READY);
-    // Monitoring was the last one without, and it is built. The rule below is
-    // what keeps that honest if another is added before its screen exists.
+    // Monitoring was the last one without; it was built, then moved under
+    // Dashboard. The rule below is what keeps this honest if another entry is
+    // added before its screen exists.
     expect(cmp.settingsNav.filter((n) => !n.path)).toEqual([]);
   });
 
@@ -230,10 +256,8 @@ describe('AppComponent', () => {
       settle(NOT_READY);
       // Locking the way out of an incomplete setup would be a trap: this is
       // where the missing credentials get entered.
-      // Monitoring is ungated too — it is where somebody looks when the
-      // pipeline is refusing to run, which is exactly when setup is unfinished.
       const open = cmp.settingsNav.filter((n) => !cmp.disabled(n)).map((n) => n.label);
-      expect(open).toEqual(['API config', 'Monitoring']);
+      expect(open).toEqual(['API config']);
     });
 
     it('unlocks everything once ready', () => {

@@ -55,8 +55,24 @@ export class AppComponent implements OnInit {
 
   /** Only Settings is built. The rest are shown disabled so the shape of the
    *  application is visible without pretending the screens exist. */
-  nav = [
-    { label: 'Dashboard', path: null, gated: false },
+  nav: {
+    label: string;
+    path: string | null;
+    gated: boolean;
+    children?: { label: string; path: string; gated: boolean }[];
+  }[] = [
+    // No screen of its own yet, and already grouping one. The parent stays
+    // inert and the child carries the link.
+    {
+      label: 'Dashboard',
+      path: null,
+      gated: false,
+      children: [
+        // Ungated: this is where somebody looks when the pipeline is refusing
+        // to run, which is exactly when setup is unfinished.
+        { label: 'API cost', path: '/dashboard/api-cost', gated: false },
+      ],
+    },
     { label: 'Account Lists', path: '/lists', gated: true },
     { label: 'Campaign Queues', path: '/queues', gated: true },
     { label: 'Outreach', path: '/campaigns', gated: true },
@@ -120,11 +136,8 @@ export class AppComponent implements OnInit {
     // for what a thing is worth.
     { label: 'Weights & scoring', path: '/settings/scoring', gated: true },
     { label: 'Sales rules', path: '/settings/rules', gated: true },
-    // Last: what was spent and what is stuck is a thing you go looking for,
-    // not something passed on the way elsewhere. Ungated, because it is where
-    // somebody looks when the pipeline is refusing to run — which is exactly
-    // when setup is unfinished.
-    { label: 'Monitoring', path: '/settings/monitoring', gated: false },
+    // Monitoring moved out: what a run costs is read beside the pipeline it
+    // belongs to, not beside the knobs that configure it.
   ];
 
   ngOnInit(): void {

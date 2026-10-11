@@ -31,6 +31,18 @@
 .nav-item.disabled { color: var(--sidebar-dim); cursor: default; }
 .nav-item.disabled:hover { background: none; color: var(--sidebar-dim); }
 
+/* A child sits under its parent and reads as subordinate to it: indented,
+   smaller, dimmer until hovered. Dashboard itself has no page of its own, so
+   the child is the only thing in that group you can click — the indent is
+   what stops it looking like a second top-level entry. */
+.nav-item.child {
+  margin-left: 12px; padding-left: 14px; font-size: .79rem;
+  color: var(--sidebar-dim); border-left: 1px solid rgba(255,255,255,.1);
+  border-radius: 0 8px 8px 0;
+}
+.nav-item.child:hover { color: #fff; }
+.nav-item.child.on { color: #fff; box-shadow: inset 2px 0 0 var(--accent); }
+
 .nav-label {
   font-family: 'IBM Plex Mono', monospace; font-size: .62rem; letter-spacing: .09em;
   text-transform: uppercase; color: var(--sidebar-dim); padding: 16px 18px 6px;

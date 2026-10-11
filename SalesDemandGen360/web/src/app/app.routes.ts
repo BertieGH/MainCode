@@ -45,6 +45,11 @@ export const routes: Routes = [
       import('./prep/prep-detail.component').then((m) => m.PrepDetailComponent),
   },
   {
+    path: 'dashboard/api-cost',
+    loadComponent: () =>
+      import('./dashboard/api-cost.component').then((m) => m.ApiCostComponent),
+  },
+  {
     path: 'settings',
     children: [
       { path: '', redirectTo: 'setup', pathMatch: 'full' },
@@ -66,11 +71,6 @@ export const routes: Routes = [
         path: 'writing',
         loadComponent: () =>
           import('./settings/writing-samples.component').then((m) => m.WritingSamplesComponent),
-      },
-      {
-        path: 'monitoring',
-        loadComponent: () =>
-          import('./settings/monitoring.component').then((m) => m.MonitoringComponent),
       },
       {
         path: 'scoring',

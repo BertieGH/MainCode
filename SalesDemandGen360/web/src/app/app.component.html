@@ -43,6 +43,17 @@
         <span class="nav-item disabled" *ngIf="n.path && disabled(n)"
               [title]="lockReason()">{{ n.label }}</span>
         <span class="nav-item disabled" *ngIf="!n.path" title="Not built yet">{{ n.label }}</span>
+
+        <!-- A section can have screens beneath it. Dashboard has no screen of
+             its own yet and still groups one, so the parent stays inert and
+             the child is the live link — which is why these are rendered
+             whatever state the parent is in. -->
+        <ng-container *ngFor="let c of n.children || []">
+          <a class="nav-item child" *ngIf="!disabled(c)" [routerLink]="c.path"
+             routerLinkActive="on">{{ c.label }}</a>
+          <span class="nav-item child disabled" *ngIf="disabled(c)"
+                [title]="lockReason()">{{ c.label }}</span>
+        </ng-container>
       </ng-container>
     </nav>
 
