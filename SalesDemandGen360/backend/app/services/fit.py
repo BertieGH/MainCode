@@ -37,6 +37,16 @@ from app.services.scoring import normalise_industry
 #: nothing is cited, and from `no_evidence`, since something was checked.
 FIRMOGRAPHICS = "firmographics"
 
+#: The same arithmetic, but at least one value came from the researched
+#: profile rather than a firmographic column. Kept apart because the two are
+#: not equally strong: a column is what a provider or an import asserted, a
+#: profile line is what a model read off a page. A rep deciding whether to
+#: drop an account should be able to see which kind of fact decided it.
+PROFILE = "firmographics_from_profile"
+
+#: Where a value came from, for the reason string.
+_FROM_PROFILE = " (from the researched profile)"
+
 _EU = frozenset({
     "eu", "european union", "austria", "belgium", "bulgaria", "croatia", "cyprus",
     "czechia", "czech republic", "denmark", "estonia", "finland", "france", "germany",
@@ -116,6 +126,66 @@ def parse_employees(value: object) -> tuple[int, int | None] | None:
     return None
 
 
+def _profile(account) -> dict:
+    row = getattr(account, "profile", None)
+    return row if isinstance(row, dict) else {}
+
+
+def profile_headcount(value: object) -> tuple[int, int] | None:
+    """A headcount out of a profile's free-text size.
+
+    Profiles say things like "Approx. 100-110 employees", "~2,000 staff" or
+    "11-50". A range is kept as a range and compared by overlap rather than
+    collapsed to one number: an account of 400-600 against an ICP wanting
+    1-500 is a genuine partial, and picking either end would decide it by
+    coincidence.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    numbers = [int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", value)]
+    if not numbers:
+        return None
+    return min(numbers), max(numbers)
+
+
+def _account_headcount(account) -> tuple[tuple[int, int] | None, bool]:
+    """`((low, high), from_profile)`. The column wins when it has a value."""
+    count = getattr(account, "employee_count", None)
+    if isinstance(count, int) and count > 0:
+        return (count, count), False
+    return profile_headcount(_profile(account).get("size")), True
+
+
+def _account_industries(account) -> tuple[list[str], bool]:
+    """The column, else every industry the profile lists.
+
+    A profile names several — "Productivity Software, SaaS, Business
+    Software" — and any one of them matching the ICP is a match, the same
+    way one industry on the column would be.
+    """
+    if isinstance(account.industry, str) and account.industry.strip():
+        return [account.industry], False
+    return _strings(_profile(account).get("industries_served")), True
+
+
+def _account_places(account) -> tuple[list[str], bool]:
+    """The country column, else the places the profile lists.
+
+    Profile locations are written for people — "Porto, Portugal", "Fully
+    distributed worldwide" — so each is also split on commas and the parts
+    tried separately, which is how "Portugal" is found inside the first and
+    nothing is found inside the second.
+    """
+    country = getattr(account, "hq_country", None)
+    if isinstance(country, str) and country.strip():
+        return [country], False
+    places: list[str] = []
+    for line in _strings(_profile(account).get("locations")):
+        places.append(line)
+        places.extend(part.strip() for part in line.split(",") if part.strip())
+    return places, True
+
+
 def _words_contain(haystack: str, needle: str) -> bool:
     """Whole-phrase containment, so "logistics" matches "logistics and supply
     chain" but "it" does not match "digital"."""
@@ -126,7 +196,9 @@ def _strings(value: object) -> list[str]:
     return [v for v in value if isinstance(v, str) and v.strip()] if isinstance(value, list) else []
 
 
-def _size(count: int | None, band: object) -> Check | None:
+def _size(
+    have: tuple[int, int] | None, band: object, *, from_profile: bool = False
+) -> Check | None:
     if band in (None, "", []):
         return None
     parsed = parse_employees(band)
@@ -135,42 +207,62 @@ def _size(count: int | None, band: object) -> Check | None:
         return Check("size", "unknown", f"the ICP's size {band!r} is not a range this can read")
     low, high = parsed
     wanted = f"{low}+" if high is None else f"{low}-{high}"
-    if count is None:
+    if have is None:
         return Check("size", "unknown", f"no headcount on the account to compare with {wanted}")
-    inside = count >= low and (high is None or count <= high)
+    got_low, got_high = have
+    said = str(got_low) if got_low == got_high else f"{got_low}-{got_high}"
+    # Overlap, not containment: a 400-600 account against a 1-500 ICP is a
+    # real partial, and collapsing the range to one end would decide it by
+    # which end was picked.
+    inside = got_high >= low and (high is None or got_low <= high)
+    source = _FROM_PROFILE if from_profile else ""
     return Check(
         "size",
         "match" if inside else "mismatch",
-        f"{count} employees is {'inside' if inside else 'outside'} {wanted}",
+        f"{said} employees{source} is {'inside' if inside else 'outside'} {wanted}",
     )
 
 
-def _industry(industry: str | None, wanted: list[str]) -> Check | None:
+def _industry(
+    industries: list[str], wanted: list[str], *, from_profile: bool = False
+) -> Check | None:
     if not wanted:
         return None
     listed = ", ".join(wanted)
-    have = normalise_industry(industry)
-    if not have:
+    source = _FROM_PROFILE if from_profile else ""
+    usable = [i for i in industries if normalise_industry(i)]
+    if not usable:
         return Check("industry", "unknown", f"no industry on the account to compare with {listed}")
-    for w in wanted:
-        key = normalise_industry(w)
-        if have == key or _words_contain(have, key):
-            return Check("industry", "match", f"industry {industry!r} is {w}")
-    return Check("industry", "mismatch", f"industry {industry!r} is not one of {listed}")
+    for industry in usable:
+        have = normalise_industry(industry)
+        for w in wanted:
+            key = normalise_industry(w)
+            if have == key or _words_contain(have, key):
+                return Check("industry", "match", f"industry {industry!r}{source} is {w}")
+    had = ", ".join(repr(i) for i in usable)
+    return Check("industry", "mismatch", f"industry {had}{source} is not one of {listed}")
 
 
-def _region(country: str | None, wanted: list[str]) -> Check | None:
+def _region(
+    places: list[str], wanted: list[str], *, from_profile: bool = False
+) -> Check | None:
     if not wanted:
         return None
     listed = ", ".join(wanted)
-    have = normalise_industry(country)
-    if not have:
+    source = _FROM_PROFILE if from_profile else ""
+    usable = [p for p in places if normalise_industry(p)]
+    if not usable:
         return Check("region", "unknown", f"no country on the account to compare with {listed}")
-    for w in wanted:
-        key = normalise_industry(w)
-        if have in REGIONS.get(key, frozenset({key})):
-            return Check("region", "match", f"{country} is in {w}")
-    return Check("region", "mismatch", f"{country} is not in {listed}")
+    for place in usable:
+        have = normalise_industry(place)
+        for w in wanted:
+            key = normalise_industry(w)
+            if have in REGIONS.get(key, frozenset({key})):
+                return Check("region", "match", f"{place}{source} is in {w}")
+    # Named by the first place rather than all of them: a profile may list a
+    # head office and three sentences about remote work, and a mismatch that
+    # recites all four is unreadable.
+    return Check("region", "mismatch", f"{usable[0]}{source} is not in {listed}")
 
 
 def _excluded(industry: str | None, exclusions: list[str]) -> str | None:
@@ -187,23 +279,52 @@ def _excluded(industry: str | None, exclusions: list[str]) -> str | None:
 def assess(account, definition: dict, *, icp: str | None = None) -> Fit:
     """How well one account matches one ICP definition."""
     label = icp or "the ICP"
-    excluded = _excluded(account.industry, _strings(definition.get("exclusions")))
-    if excluded is not None:
-        return Fit(
-            score=0.0,
-            basis=FIRMOGRAPHICS,
-            reason=f"{label}: {account.industry!r} is on its do-not-target list ({excluded}).",
-            icp=icp,
-        )
+    industries, industry_from_profile = _account_industries(account)
+    places, places_from_profile = _account_places(account)
+    headcount, size_from_profile = _account_headcount(account)
+
+    # The exclusion list runs over every industry known, profile included: an
+    # account kept because the column that would have excluded it was empty
+    # is the expensive kind of mistake.
+    for industry in industries:
+        excluded = _excluded(industry, _strings(definition.get("exclusions")))
+        if excluded is not None:
+            return Fit(
+                score=0.0,
+                basis=PROFILE if industry_from_profile else FIRMOGRAPHICS,
+                reason=f"{label}: {industry!r} is on its do-not-target list ({excluded}).",
+                icp=icp,
+            )
 
     checks = tuple(
         c
         for c in (
-            _size(account.employee_count, definition.get("employees")),
-            _industry(account.industry, _strings(definition.get("industries"))),
-            _region(getattr(account, "hq_country", None), _strings(definition.get("regions"))),
+            _size(headcount, definition.get("employees"), from_profile=size_from_profile),
+            _industry(
+                industries,
+                _strings(definition.get("industries")),
+                from_profile=industry_from_profile,
+            ),
+            _region(
+                places,
+                _strings(definition.get("regions")),
+                from_profile=places_from_profile,
+            ),
         )
         if c is not None
+    )
+    # The basis follows what actually decided the score. A profile value that
+    # came back `unknown` decided nothing and must not downgrade a fit that
+    # the columns settled.
+    from_profile = {
+        "size": size_from_profile,
+        "industry": industry_from_profile,
+        "region": places_from_profile,
+    }
+    basis = (
+        PROFILE
+        if any(from_profile.get(c.factor) and c.outcome != "unknown" for c in checks)
+        else FIRMOGRAPHICS
     )
     if not checks:
         return Fit(
@@ -230,7 +351,7 @@ def assess(account, definition: dict, *, icp: str | None = None) -> Fit:
     score = round(100.0 * matched / len(known), 2)
     return Fit(
         score=score,
-        basis=FIRMOGRAPHICS,
+        basis=basis,
         reason=f"{label}: {detail}. Matched {matched} of {len(known)} that could be checked.",
         icp=icp,
         checks=checks,

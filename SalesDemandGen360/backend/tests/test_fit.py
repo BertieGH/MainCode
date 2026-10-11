@@ -139,3 +139,127 @@ class TestTheCaseThatStartedThis:
         assert "is not one of SaaS, Logistics, Fintech, Insurance" in result.reason
         assert "no country" in result.reason
         assert result.as_assessment()["evidence_ids"] == []
+
+
+class TestTheProfileCountsWhenTheColumnsAreEmpty:
+    """Fit scored 0 on an account whose profile named its industry, its size
+    and where it is.
+
+    That zero was `no_evidence` — "nothing to compare" — so an account plainly
+    outside the ICP read as one nobody had researched. The two call for
+    opposite actions, which is the whole reason the distinction exists.
+    """
+
+    ICP = {
+        "industries": ["Logistics", "Fintech", "Insurance"],
+        "regions": ["US", "Canada"],
+        "employees": "1-500",
+        "exclusions": ["Government", "Defence"],
+    }
+
+    def _account(self, **over):
+        row = SimpleNamespace(
+            industry=None, employee_count=None, hq_country=None, profile=None
+        )
+        for k, v in over.items():
+            setattr(row, k, v)
+        return row
+
+    def test_a_profile_is_read_when_the_columns_are_null(self):
+        result = fit.assess(
+            self._account(
+                profile={
+                    "industries_served": ["Productivity Software", "SaaS"],
+                    "size": "Approx. 100-110 employees",
+                    "locations": ["Porto, Portugal", "Fully distributed worldwide"],
+                }
+            ),
+            self.ICP,
+        )
+        # One of three: the headcount fits, the industry and the place do not.
+        assert result.score == 33.33
+        assert result.basis == fit.PROFILE
+        outcomes = {c.factor: c.outcome for c in result.checks}
+        assert outcomes == {"size": "match", "industry": "mismatch", "region": "mismatch"}
+
+    def test_the_reason_says_where_the_values_came_from(self):
+        """A column is what a provider asserted; a profile line is what a
+        model read off a page. Both usable, not equally strong."""
+        result = fit.assess(
+            self._account(profile={"industries_served": ["Fintech"]}), self.ICP
+        )
+        assert "from the researched profile" in result.reason
+
+    def test_a_column_still_wins_over_the_profile(self):
+        """The profile is the fallback, never the override."""
+        result = fit.assess(
+            self._account(
+                industry="Logistics",
+                profile={"industries_served": ["Productivity Software"]},
+            ),
+            self.ICP,
+        )
+        industry = next(c for c in result.checks if c.factor == "industry")
+        assert industry.outcome == "match"
+        assert "from the researched profile" not in industry.detail
+
+    def test_any_listed_industry_may_match(self):
+        """A profile names several, the way one column names one."""
+        result = fit.assess(
+            self._account(
+                profile={"industries_served": ["Productivity Software", "Insurance"]}
+            ),
+            self.ICP,
+        )
+        assert next(c for c in result.checks if c.factor == "industry").outcome == "match"
+
+    def test_a_place_is_split_so_the_country_inside_it_is_found(self):
+        """Profiles write for people: "Porto, Portugal", not "PT"."""
+        result = fit.assess(
+            self._account(profile={"locations": ["Toronto, Canada"]}), self.ICP
+        )
+        assert next(c for c in result.checks if c.factor == "region").outcome == "match"
+
+    def test_a_size_range_is_compared_by_overlap(self):
+        """400-600 against 1-500 is a real partial. Collapsing the range to
+        one end would decide it by which end was picked."""
+        result = fit.assess(
+            self._account(profile={"size": "400-600 employees"}), self.ICP
+        )
+        assert next(c for c in result.checks if c.factor == "size").outcome == "match"
+
+        outside = fit.assess(
+            self._account(profile={"size": "about 900 people"}), self.ICP
+        )
+        assert next(c for c in outside.checks if c.factor == "size").outcome == "mismatch"
+
+    def test_an_exclusion_in_the_profile_still_excludes(self):
+        """An account kept because the column that would have excluded it was
+        empty is the expensive kind of mistake."""
+        result = fit.assess(
+            self._account(profile={"industries_served": ["Defence", "Software"]}),
+            self.ICP,
+        )
+        assert result.score == 0.0
+        assert "do-not-target" in result.reason
+
+    def test_an_empty_profile_still_says_nothing_to_compare(self):
+        """The fallback adds a place to look, not an answer."""
+        result = fit.assess(self._account(profile={}), self.ICP)
+        assert result.score == 0.0
+        assert result.basis == "no_evidence"
+
+    def test_an_unreadable_size_does_not_invent_one(self):
+        result = fit.assess(
+            self._account(profile={"size": "a small team"}), self.ICP
+        )
+        assert next(c for c in result.checks if c.factor == "size").outcome == "unknown"
+
+    def test_the_basis_stays_firmographics_when_the_profile_decided_nothing(self):
+        """A profile value that came back unknown must not downgrade a fit the
+        columns settled."""
+        result = fit.assess(
+            self._account(industry="Fintech", profile={"size": "a small team"}),
+            self.ICP,
+        )
+        assert result.basis == fit.FIRMOGRAPHICS

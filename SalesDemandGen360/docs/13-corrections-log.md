@@ -5293,3 +5293,67 @@ Backend 1,942 pass.
 
 `services/gemini.py`, `services/llm.py`, `services/pipeline.py`,
 `api/lists.py`, `tests/test_gemini_adapter.py` (+6).
+
+## §114 — Fit looked in the only place the facts were not (2026-10-10)
+
+**Problem.** Fit scored **0 on 41 of 48 accounts**, with basis `no_evidence` —
+"nothing on the account to compare". The prep screen reported that faithfully,
+so an account plainly outside the ICP and an account nobody had researched
+looked identical. They call for opposite actions: drop one, research the other.
+
+**Cause.** `fit.assess` reads `account.industry`, `account.employee_count` and
+`account.hq_country`. Those columns are populated by resolution and by
+imports, and across this book they are mostly null. The same facts were sitting
+in `account.profile`, which research writes:
+
+```
+industries_served: ["Productivity Software", "SaaS", "Business Software"]
+size:              "Approx. 100-110 employees"
+locations:         ["Porto, Portugal", "Fully distributed worldwide"]
+```
+
+Recalculating would have produced 0 again. The data was never missing.
+
+**Fix.** The column still wins; the profile is the fallback, never the
+override. Three readers resolve each factor and report which source answered,
+and every check names it — *"100-110 employees (from the researched profile)
+is inside 1-500"* — because a column is what a provider asserted and a profile
+line is what a model read off a page. Both usable, not equally strong, and the
+basis says which: `firmographics` against `firmographics_from_profile`.
+
+Details that mattered:
+
+- **A profile names several industries**, so any one matching is a match, the
+  way one column naming one is.
+- **Places are written for people** — "Porto, Portugal", not "PT" — so each is
+  also split on commas and the parts tried separately.
+- **Sizes are compared by overlap**, not collapsed to one number: 400-600
+  against an ICP wanting 1-500 is a genuine partial, and picking either end
+  would decide it by which end was picked.
+- **Exclusions run over profile industries too.** An account kept because the
+  column that would have excluded it was empty is the expensive mistake.
+- **A profile value that came back `unknown` does not downgrade the basis**, or
+  an unreadable size would make a fit the columns settled look weaker than it is.
+
+**Re-scored, with no model call.** `icp_scores.rescore` already recomputes fit
+and buyer and re-runs the roll-up deterministically, so 48 accounts were
+recomputed for nothing. Fit moved on 45:
+
+```
+0 -> 100   11 accounts      100 -> 67   2
+0 -> 67    15                50 -> 67   1
+0 -> 33    12                50 -> 33   1
+0 -> 50     3
+```
+
+Priority bands went from 22 low / 4 medium to **36 medium, 10 low, 2 high** —
+fit had been contributing zero to every roll-up in the book.
+
+The two directions are both the point. Nsure.com's profile says *FinTech*,
+which the ICP asks for: 0 → 100, an on-ICP account that had been reading as
+unresearched. Doist's says *Productivity Software* in Portugal: 0 → 33.33, a
+real low score with a reason, where before it was an absence.
+
+Backend 1,965 pass.
+
+`services/fit.py`, `tests/test_fit.py` (+10).
