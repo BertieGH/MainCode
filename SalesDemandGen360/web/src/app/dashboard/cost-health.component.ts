@@ -11,10 +11,10 @@ import { apiError } from '../shared/api-error';
  *
  * Filed under Dashboard rather than Settings: what a run costs is read beside
  * the pipeline it belongs to, not beside the knobs that configure it. The
- * menu calls it "API cost", which names the larger half — the stuck-run panel
- * is broader than the title and stays here because a run that silently never
- * finished is a cost too, and the alternative was a second screen nobody
- * would open.
+ * menu says "Cost & health" rather than "API cost" because the stuck-run
+ * panel is not a cost: a run that silently never finished is the other half
+ * of the same question, and naming only the cheaper half is how a screen
+ * ends up with a panel nobody expects to find on it.
  *
  * **This screen exists because a spend cap arrived as a surprise.** Tokens
  * were recorded and cheap; grounding is billed per request, is the larger
@@ -34,13 +34,13 @@ import { apiError } from '../shared/api-error';
  * when there is none rather than shown as a reassuring zero in a corner.
  */
 @Component({
-  selector: 'app-api-cost',
+  selector: 'app-cost-health',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="head">
       <div>
-        <h2>API cost</h2>
+        <h2>Cost &amp; health</h2>
         <p class="sub">
           What the pipeline spent, and what it got stuck on. Every figure here is
           counted from this installation's own ledger.
@@ -213,7 +213,7 @@ import { apiError } from '../shared/api-error';
     `,
   ],
 })
-export class ApiCostComponent implements OnInit {
+export class CostHealthComponent implements OnInit {
   private api = inject(ConfigService);
 
   days = 7;

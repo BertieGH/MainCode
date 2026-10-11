@@ -45,9 +45,9 @@ export const routes: Routes = [
       import('./prep/prep-detail.component').then((m) => m.PrepDetailComponent),
   },
   {
-    path: 'dashboard/api-cost',
+    path: 'dashboard/cost-health',
     loadComponent: () =>
-      import('./dashboard/api-cost.component').then((m) => m.ApiCostComponent),
+      import('./dashboard/cost-health.component').then((m) => m.CostHealthComponent),
   },
   {
     path: 'settings',

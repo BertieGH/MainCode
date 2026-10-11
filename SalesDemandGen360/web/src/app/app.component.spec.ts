@@ -197,8 +197,8 @@ describe('AppComponent', () => {
     expect(cmp.settingsNav.map((n) => n.label)).not.toContain('Monitoring');
 
     const dashboard = cmp.nav.find((n) => n.label === 'Dashboard');
-    expect(dashboard?.children?.map((c) => c.label)).toEqual(['API cost']);
-    expect(dashboard?.children?.[0].path).toBe('/dashboard/api-cost');
+    expect(dashboard?.children?.map((c) => c.label)).toEqual(['Cost & health']);
+    expect(dashboard?.children?.[0].path).toBe('/dashboard/cost-health');
   });
 
   it('renders a child entry as a link under its parent', () => {
@@ -206,7 +206,7 @@ describe('AppComponent', () => {
     // The parent is an inert span; a child that did not render would leave
     // the group unreachable with nothing on screen saying so.
     const child = [...fixture.nativeElement.querySelectorAll('.nav-item.child')];
-    expect(child.map((el: Element) => el.textContent?.trim())).toEqual(['API cost']);
+    expect(child.map((el: Element) => el.textContent?.trim())).toEqual(['Cost & health']);
     expect(child[0].tagName).toBe('A');
   });
 

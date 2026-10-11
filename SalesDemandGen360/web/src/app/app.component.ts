@@ -70,7 +70,7 @@ export class AppComponent implements OnInit {
       children: [
         // Ungated: this is where somebody looks when the pipeline is refusing
         // to run, which is exactly when setup is unfinished.
-        { label: 'API cost', path: '/dashboard/api-cost', gated: false },
+        { label: 'Cost & health', path: '/dashboard/cost-health', gated: false },
       ],
     },
     { label: 'Account Lists', path: '/lists', gated: true },
