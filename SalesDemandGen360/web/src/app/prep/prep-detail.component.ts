@@ -114,25 +114,35 @@ import { apiError } from '../shared/api-error';
         before a call wants the plan; the research is what they check when
         something in the plan surprises them.
       -->
-      <div class="split">
-        <div class="col-main">
-      <!-- the generated half -->
-      <div class="seclabel">The call game plan</div>
-
-      <div class="empty" *ngIf="!p.brief">
-        <strong>Not generated yet.</strong>
-        The objective, the openings, the questions and the objections are written on
-        demand — one contact at a time, never in advance, because a brief written today
-        for a call in a fortnight argues from a picture that predates the conversation.
-        <div style="margin-top:12px">
-          <button class="btn btn-primary" (click)="generate(p)" [disabled]="busy()">
-            {{ busy() ? 'Writing…' : 'Generate the brief' }}
-          </button>
-        </div>
+      <div class="tabs" role="tablist">
+        <button
+          class="tab"
+          role="tab"
+          *ngFor="let t of tabs"
+          [attr.aria-selected]="tab() === t.key"
+          (click)="tab.set(t.key)">
+          {{ t.label }}
+        </button>
       </div>
-      <p class="err" *ngIf="genError()">{{ genError() }}</p>
 
-      <ng-container *ngIf="p.brief as b">
+      <section *ngIf="tab() === 'brief'">
+        <!-- the generated half -->
+        <div class="seclabel">The call game plan</div>
+
+        <div class="empty" *ngIf="!p.brief">
+          <strong>Not generated yet.</strong>
+          The objective, the openings, the questions and the objections are written on
+          demand — one contact at a time, never in advance, because a brief written today
+          for a call in a fortnight argues from a picture that predates the conversation.
+          <div style="margin-top:12px">
+            <button class="btn btn-primary" (click)="generate(p)" [disabled]="busy()">
+              {{ busy() ? 'Writing…' : 'Generate the brief' }}
+            </button>
+          </div>
+        </div>
+        <p class="err" *ngIf="genError()">{{ genError() }}</p>
+
+        <ng-container *ngIf="p.brief as b">
         <div class="stale" *ngIf="p.brief_is_stale">
           <div>
             <strong>Written before the latest facts.</strong>
@@ -144,125 +154,295 @@ import { apiError } from '../shared/api-error';
           </button>
         </div>
 
-        <div class="hero">
-          <div class="seclabel" style="margin-top:0">What to find out — one thing</div>
-          <p class="obj">{{ b.what_to_find_out }}</p>
-          <p class="row-sub" *ngIf="b.what_not_to_attempt">
-            Not this call: {{ b.what_not_to_attempt }}
+          <div class="split">
+            <div class="col-main">
+              <div class="hero">
+                <div class="seclabel" style="margin-top:0">What to find out — one thing</div>
+                <p class="obj">{{ b.what_to_find_out }}</p>
+                <p class="row-sub" *ngIf="b.what_not_to_attempt">
+                  Not this call: {{ b.what_not_to_attempt }}
+                </p>
+                <p class="note" *ngIf="b.problem_is_unproven">
+                  <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span> {{ b.problem_is_unproven }}
+                </p>
+
+                <ng-container *ngIf="b.openings.length">
+                  <div class="seclabel">Opening — pick one, say it out loud first</div>
+                  <div class="optpick">
+                    <button
+                      *ngFor="let o of b.openings; let i = index"
+                      [attr.aria-pressed]="i === opening()"
+                      (click)="opening.set(i)">
+                      {{ o.label }}
+                    </button>
+                  </div>
+                  <div class="open-line">{{ b.openings[opening()].words }}</div>
+                  <p class="row-sub">
+                    <strong>Use when:</strong> {{ b.openings[opening()].use_when }}
+                  </p>
+                  <p class="row-sub">
+                    <strong>Why it works:</strong> {{ b.openings[opening()].why_it_works }}
+                  </p>
+                </ng-container>
+
+                <ng-container *ngIf="b.listen_for.length">
+                  <div class="seclabel">Listen for — findings, not expected answers</div>
+                  <div class="chips">
+                    <span class="chip" *ngFor="let l of b.listen_for">{{ l }}</span>
+                  </div>
+                </ng-container>
+
+                <ng-container *ngIf="b.next_steps.length">
+                  <div class="seclabel">Next step — conditional on what you hear</div>
+                  <div class="step2" *ngFor="let n of b.next_steps">
+                    <strong>{{ n.condition }}</strong>
+                    <span>{{ n.action }}</span>
+                  </div>
+                </ng-container>
+              </div>
+
+              <div class="seclabel" *ngIf="b.discovery_questions.length">
+                Questions — ranked, with what each one changes
+              </div>
+              <div class="q" *ngFor="let q of b.discovery_questions; let i = index">
+                <div class="qn">
+                  <p class="ask">{{ q.question }}</p>
+                  <span class="badge badge-accent">{{ i + 1 }}</span>
+                </div>
+                <dl>
+                  <dt>Listening for</dt><dd>{{ q.listening_for }}</dd>
+                  <dt>Changes</dt><dd>{{ q.changes }}</dd>
+                </dl>
+                <div class="branch" *ngIf="q.branches.length">
+                  <div *ngFor="let br of q.branches">{{ br }}</div>
+                </div>
+              </div>
+
+              <ng-container *ngIf="b.objections.length">
+                <div class="seclabel">Objections</div>
+                <div class="table-wrap">
+                  <table class="data">
+                    <thead>
+                      <tr><th>Objection</th><th>Type</th><th>Response</th><th>Follow-up</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let o of b.objections">
+                        <td>{{ o.objection }}</td>
+                        <td>
+                          <span
+                            class="badge"
+                            [ngClass]="o.kind === 'observed' ? 'badge-accent' : 'badge-neutral'">
+                            {{ o.kind }}
+                          </span>
+                        </td>
+                        <td>{{ o.pre_empt }}</td>
+                        <td class="muted">{{ o.follow_up }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="note">
+                  Anticipated is kept apart from observed so you never defend against a concern
+                  nobody raised.
+                </p>
+              </ng-container>
+
+              <ng-container *ngIf="b.already_said.length || b.their_replies.length">
+                <div class="seclabel">What we already said, and what came back</div>
+                <div class="card">
+                  <ul><li *ngFor="let s of b.already_said">{{ s }}</li></ul>
+                  <blockquote *ngFor="let r of b.their_replies">{{ r }}</blockquote>
+                </div>
+              </ng-container>
+
+            </div>
+
+            <aside class="col-side">
+              <!-- 3 · why now -->
+              <div class="seclabel" *ngIf="p.thread">Why this account, why now</div>
+              <div class="card" *ngIf="p.thread as t">
+                <dl class="kv">
+                  <div>
+                    <dt>Trigger <span class="ep" [ngClass]="t.without_live_trigger ? 'ep-unk' : 'ep-fact'"
+                      [title]="t.without_live_trigger ? EP.unknown : EP.fact">
+                      {{ t.without_live_trigger ? 'no live trigger' : 'fact' }}</span></dt>
+                    <dd>{{ t.trigger_summary }}</dd>
+                  </div>
+                  <div>
+                    <dt>Hypothesis to test <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span></dt>
+                    <dd>{{ t.problem_hypothesis }}</dd>
+                  </div>
+                  <div>
+                    <dt>How we would help <span class="ep ep-fact" [title]="EP.approved">approved positioning</span></dt>
+                    <dd>{{ t.positioning }}</dd>
+                  </div>
+                  <div>
+                    <dt>The ask</dt>
+                    <dd>{{ t.cta }}</dd>
+                  </div>
+                </dl>
+                <p class="note" *ngIf="t.strategy_confidence !== null">
+                  Strategy confidence {{ t.strategy_confidence }} — how well this approach fits the
+                  context. Not whether the problem is real, and not how reliable the evidence is.
+                </p>
+                <p class="note" *ngIf="t.avoid_list.length">
+                  Avoid: {{ t.avoid_list.join(', ') }}
+                </p>
+              </div>
+
+              <!-- 4 · qualification unpacked -->
+              <div class="seclabel">What we know, suspect, and must not assume</div>
+              <div class="know">
+                <div *ngIf="b.what_we_know.length">
+                  <h4><span class="ep ep-fact" [title]="EP.fact">fact</span> What we know</h4>
+                  <ul><li *ngFor="let x of b.what_we_know">{{ x }}</li></ul>
+                </div>
+                <div *ngIf="b.what_we_suspect.length">
+                  <h4><span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span> What we suspect</h4>
+                  <ul><li *ngFor="let x of b.what_we_suspect">{{ x }}</li></ul>
+                </div>
+                <div *ngIf="b.what_we_do_not_know.length">
+                  <h4><span class="ep ep-unk" [title]="EP.unknown">unknown</span> What we do not know</h4>
+                  <ul><li *ngFor="let x of b.what_we_do_not_know">{{ x }}</li></ul>
+                </div>
+                <div class="trap" *ngIf="b.do_not_assume.length">
+                  <h4>Do not assume</h4>
+                  <ul><li *ngFor="let x of b.do_not_assume">{{ x }}</li></ul>
+                </div>
+              </div>
+
+              <div class="seclabel">What we can credibly offer · {{ p.proof.length }} approved</div>
+              <div class="empty" *ngIf="!p.proof.length">
+                No approved proof point. Describe the capability and claim no result —
+                no proof is better than unsupported proof.
+              </div>
+              <div class="card" *ngIf="p.proof.length">
+                <div class="proof" *ngFor="let pp of p.proof">
+                  <div>
+                    <strong>{{ pp.title }}</strong>
+                    <span class="chip">{{ pp.kind }}</span>
+                    <span class="badge badge-warn" *ngIf="!pp.has_metric">no measured outcome</span>
+                  </div>
+                  <p class="row-sub">{{ pp.body }}</p>
+                  <p class="note" *ngIf="!pp.has_metric">
+                    Nothing measured is attached, so this may describe what we do and must not
+                    claim a result.
+                  </p>
+                </div>
+              </div>
+
+            </aside>
+          </div>
+        </ng-container>
+      </section>
+
+      <section *ngIf="tab() === 'evidence'">
+        <div class="seclabel">Qualification — six dimensions, not one number</div>
+        <div class="card" *ngIf="p.qualification as q">
+          <div class="scorehead">
+            <div>
+              <span class="score">{{ q.priority_score }}</span>
+              <span class="badge badge-neutral">{{ q.priority_band }}</span>
+            </div>
+            <span class="chip">scoring_config v{{ q.scoring_config_version }} · arithmetic, not a model</span>
+          </div>
+
+          <div class="dim" *ngFor="let d of q.dimensions">
+            <span class="nm">{{ d.dimension }}</span>
+            <span class="bar">
+              <i [style.width.%]="barWidth(d)" [class.zero]="d.score === 0"></i>
+            </span>
+            <span class="sc">{{ d.score }}</span>
+            <span class="bs">
+              <span class="badge" [ngClass]="basisTone(d)">{{ basisLabel(d) }}</span>
+            </span>
+            <span class="why">{{ d.reason }}</span>
+          </div>
+
+          <p class="note" *ngIf="q.assessed_average !== null && q.unassessed.length">
+            <strong>The headline is not a verdict on the account.</strong>
+            {{ q.unassessed.join(' and ') }}
+            {{ q.unassessed.length === 1 ? 'was' : 'were' }} scored with nothing to go on —
+            an absence, not a low score. Across the {{ q.dimensions.length - q.unassessed.length }}
+            dimensions that could be assessed, this account averages
+            <strong>{{ q.assessed_average }}</strong>, against a headline of {{ q.priority_score }}.
           </p>
-          <p class="note" *ngIf="b.problem_is_unproven">
-            <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span> {{ b.problem_is_unproven }}
-          </p>
-
-          <ng-container *ngIf="b.openings.length">
-            <div class="seclabel">Opening — pick one, say it out loud first</div>
-            <div class="optpick">
-              <button
-                *ngFor="let o of b.openings; let i = index"
-                [attr.aria-pressed]="i === opening()"
-                (click)="opening.set(i)">
-                {{ o.label }}
-              </button>
-            </div>
-            <div class="open-line">{{ b.openings[opening()].words }}</div>
-            <p class="row-sub">
-              <strong>Use when:</strong> {{ b.openings[opening()].use_when }}
-            </p>
-            <p class="row-sub">
-              <strong>Why it works:</strong> {{ b.openings[opening()].why_it_works }}
-            </p>
-          </ng-container>
-
-          <ng-container *ngIf="b.listen_for.length">
-            <div class="seclabel">Listen for — findings, not expected answers</div>
-            <div class="chips">
-              <span class="chip" *ngFor="let l of b.listen_for">{{ l }}</span>
-            </div>
-          </ng-container>
-
-          <ng-container *ngIf="b.next_steps.length">
-            <div class="seclabel">Next step — conditional on what you hear</div>
-            <div class="step2" *ngFor="let n of b.next_steps">
-              <strong>{{ n.condition }}</strong>
-              <span>{{ n.action }}</span>
-            </div>
-          </ng-container>
-        </div>
-
-        <div class="seclabel">What we know, suspect, and must not assume</div>
-        <div class="know">
-          <div *ngIf="b.what_we_know.length">
-            <h4><span class="ep ep-fact" [title]="EP.fact">fact</span> What we know</h4>
-            <ul><li *ngFor="let x of b.what_we_know">{{ x }}</li></ul>
-          </div>
-          <div *ngIf="b.what_we_suspect.length">
-            <h4><span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span> What we suspect</h4>
-            <ul><li *ngFor="let x of b.what_we_suspect">{{ x }}</li></ul>
-          </div>
-          <div *ngIf="b.what_we_do_not_know.length">
-            <h4><span class="ep ep-unk" [title]="EP.unknown">unknown</span> What we do not know</h4>
-            <ul><li *ngFor="let x of b.what_we_do_not_know">{{ x }}</li></ul>
-          </div>
-          <div class="trap" *ngIf="b.do_not_assume.length">
-            <h4>Do not assume</h4>
-            <ul><li *ngFor="let x of b.do_not_assume">{{ x }}</li></ul>
-          </div>
-        </div>
-
-        <div class="seclabel" *ngIf="b.discovery_questions.length">
-          Questions — ranked, with what each one changes
-        </div>
-        <div class="q" *ngFor="let q of b.discovery_questions; let i = index">
-          <div class="qn">
-            <p class="ask">{{ q.question }}</p>
-            <span class="badge badge-accent">{{ i + 1 }}</span>
-          </div>
-          <dl>
-            <dt>Listening for</dt><dd>{{ q.listening_for }}</dd>
-            <dt>Changes</dt><dd>{{ q.changes }}</dd>
-          </dl>
-          <div class="branch" *ngIf="q.branches.length">
-            <div *ngFor="let br of q.branches">{{ br }}</div>
-          </div>
-        </div>
-
-        <ng-container *ngIf="b.objections.length">
-          <div class="seclabel">Objections</div>
-          <div class="table-wrap">
-            <table class="data">
-              <thead>
-                <tr><th>Objection</th><th>Type</th><th>Response</th><th>Follow-up</th></tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let o of b.objections">
-                  <td>{{ o.objection }}</td>
-                  <td>
-                    <span
-                      class="badge"
-                      [ngClass]="o.kind === 'observed' ? 'badge-accent' : 'badge-neutral'">
-                      {{ o.kind }}
-                    </span>
-                  </td>
-                  <td>{{ o.pre_empt }}</td>
-                  <td class="muted">{{ o.follow_up }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
           <p class="note">
-            Anticipated is kept apart from observed so you never defend against a concern
-            nobody raised.
+            MAN: money <strong>{{ q.man['money'] || 'unknown' }}</strong> ·
+            authority <strong>{{ q.man['authority'] || 'unknown' }}</strong> ·
+            need <strong>{{ q.man['need'] || 'unknown' }}</strong>
           </p>
-        </ng-container>
+        </div>
 
-        <ng-container *ngIf="b.already_said.length || b.their_replies.length">
-          <div class="seclabel">What we already said, and what came back</div>
-          <div class="card">
-            <ul><li *ngFor="let s of b.already_said">{{ s }}</li></ul>
-            <blockquote *ngFor="let r of b.their_replies">{{ r }}</blockquote>
+        <!-- 5 · evidence -->
+        <div class="seclabel">Intelligence supporting this brief · {{ p.signals.length }} live</div>
+        <div class="empty" *ngIf="!p.signals.length">
+          No live signal. A brief here would argue from no trigger at all.
+        </div>
+        <details class="ev" *ngFor="let s of p.signals">
+          <summary>
+            <span>
+              <strong>{{ s.summary }}</strong>
+              <span class="row-sub">{{ s.signal_type }} · {{ s.observed_at }} · {{ age(s.age_days) }} old</span>
+            </span>
+            <span class="tags">
+              <span class="badge badge-good">evidence {{ s.evidence_confidence }}</span>
+              <span class="badge badge-neutral">{{ s.strength }}</span>
+              <span class="ep ep-hyp" *ngIf="s.is_hypothesis" [title]="EP.hypothesis">hypothesis</span>
+            </span>
+          </summary>
+          <div class="evbody">
+            <dl class="kv tight">
+              <div *ngIf="s.business_implication">
+                <dt>What it may mean <span class="ep ep-inf" [title]="EP.inference">inference</span></dt>
+                <dd>{{ s.business_implication }}</dd>
+              </div>
+              <div *ngIf="s.sources.length">
+                <dt>Sources</dt>
+                <dd>{{ s.sources.join(' · ') }}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{{ s.lifecycle_state }}<span *ngIf="s.expires_at"> · expires {{ s.expires_at }}</span></dd>
+              </div>
+            </dl>
           </div>
-        </ng-container>
+        </details>
 
+        <!-- 6 · proof -->
+      </section>
+
+      <section *ngIf="tab() === 'generate'">
+        <div class="stale" *ngIf="p.brief_is_stale">
+          <div>
+            <strong>Written before the latest facts.</strong>
+            Something has changed since this was generated — a signal, a send, or a
+            reply. It is not wrong, it is older than what is above it.
+          </div>
+          <button class="btn btn-sm" (click)="generate(p)" [disabled]="busy()">
+            {{ busy() ? 'Writing…' : 'Regenerate' }}
+          </button>
+        </div>
+
+        <div class="seclabel" *ngIf="p.brief">Regenerate</div>
+        <p class="note" *ngIf="p.brief">
+          A brief is kept as written, with the research age and send count it was
+          written from, so a hypothesis that turns out wrong can be read back
+          against what was known at the time. Regenerating adds one; it does not
+          replace this one.
+        </p>
+        <div style="margin:12px 0 4px" *ngIf="p.brief">
+          <button class="btn" (click)="generate(p)" [disabled]="busy()">
+            {{ busy() ? 'Writing…' : 'Generate a new brief' }}
+          </button>
+        </div>
+        <p class="err" *ngIf="genError()">{{ genError() }}</p>
+        <div class="empty" *ngIf="!p.brief">
+          <strong>No brief yet.</strong>
+          Generate one from the brief tab.
+        </div>
+
+        <ng-container *ngIf="p.brief as b">
         <div class="seclabel">After the call</div>
         <div class="card">
           <p class="row-sub" style="margin-top:0">
@@ -293,146 +473,15 @@ import { apiError } from '../shared/api-error';
             </div>
           </div>
         </div>
-      </ng-container>
-
+        </ng-container>
+        <div class="exports">
+          <button class="btn" disabled>Export .pptx</button>
+          <button class="btn" disabled>Export .docx</button>
+          <button class="btn" disabled>Export .pdf</button>
+          <span class="row-sub">Enabled once a brief exists.</span>
         </div>
+      </section>
 
-        <aside class="col-side">
-      <!-- 3 · why now -->
-      <div class="seclabel" *ngIf="p.thread">Why this account, why now</div>
-      <div class="card" *ngIf="p.thread as t">
-        <dl class="kv">
-          <div>
-            <dt>Trigger <span class="ep" [ngClass]="t.without_live_trigger ? 'ep-unk' : 'ep-fact'"
-              [title]="t.without_live_trigger ? EP.unknown : EP.fact">
-              {{ t.without_live_trigger ? 'no live trigger' : 'fact' }}</span></dt>
-            <dd>{{ t.trigger_summary }}</dd>
-          </div>
-          <div>
-            <dt>Hypothesis to test <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span></dt>
-            <dd>{{ t.problem_hypothesis }}</dd>
-          </div>
-          <div>
-            <dt>How we would help <span class="ep ep-fact" [title]="EP.approved">approved positioning</span></dt>
-            <dd>{{ t.positioning }}</dd>
-          </div>
-          <div>
-            <dt>The ask</dt>
-            <dd>{{ t.cta }}</dd>
-          </div>
-        </dl>
-        <p class="note" *ngIf="t.strategy_confidence !== null">
-          Strategy confidence {{ t.strategy_confidence }} — how well this approach fits the
-          context. Not whether the problem is real, and not how reliable the evidence is.
-        </p>
-        <p class="note" *ngIf="t.avoid_list.length">
-          Avoid: {{ t.avoid_list.join(', ') }}
-        </p>
-      </div>
-
-      <!-- 4 · qualification unpacked -->
-      <div class="seclabel">Qualification — six dimensions, not one number</div>
-      <div class="card" *ngIf="p.qualification as q">
-        <div class="scorehead">
-          <div>
-            <span class="score">{{ q.priority_score }}</span>
-            <span class="badge badge-neutral">{{ q.priority_band }}</span>
-          </div>
-          <span class="chip">scoring_config v{{ q.scoring_config_version }} · arithmetic, not a model</span>
-        </div>
-
-        <div class="dim" *ngFor="let d of q.dimensions">
-          <span class="nm">{{ d.dimension }}</span>
-          <span class="bar">
-            <i [style.width.%]="barWidth(d)" [class.zero]="d.score === 0"></i>
-          </span>
-          <span class="sc">{{ d.score }}</span>
-          <span class="bs">
-            <span class="badge" [ngClass]="basisTone(d)">{{ basisLabel(d) }}</span>
-          </span>
-          <span class="why">{{ d.reason }}</span>
-        </div>
-
-        <p class="note" *ngIf="q.assessed_average !== null && q.unassessed.length">
-          <strong>The headline is not a verdict on the account.</strong>
-          {{ q.unassessed.join(' and ') }}
-          {{ q.unassessed.length === 1 ? 'was' : 'were' }} scored with nothing to go on —
-          an absence, not a low score. Across the {{ q.dimensions.length - q.unassessed.length }}
-          dimensions that could be assessed, this account averages
-          <strong>{{ q.assessed_average }}</strong>, against a headline of {{ q.priority_score }}.
-        </p>
-        <p class="note">
-          MAN: money <strong>{{ q.man['money'] || 'unknown' }}</strong> ·
-          authority <strong>{{ q.man['authority'] || 'unknown' }}</strong> ·
-          need <strong>{{ q.man['need'] || 'unknown' }}</strong>
-        </p>
-      </div>
-
-      <!-- 5 · evidence -->
-      <div class="seclabel">Intelligence supporting this brief · {{ p.signals.length }} live</div>
-      <div class="empty" *ngIf="!p.signals.length">
-        No live signal. A brief here would argue from no trigger at all.
-      </div>
-      <details class="ev" *ngFor="let s of p.signals">
-        <summary>
-          <span>
-            <strong>{{ s.summary }}</strong>
-            <span class="row-sub">{{ s.signal_type }} · {{ s.observed_at }} · {{ age(s.age_days) }} old</span>
-          </span>
-          <span class="tags">
-            <span class="badge badge-good">evidence {{ s.evidence_confidence }}</span>
-            <span class="badge badge-neutral">{{ s.strength }}</span>
-            <span class="ep ep-hyp" *ngIf="s.is_hypothesis" [title]="EP.hypothesis">hypothesis</span>
-          </span>
-        </summary>
-        <div class="evbody">
-          <dl class="kv tight">
-            <div *ngIf="s.business_implication">
-              <dt>What it may mean <span class="ep ep-inf" [title]="EP.inference">inference</span></dt>
-              <dd>{{ s.business_implication }}</dd>
-            </div>
-            <div *ngIf="s.sources.length">
-              <dt>Sources</dt>
-              <dd>{{ s.sources.join(' · ') }}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{{ s.lifecycle_state }}<span *ngIf="s.expires_at"> · expires {{ s.expires_at }}</span></dd>
-            </div>
-          </dl>
-        </div>
-      </details>
-
-      <!-- 6 · proof -->
-      <div class="seclabel">What we can credibly offer · {{ p.proof.length }} approved</div>
-      <div class="empty" *ngIf="!p.proof.length">
-        No approved proof point. Describe the capability and claim no result —
-        no proof is better than unsupported proof.
-      </div>
-      <div class="card" *ngIf="p.proof.length">
-        <div class="proof" *ngFor="let pp of p.proof">
-          <div>
-            <strong>{{ pp.title }}</strong>
-            <span class="chip">{{ pp.kind }}</span>
-            <span class="badge badge-warn" *ngIf="!pp.has_metric">no measured outcome</span>
-          </div>
-          <p class="row-sub">{{ pp.body }}</p>
-          <p class="note" *ngIf="!pp.has_metric">
-            Nothing measured is attached, so this may describe what we do and must not
-            claim a result.
-          </p>
-        </div>
-      </div>
-
-        </aside>
-      </div>
-
-      <div class="exports">
-        <button class="btn" disabled>Export .pptx</button>
-        <button class="btn" disabled>Export .docx</button>
-        <button class="btn" disabled>Export .pdf</button>
-        <span class="row-sub">Enabled once a brief exists.</span>
-      </div>
     </ng-container>
   `,
   styles: [
@@ -470,6 +519,14 @@ import { apiError } from '../shared/api-error';
       .rung em { font-style: normal; font-weight: 600; margin-left: 4px; }
       .rung em.q { color: var(--faint); }
       .ep { cursor: help; }
+      .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border);
+              margin: 0 0 22px; flex-wrap: wrap; }
+      .tab { background: none; border: none; border-bottom: 2px solid transparent;
+             padding: 10px 14px; font: inherit; font-size: 0.85rem;
+             color: var(--muted); cursor: pointer; }
+      .tab[aria-selected='true'] { color: var(--text);
+             border-bottom-color: var(--accent); font-weight: 600; }
+      .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
       /* The act, and what it rests on. The side column is narrower because
          it is scanned rather than read, and it collapses under the plan on a
          narrow screen rather than above it — the plan is the reason the
@@ -533,6 +590,21 @@ export class PrepDetailComponent implements OnInit {
   genError = signal<string | null>(null);
   /** Which opening the rep has picked. Their choice, not the model's. */
   opening = signal(0);
+
+  /**
+   * Three questions, three tabs: what do I do on this call, what is that
+   * based on, and is this brief still current. One long scroll made a rep
+   * page past the research to reach the plan and then page back to check it.
+   *
+   * The status panel stays above all three, because how old the picture is
+   * matters whichever one you are reading.
+   */
+  tab = signal<'brief' | 'evidence' | 'generate'>('brief');
+  readonly tabs = [
+    { key: 'brief' as const, label: 'The brief' },
+    { key: 'evidence' as const, label: 'Evidence & qualification' },
+    { key: 'generate' as const, label: 'Generate & feedback' },
+  ];
 
   readonly age = ageLabel;
 
