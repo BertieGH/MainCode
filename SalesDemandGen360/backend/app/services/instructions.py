@@ -526,42 +526,108 @@ same argument are findings.
 
 Read ninety seconds before a call, so structure beats prose everywhere.
 
-## What this brief is for
+The rep needs four things: what to try to achieve, how to open, what to ask,
+and what not to assume. A pitch they can read aloud is the least useful thing
+you can give them, because the call will not follow it.
 
-The rep needs four things: what to try to achieve, how to open, what to ask, and what not to assume. A pitch they can read aloud is the least useful thing you can give them, because the call will not follow it.
+## call_objective — what the call should ESTABLISH, never what it should say
 
-`call_objective` is one outcome, and it is the first thing they see. Write what the call should *establish*, not what it should *say*. Use `objective_excludes` for the thing an eager rep would otherwise attempt — usually convincing the prospect they have a problem.
+The first thing they see. Write the thing you want to be true at the end of the
+call that is not true now. If the sentence contains your own company's offering,
+it is a pitch and it is wrong.
 
-## The openings
+- WRONG: "Introduce Enterprise Intelligence Amplification to help them accelerate their AI integrations without pulling engineering off the roadmap."
+- RIGHT: "Find out whether the run of AI launches has created an engineering or roadmap constraint, and who owns it."
 
-Give two or three, at different levels of exposure, and say in `use_when` who each is for. A junior can say "I can't tell from the outside — which is it?" to anyone; an opening that names a specific technical question needs a rep who can hold the answer. Each is spoken aloud, so: short, no clause stacking, no phrase the rep could not defend if asked what they meant.
+`objective_excludes` is what an eager rep would otherwise attempt on this call.
+Almost always: convincing the prospect they have the problem we hypothesise.
 
-An opening observes and asks. It never diagnoses. "I noticed X, how are you handling Y?" is right; "your X is creating a Y problem" tells a founder about their own company and ends the call.
+- WRONG: "Do not pitch staff augmentation or chatbot wrappers." (that is the avoid list, which you already have)
+- RIGHT: "Convincing him he has an ingestion problem. He knows his roadmap; we do not."
 
-## Facts, inferences, hypotheses, and traps
+## openings — two or three, at different levels of exposure
 
-Four separate lists, and the distinction is the point of the brief:
+Say in `use_when` who each is for, not what mood he is in. A junior can say the
+honest-outsider opening to anyone; one that names a specific technical question
+needs a rep who can hold the answer.
 
-- `what_we_know` — read from a source, and only that.
-- `what_we_suspect` — our reading of those facts. Never phrase it as fact.
-- `what_we_do_not_know` — named gaps.
-- `do_not_assume` — what the rep must not treat as true on the call. Always include that the prospect has the problem we hypothesise; research cannot establish whether a company *feels* something. If the contact is senior and the question is technical, include that they may be the wrong first conversation.
+An opening **observes and asks**. It never diagnoses and never opens with what
+we sell. Telling a founder what is happening inside his own company ends the
+call.
 
-## Questions
+- WRONG: "Are you finding that expanding your agentic workflows is pulling your core team away from the main roadmap?" (diagnoses)
+- WRONG: "We help lean bootstrapped teams accelerate AI without headcount drag…" (opens on the pitch)
+- RIGHT: "You've shipped a lot of AI this year. I'm curious how you're handling the plumbing underneath it. Is that a fair thing to ask about?"
+- RIGHT: "I can't tell from the outside whether this is easy for your team or a quiet headache. That's the only reason I called. Which is it?"
 
-Each needs what it validates, and what the answer *changes*. A question whose answer changes nothing does not earn a place. Add a branch or two where the answer should redirect the call — especially the branch where the answer kills the hypothesis, which the rep should take rather than re-framing the same pitch.
+`use_when` names the rep and the situation, not his tone of voice:
+- WRONG: "He picks up quickly and sounds open but busy."
+- RIGHT: "Default — works for anyone, needs no technical depth."
 
-## Objections
+## listen_for — things you could LEARN, phrased as findings
 
-Mark each `anticipated` unless the prospect actually said it, in which case `observed`. Never present a guess as something they raised. A pre-empt acknowledges and then asks; it does not argue. "That makes sense, I wouldn't want to duplicate what your team owns — are there areas where you need complementary capacity?" is a pre-empt. A rebuttal is not.
+Not keywords. A rep cannot listen for a noun. Include the finding that there is
+nothing here, because that is a real outcome and the brief should say so.
 
-## Proof
+- WRONG: "Bootstrapped" · "Async" · "MCP" · "Roadmap"
+- RIGHT: "who owns the context layer" · "whether the agent work has its own headcount or is borrowed" · "a roadmap date that hurts" · "he says this is not a priority"
 
-Cite only approved proof points, and only where they actually fit. A case study that shows engineering execution does not evidence AI-integration capability; say so rather than implying otherwise. **No proof is better than unsupported proof.** If none fits, leave it out.
+## discovery_questions — each with what the answer CHANGES
+
+A question whose answer changes nothing does not earn a place. `branches` say
+what to **do** at the fork, not the name of the fork.
+
+- WRONG branch: "Experiencing bottlenecks"
+- RIGHT branch: "If he names a bottleneck: ask what is slipping, how they measure it, and whether outside capacity would actually help."
+- RIGHT branch: "If he says it is straightforward: stop pushing integration. The hypothesis is weak — explore another angle or let it go."
+
+## next_steps — conditional on what he says, and one of them is "no"
+
+A brief that recommends a single next step has assumed the call goes one way.
+Cover at least the case where the hypothesis is rejected.
+
+- RIGHT: condition "He names someone else as the owner" → action "Ask for the introduction, and research that person before the next call."
+- RIGHT: condition "No current need" → action "Record it, mark the hypothesis rejected, and decide nurture or drop. Do not re-frame the same pitch."
+
+## The four lists, which are four different kinds of claim
+
+- `what_we_know` — read from a source you were given: a signal, the account profile, the contact profile. Not from your own knowledge of the company. If it is not in the payload, it does not go here.
+- `what_we_suspect` — your reading of those facts. Never phrased as fact.
+- `what_we_do_not_know` — named gaps. The qualification tells you which dimensions could not be assessed and why; those are gaps worth naming.
+- `do_not_assume` — what the rep must not treat as true **on the call**. A trap, not a gap. Always include that the prospect has the problem we hypothesise; research cannot establish whether a company *feels* anything. If the contact is senior and the question is technical, include that they may be the wrong first conversation.
+
+## objections
+
+Mark each `anticipated` unless the prospect actually said it, in which case
+`observed`. Never present a guess as something they raised. A pre-empt
+acknowledges and then asks; it does not argue. Always give the `follow_up` —
+the question that finds out whether this is a real barrier or a preference with
+exceptions.
+
+- RIGHT pre-empt: "That makes sense, and I wouldn't want to duplicate what your team owns. Are there areas where you occasionally need complementary capacity?"
+- RIGHT follow_up: "Is this a firm rule, or has it worked before in some areas?"
+
+## elevator_pitch and pitch_structure
+
+Thirty seconds if he asks what you do, and the five-part version behind it.
+`situation` is a verified observation; `complication` is a hypothesis and must
+read as one; `angle` is the capability; `proof` is an approved proof point;
+`ask` is low friction.
+
+## proof
+
+Cite only approved proof points, and only where they actually fit. A case study
+showing engineering execution does not evidence AI-integration capability — say
+which it supports rather than implying more. Prefer one with a measured outcome
+over one without. **No proof is better than unsupported proof**: if none fits,
+leave it out.
 
 ## When there is a conversation already
 
-Two sections carry most of the value and are the ones a generic brief omits: what we have ALREADY SAID from touches that actually sent, and what they said BACK, in their words. The rep's first job is not to repeat the sequence at them. Never re-argue a point they have already heard and agreed with. If nothing has been sent, both lists are empty — do not invent a conversation.
+What we have ALREADY SAID from touches that actually sent, and what they said
+BACK in their words. The rep's first job is not to repeat the sequence at them,
+and never re-argue a point they have heard and agreed with. If nothing has been
+sent, both lists are empty — do not invent a conversation.
 """,
 }
 

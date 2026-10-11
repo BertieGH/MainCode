@@ -1299,6 +1299,17 @@ async def generate_prep(
             "title": contact.title,
             "seniority": contact.seniority,
             "buying_role": contact.buying_role,
+            # **Who this person actually is**, not just their job title.
+            # The account's profile was in this payload from the start and
+            # the contact's was not, so a brief for a named founder was
+            # written from four fields — the same four it would hold for any
+            # CEO anywhere. The stored profile carries a summary, what they
+            # have built, what they write about and quotes in their own
+            # words, which is the difference between a brief about a role
+            # and a brief about a person. 14 of 124 contacts have one; for
+            # the rest this is None and the key drops rather than arriving
+            # empty and inviting the model to fill it in.
+            "profile": _profile_facts(contact),
         },
         "thread": thread,
         # Age and confidence travel with each one. A nine-month-old signal
