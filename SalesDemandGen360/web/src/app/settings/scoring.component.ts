@@ -1,3 +1,4 @@
+import { WeightsComponent } from './weights.component';
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -25,7 +26,7 @@ const DIMENSIONS = [
 @Component({
   selector: 'app-scoring',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent],
+  imports: [CommonModule, FormsModule, IconComponent, WeightsComponent],
   template: `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
       <h2 style="font-size:1.15rem;">Scoring</h2>
@@ -157,6 +158,11 @@ const DIMENSIONS = [
         </tbody>
       </table>
     </div>
+
+    <!-- The reuse window and the two multiplier tables, which used to sit on
+         a screen of their own beside the source registry. They belong with
+         the weighting they feed. -->
+    <app-weights [config]="config" (saved)="reload()" />
   `,
   styles: [
     `
@@ -180,6 +186,9 @@ export class ScoringComponent implements OnInit {
   readonly dimensions = DIMENSIONS;
 
   versions = signal<ScoringConfig[]>([]);
+  /** Kept whole, not only destructured, so the embedded weights panel can be
+   *  given it rather than fetching the same object a second time. */
+  config: ScoringConfig | null = null;
   loading = signal(true);
   saving = signal(false);
   error = signal<string | null>(null);
@@ -252,10 +261,16 @@ export class ScoringComponent implements OnInit {
       });
   }
 
+  /** Re-read after the embedded weights panel writes a new version. */
+  reload(): void {
+    this.load();
+  }
+
   private load(): void {
     this.loading.set(true);
     this.api.getScoring().subscribe({
       next: (c) => {
+        this.config = c;
         // A config written before the six-dimension rule may be missing some,
         // so anything absent is filled with 0 rather than left undefined —
         // which would render an empty box and total to NaN.

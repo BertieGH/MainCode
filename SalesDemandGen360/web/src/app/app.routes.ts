@@ -73,11 +73,6 @@ export const routes: Routes = [
           import('./settings/scoring.component').then((m) => m.ScoringComponent),
       },
       {
-        path: 'research',
-        loadComponent: () =>
-          import('./settings/research.component').then((m) => m.ResearchComponent),
-      },
-      {
         path: 'models',
         loadComponent: () =>
           import('./settings/model-config.component').then((m) => m.ModelConfigComponent),

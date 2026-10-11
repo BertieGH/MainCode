@@ -1,81 +1,37 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import {
+  Component, EventEmitter, Input, Output, inject, signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import {
-  ConfigService, IcpProfile, ResearchSource, ScoringConfig, SignalType, SourceTrial,
-} from '../core/config.service';
-import { ListsService } from '../core/lists.service';
+import { ConfigService, ResearchSource, SignalType, SourceTrial } from '../core/config.service';
 import { IconComponent } from '../shared/icon.component';
 import { apiError } from '../shared/api-error';
 
-const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'engagement'];
-
 /**
- * Research behaviour: what tilts the score, and which query families exist for
- * a signal type to claim.
+ * The source registry: where research looks, and how often it looks again.
  *
- * Two multiplier tables rather than one, because market and size are separate
- * questions: a SaaS startup is both, and one column could only ever record it
- * as one of the two things it plainly was. See `docs/09` for the full history.
+ * It lived on a screen called "Sources & weights", beside two multiplier
+ * tables that answer a different question — how much what is found is worth.
+ * Sources belong next to the signal types that claim them, because the two
+ * are edited together: a type names the sources its fact usually lives in,
+ * and a source nothing claims is one nobody reads.
  *
- * **Industry rows are not editable here.** They come from the active ICP, so
- * the two lists cannot disagree: add an industry under Org profile and its row
- * appears. An "Add industry" button on this screen would let somebody calibrate
- * a market they are not targeting.
- *
- * **Size rows are fixed**, because the band is derived from headcount rather
- * than chosen. `unknown` is deliberately absent: it is the absence of a
- * headcount, not a size, and giving it multipliers would score an unmeasured
- * account on a guess.
- *
- * **Sources** are the third section and the one that changed most. They used to
- * be a closed set in code, because a source the agents do not run is
- * indistinguishable from one that ran and found nothing. They are a registry
- * now — the key is still checked before a signal type may claim it, the
- * registry is just something a person can add to.
+ * Sources used to be a closed set in code, because a source the agents do not
+ * run is indistinguishable from one that ran and found nothing. They are a
+ * registry now — the key is still checked before a signal type may claim it,
+ * the registry is just something a person can add to.
  *
  * What goes beside each one is the part that stops the list rotting: how often
  * it was read lately and what it produced. A registry only ever grows, and
- * without those two numbers on the same screen a source added in March is still
- * costing a read per account in December and nobody knows.
+ * without those two numbers on the same screen a source added in March is
+ * still costing a read per account in December and nobody knows.
  */
 @Component({
-  selector: 'app-research',
+  selector: 'app-source-registry',
   standalone: true,
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-      <h2 style="font-size:1.15rem;">Sources &amp; weights</h2>
-      <button class="act-btn" (click)="help.set(!help())"
-              [attr.aria-expanded]="help()" aria-controls="research-help"
-              [attr.aria-label]="help() ? 'Hide help' : 'About research settings'"
-              title="What these control">
-        <app-icon name="info" [size]="15" />
-      </button>
-    </div>
-    <p id="research-help" class="row-sub" *ngIf="help()" style="max-width:72ch;margin-bottom:18px;">
-      <strong>Industry multipliers</strong> tilt the six dimensions for a market — a regulated
-      insurer turns on the buying committee more than a design agency does. Rows come from the
-      industries named by your ICPs, so there is nothing to keep in step by hand.
-      <br><br>
-      <strong>Size multipliers</strong> do the same for company size, banded from headcount rather
-      than judged. Both sets apply together and are <em>renormalised once</em>, so they change the
-      balance between dimensions without inflating the score.
-      <br><br>
-      <strong>Sources</strong> are the places research reads — a company's own feed, news, job
-      boards, a trade publication you add. Each one is read once per account per run, and
-      everything it returns is interpreted against <em>every</em> signal type, so a leadership
-      change mentioned in a job posting is still found. Which sources actually run for a list
-      comes from its ICP, not from this screen: here you define what exists.
-    </p>
-    <div *ngIf="!help()" style="margin-bottom:14px;"></div>
-
-    <div class="card" *ngIf="error()" style="border-color:var(--critical);margin-bottom:18px;">
-      <strong style="color:var(--critical);">{{ error() }}</strong>
-    </div>
-
-    <!-- the reuse window -->
     <div class="card" style="margin-bottom:22px;">
       <h3 style="font-size:.98rem;margin-bottom:2px;">Reuse window</h3>
       <p class="row-sub" style="max-width:72ch;margin-bottom:10px;">
@@ -106,95 +62,6 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
     </div>
 
     <!-- industry multipliers: rows are the ICP's industries -->
-    <h3 style="font-size:.98rem;margin-bottom:4px;">Industry multipliers</h3>
-    <p class="row-sub" style="margin-bottom:12px;max-width:70ch;">
-      One row per industry in your ICP — edit that list under <strong>Org profile</strong> and these
-      follow. ×1.00 leaves a dimension as the base weights set it; blank cells are ×1.00.
-    </p>
-
-    <div class="table-wrap" style="margin-bottom:12px;">
-      <table class="data">
-        <thead>
-          <tr>
-            <th>Industry</th>
-            <th *ngFor="let d of dimensions" class="mono">{{ d }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let row of industryRows(); trackBy: trackRow"
-              [class.orphan-row]="row.orphan">
-            <td>
-              <code>{{ row.label }}</code>
-              <div class="row-sub" *ngIf="row.orphan" style="color:var(--critical);">
-                no longer in your ICP
-              </div>
-            </td>
-            <td *ngFor="let d of dimensions">
-              <input class="field cell" type="number" min="0" max="5" step="0.05"
-                     [ngModel]="multiplierFor(industry, row.key, d)"
-                     (ngModelChange)="setMultiplier(industry, row.key, d, $event)"
-                     [attr.aria-label]="'Multiplier for ' + row.label + ' ' + d">
-            </td>
-          </tr>
-          <tr *ngIf="industryRows().length === 0">
-            <td [attr.colspan]="dimensions.length + 1" class="row-sub"
-                style="text-align:center;padding:20px;">
-              No industries in any ICP yet — add some under ICP profiles and they appear here.
-              Until then every account scores on the base weights.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p class="row-sub" *ngIf="orphanCount() as n" style="color:var(--critical);max-width:64ch;">
-      {{ n }} {{ n === 1 ? 'row is' : 'rows are' }} calibrated for
-      {{ n === 1 ? 'an industry' : 'industries' }} no longer named by any ICP. Nothing scores against
-      {{ n === 1 ? 'it' : 'them' }} — clear the values to drop
-      {{ n === 1 ? 'the row' : 'the rows' }}, or put the industry back.
-    </p>
-
-    <!-- size multipliers: bands are derived, so the rows are fixed -->
-    <h3 style="font-size:.98rem;margin:22px 0 4px;">Size multipliers</h3>
-    <p class="row-sub" style="margin-bottom:12px;max-width:70ch;">
-      Banded from <code>employee_count</code>, so nothing classifies an account and nothing has to be
-      kept up to date. An account with no headcount carries no size multipliers at all — it scores on
-      the base weights rather than on a guess.
-    </p>
-
-    <div class="table-wrap" style="margin-bottom:12px;">
-      <table class="data">
-        <thead>
-          <tr>
-            <th>Size</th>
-            <th *ngFor="let d of dimensions" class="mono">{{ d }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let band of sizeBands">
-            <td><code>{{ band.key }}</code> <span class="row-sub">{{ band.label }}</span></td>
-            <td *ngFor="let d of dimensions">
-              <input class="field cell" type="number" min="0" max="5" step="0.05"
-                     [ngModel]="multiplierFor(size, band.key, d)"
-                     (ngModelChange)="setMultiplier(size, band.key, d, $event)"
-                     [attr.aria-label]="'Multiplier for ' + band.key + ' ' + d">
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:30px;">
-      <button class="btn btn-primary" (click)="save()" [disabled]="saving() || !dirty()">
-        <app-icon name="check" [size]="13" />
-        {{ saving() ? 'Saving…' : 'Save as new scoring version' }}
-      </button>
-      <span class="row-sub">
-        {{ dirty()
-            ? 'Multipliers live on the scoring config, so this writes a new version of it.'
-            : 'No changes.' }}
-      </span>
-    </div>
 
     <!-- the source registry -->
     <div class="sec-head" style="margin:28px 0 4px;">
@@ -386,8 +253,9 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
       <table class="data">
         <thead>
           <tr>
-            <th>Source</th><th>Reads</th><th>What lives there</th>
-            <th>Claimed by</th><th>Lately</th><th class="actcol">Actions</th>
+            <th>Source</th><th>Reads</th><th class="brief-col">What lives there</th>
+            <th class="claim-col">Claimed by</th><th>Lately</th>
+            <th class="actcol">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -424,7 +292,7 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
                 Supports a signal but never creates one on its own.
               </div>
             </td>
-            <td class="row-sub mono">{{ feedsFor(f.key) || '— nothing yet' }}</td>
+            <td class="row-sub mono claim-col">{{ feedsFor(f.key) || '— nothing yet' }}</td>
             <td class="row-sub">
               <ng-container *ngIf="f.attempts">
                 {{ f.attempts }} read{{ f.attempts === 1 ? '' : 's' }} ·
@@ -492,7 +360,13 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
               font-family: 'IBM Plex Mono', monospace; text-align: right; }
       .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: .84rem; }
-      td.brief { white-space: normal; max-width: 300px; }
+      /* The brief is the column people read; the claim is a list of keys
+         they scan. Before this the claim took 751px of a 1200px table and
+         squeezed the brief into 217, because a run of comma-separated keys
+         has no wrap opportunity a browser will take by itself. */
+      td.brief, th.brief-col { white-space: normal; width: 42%; min-width: 260px; }
+      td.claim-col, th.claim-col { white-space: normal; width: 22%;
+                                   overflow-wrap: anywhere; }
       .retired-row { opacity: .6; }
       .why > summary { cursor: pointer; color: var(--accent); }
       .why p { margin: 4px 0 0; max-width: 48ch; }
@@ -500,33 +374,34 @@ const DIMENSIONS = ['fit', 'opportunity', 'buyer', 'commercial', 'intent', 'enga
     `,
   ],
 })
-export class ResearchComponent implements OnInit {
+export class SourceRegistryComponent {
   private api = inject(ConfigService);
-  private lists = inject(ListsService);
-
-  readonly dimensions = DIMENSIONS;
-
-  /** Which table a cell belongs to. Two tables, one set of handlers. */
-  readonly industry = 'industry' as const;
-  readonly size = 'size' as const;
 
   /**
-   * Fixed, and deliberately without `unknown`.
+   * Both lists come from the parent, which already holds them.
    *
-   * The bands mirror `services/sizing.py`; an account with no headcount is
-   * unmeasured rather than small, and giving that state multipliers would score
-   * a guess. The names are ours — `enterprise_8_23` and `startup_5_11` are LGM
-   * shapes, and mapping `large` onto one across the gap keeps the two
-   * vocabularies from being coupled by coincidence.
+   * Fetching them here as well meant two requests for the same rows on every
+   * load of a screen that renders them once — and the parent's own spec
+   * caught it, because `expectOne` found two. A child that re-reads what it
+   * was embedded beside is a duplicate, not an encapsulation.
    */
-  readonly sizeBands = [
-    { key: 'small', label: 'under 50' },
-    { key: 'mid', label: '50–999' },
-    { key: 'large', label: '1000+' },
-  ];
+  @Input({ required: true }) sources = signal<ResearchSource[]>([]);
+  @Input({ required: true }) types = signal<SignalType[]>([]);
+  /** Something was added, edited or retired — the parent owns the reload. */
+  @Output() changed = new EventEmitter<void>();
+  /** Offered to the Try button. The parent fetches them. */
+  @Input() trialAccounts = signal<{ id: string; name: string; domain: string | null }[]>([]);
+  /** The stored reuse window, so the field opens on the saved value. */
+  @Input() set reuseWindow(value: number) {
+    this.reuseDays = this.reuseSaved = value;
+  }
+  @Input() reuseVersion = 0;
 
-  sources = signal<ResearchSource[]>([]);
-  types = signal<SignalType[]>([]);
+  /** The reuse window as edited, and as last saved. */
+  reuseDays = 30;
+  reuseSaved = 30;
+  savingReuse = signal(false);
+
   adding = signal(false);
   savingSource = signal(false);
   editing = signal<string | null>(null);
@@ -540,9 +415,6 @@ export class ResearchComponent implements OnInit {
     support_only: false,
   };
 
-  /** Accounts offered to the Try button. A handful, not the whole book — a
-   *  trial is a sample and the server caps it anyway. */
-  trialAccounts = signal<{ id: string; name: string; domain: string | null }[]>([]);
   trialAccountIds: string[] = [];
   trying = signal(false);
   trial = signal<SourceTrial | null>(null);
@@ -551,123 +423,16 @@ export class ResearchComponent implements OnInit {
   abTest = false;
   descriptionB = '';
 
+  loading = signal(true);
+  savingSourceError = signal<string | null>(null);
+  error = signal<string | null>(null);
+
   /** Whose payload the logic panel is showing — it is captured once, from the
    *  first account tried, because the instructions are identical for all of
    *  them and only the account block differs. */
   firstTrialName(): string {
     return this.trial()?.trials[0]?.account_name ?? 'this account';
   }
-  icpIndustries = signal<string[]>([]);
-  loading = signal(true);
-  saving = signal(false);
-  dirty = signal(false);
-  error = signal<string | null>(null);
-  help = signal(false);
-
-  /** The reuse window as edited, and as last saved. */
-  reuseDays = 30;
-  reuseSaved = 30;
-  reuseVersion = 0;
-  savingReuse = signal(false);
-
-  reuseValid(): boolean {
-    const n = Number(this.reuseDays);
-    return Number.isInteger(n) && n >= 1 && n <= 365;
-  }
-
-  saveReuse(): void {
-    this.savingReuse.set(true);
-    this.api.saveResearchSettings(Number(this.reuseDays)).subscribe({
-      next: (s) => {
-        this.savingReuse.set(false);
-        this.reuseDays = this.reuseSaved = s.freshness_days;
-        this.reuseVersion = s.version;
-      },
-      error: (err) => {
-        this.savingReuse.set(false);
-        this.error.set(apiError(err, 'Could not save the reuse window.'));
-      },
-    });
-  }
-
-  private config: ScoringConfig | null = null;
-  private industryMultipliers: Record<string, Record<string, number>> = {};
-  private sizeMultipliers: Record<string, Record<string, number>> = {};
-
-  ngOnInit(): void {
-    this.load();
-  }
-
-  /** Same normalisation as `scoring.normalise_industry`, for the same reason. */
-  private key(industry: string): string {
-    return industry.trim().replace(/\s+/g, ' ').toLowerCase();
-  }
-
-  private bag(table: 'industry' | 'size'): Record<string, Record<string, number>> {
-    return table === 'industry' ? this.industryMultipliers : this.sizeMultipliers;
-  }
-
-  /**
-   * One row per ICP industry, plus any calibrated industry the ICP no longer
-   * names.
-   *
-   * A method rather than a computed: these read plain objects that are replaced
-   * wholesale on load, and a computed over one never recomputes.
-   */
-  industryRows(): { key: string; label: string; orphan: boolean }[] {
-    const fromIcp = this.icpIndustries().map((label) => ({
-      key: this.key(label),
-      label,
-      orphan: false,
-    }));
-    const known = new Set(fromIcp.map((r) => r.key));
-    // Kept, not dropped. An industry removed from the ICP still has values
-    // somebody set, and silently discarding them on the next save would change
-    // how the whole book scores without appearing in any diff a person reads.
-    const orphans = Object.keys(this.industryMultipliers)
-      .filter((k) => !known.has(k) && Object.keys(this.industryMultipliers[k] ?? {}).length)
-      .sort()
-      .map((k) => ({ key: k, label: k, orphan: true }));
-    return [...fromIcp, ...orphans];
-  }
-
-  /**
-   * Identity for `*ngFor`, and not optional here.
-   *
-   * `industryRows()` builds fresh objects on every change-detection pass, so
-   * under the default identity tracking Angular tears down and rebuilds every
-   * row — inputs included — on each pass. Rebuilding an `ngModel` input inside
-   * a form schedules another pass, and the page spins. Tracking by the stable
-   * key reuses the DOM instead, which also keeps focus while somebody is
-   * typing a multiplier rather than dropping it after each keystroke.
-   */
-  trackRow = (_: number, row: { key: string }): string => row.key;
-
-  orphanCount(): number {
-    return this.industryRows().filter((r) => r.orphan).length;
-  }
-
-  multiplierFor(table: 'industry' | 'size', key: string, dimension: string): number {
-    return this.bag(table)[key]?.[dimension] ?? 1;
-  }
-
-  setMultiplier(
-    table: 'industry' | 'size', key: string, dimension: string, value: number,
-  ): void {
-    const n = Number(value);
-    const bag = this.bag(table);
-    bag[key] ??= {};
-    if (!n || n === 1) {
-      // x1.00 is the absence of a preference, so it is stored as absent rather
-      // than as a row of ones nobody can distinguish from a deliberate choice.
-      delete bag[key][dimension];
-      if (!Object.keys(bag[key]).length) delete bag[key];
-    } else {
-      bag[key][dimension] = n;
-    }
-    this.dirty.set(true);
-  }
-
   draftValid(): boolean {
     return (
       /^[a-z][a-z0-9_]*$/.test(this.draft.key.trim()) &&
@@ -705,7 +470,7 @@ export class ResearchComponent implements OnInit {
             key: '', label: '', description: '', scope: 'company',
             reuse_days: null, support_only: false,
           };
-          this.load();
+          this.changed.emit();
         },
         error: (err) => {
           this.savingSource.set(false);
@@ -734,7 +499,7 @@ export class ResearchComponent implements OnInit {
     this.api.updateResearchSource(row.key, changes).subscribe({
       next: () => {
         this.editing.set(null);
-        this.load();
+        this.changed.emit();
       },
       error: (err) => {
         this.editing.set(null);
@@ -749,7 +514,7 @@ export class ResearchComponent implements OnInit {
    */
   setStatus(row: ResearchSource, status: string): void {
     this.api.updateResearchSource(row.key, { status }).subscribe({
-      next: () => this.load(),
+      next: () => this.changed.emit(),
       error: (err) => this.error.set(apiError(err, 'Could not change that source.')),
     });
   }
@@ -759,36 +524,6 @@ export class ResearchComponent implements OnInit {
       .filter((t) => t.status === 'active' && t.produced_by.includes(family))
       .map((t) => t.key)
       .join(', ');
-  }
-
-  save(): void {
-    if (!this.config) return;
-    this.saving.set(true);
-    this.api
-      .saveScoring({
-        dimension_weights: this.config.dimension_weights,
-        industry_multipliers: this.industryMultipliers,
-        size_multipliers: this.sizeMultipliers,
-        persona_role_weights: this.config.persona_role_weights,
-        band_cutoffs: this.config.band_cutoffs,
-        man_view_enabled: this.config.man_view_enabled,
-      })
-      .subscribe({
-        next: () => {
-          this.saving.set(false);
-          this.dirty.set(false);
-          this.load();
-        },
-        error: (err) => {
-          this.saving.set(false);
-          this.error.set(
-            apiError(
-              err,
-              'Could not save. The active scoring config may predate the six-dimension rule.',
-            ),
-          );
-        },
-      });
   }
 
   /** The scopes the draft claims, in the shape the API wants. */
@@ -824,65 +559,35 @@ export class ResearchComponent implements OnInit {
       });
   }
 
-  private load(): void {
-    this.loading.set(true);
-    this.api.researchSources().subscribe({
-      next: (f) => {
-        this.sources.set(f);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.loading.set(false);
-        this.error.set('Could not load research sources.');
-      },
-    });
-    this.api.signalTypes().subscribe({ next: (t) => this.types.set(t) });
-    // Accounts for the Try button. Only those with a domain: a search brief is
-    // built around the company, and an account nobody has resolved yet would
-    // make a trial fail for a reason that has nothing to do with the source.
-    this.lists.accounts({ field: 'name', direction: 'asc' }).subscribe({
-      next: (rows) =>
-        this.trialAccounts.set(
-          rows
-            .filter((a) => (a.domain || '').trim())
-            .slice(0, 40)
-            .map((a) => ({ id: a.id, name: a.name, domain: a.domain ?? null })),
-        ),
-      error: () => undefined,
-    });
-    this.api.researchSettings().subscribe({
+  reuseValid(): boolean {
+    const n = Number(this.reuseDays);
+    return Number.isInteger(n) && n >= 1 && n <= 365;
+  }
+
+  saveReuse(): void {
+    this.savingReuse.set(true);
+    this.api.saveResearchSettings(Number(this.reuseDays)).subscribe({
       next: (s) => {
+        this.savingReuse.set(false);
         this.reuseDays = this.reuseSaved = s.freshness_days;
         this.reuseVersion = s.version;
       },
-      error: () => undefined,
-    });
-    // The industry rows are the ICPs' industries, so this screen reads them
-    // rather than keeping a second list that could disagree.
-    //
-    // The **union** across every defined profile: an industry named by any ICP
-    // is one accounts will be scored against, so it needs a multiplier row.
-    // Profiles with no definition contribute nothing — they describe nobody.
-    this.api.icpProfiles().subscribe({
-      next: (rows: IcpProfile[]) => {
-        const seen = new Set<string>();
-        for (const row of rows) {
-          const listed = row.definition?.['industries'];
-          if (!Array.isArray(listed)) continue;
-          for (const v of listed) if (typeof v === 'string' && v.trim()) seen.add(v);
-        }
-        this.icpIndustries.set([...seen]);
+      error: (err) => {
+        this.savingReuse.set(false);
+        this.error.set(apiError(err, 'Could not save the reuse window.'));
       },
-      error: () => undefined,
-    });
-    this.api.getScoring().subscribe({
-      next: (c) => {
-        this.config = c;
-        this.industryMultipliers = structuredClone(c.industry_multipliers ?? {});
-        this.sizeMultipliers = structuredClone(c.size_multipliers ?? {});
-        this.dirty.set(false);
-      },
-      error: () => undefined,
     });
   }
+
+  /**
+   * **No I/O here, deliberately.** Everything this renders comes down as an
+   * input from the screen that embeds it.
+   *
+   * It used to load its own sources, types, accounts and settings. That meant
+   * two requests for the same rows on one page — and, worse, every spec of
+   * every parent suddenly had to know about requests the child made, which
+   * broke sixty-eight of them at once. A child embedded in a screen that
+   * already holds the data should render it, not re-read it. Writes still
+   * happen here; they are the user's actions, not the page loading.
+   */
 }

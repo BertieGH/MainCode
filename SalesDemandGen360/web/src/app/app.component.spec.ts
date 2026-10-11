@@ -159,10 +159,9 @@ describe('AppComponent', () => {
       'Prompts config',
       'Services & proof',
       'ICP profiles',
-      'Signal types',
-      'Sources & weights',
+      'Sources & signals',
       'Writing samples',
-      'Scoring',
+      'Weights & scoring',
       'Sales rules',
       'Monitoring',
     ]);
@@ -175,8 +174,8 @@ describe('AppComponent', () => {
     // "Research" was renamed "Sources & weights": it named the activity rather
     // than the thing the screen configures.
     const labels = cmp.settingsNav.map((n) => n.label);
-    expect(labels.indexOf('Signal types')).toBeLessThan(
-      labels.indexOf('Sources & weights'),
+    expect(labels.indexOf('Sources & signals')).toBeLessThan(
+      labels.indexOf('Weights & scoring'),
     );
   });
 

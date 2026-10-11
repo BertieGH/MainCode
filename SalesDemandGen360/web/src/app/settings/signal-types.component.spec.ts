@@ -77,11 +77,23 @@ describe('SignalTypesComponent', () => {
   let cmp: SignalTypesComponent;
   let http: HttpTestingController;
 
-  /** Answers both requests ngOnInit fires: the rows and the source registry. */
+  /**
+   * Answers everything ngOnInit fires.
+   *
+   * Four now, not two: the screen absorbed the source registry, which also
+   * needs the accounts its Try button offers and the stored reuse window.
+   * The embedded component fetches none of it — it takes inputs — so the
+   * requests belong to this screen and are answered here.
+   */
   function boot(rows: SignalType[], sources: ResearchSource[] = REGISTRY): void {
     fixture.detectChanges();
     http.expectOne((r) => r.url === BASE).flush(rows);
     http.expectOne((r) => r.url === SOURCES).flush(sources);
+    http.expectOne((r) => r.url.includes('/accounts')).flush([]);
+    http.expectOne((r) => r.url.includes('/research-settings')).flush({
+      freshness_days: 30,
+      version: 1,
+    });
     fixture.detectChanges();
   }
 
@@ -96,7 +108,17 @@ describe('SignalTypesComponent', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // Screen furniture for the embedded source registry: the accounts its Try
+    // button offers and the stored reuse window. Tests that do not boot the
+    // whole screen still trigger them, and they are not what those tests are
+    // about.
+    http.match((r) => r.url.includes('/accounts')).forEach((r) => !r.cancelled && r.flush([]));
+    http
+      .match((r) => r.url.includes('/research-settings'))
+      .forEach((r) => !r.cancelled && r.flush({ freshness_days: 30, version: 1 }));
+    http.verify();
+  });
 
   describe('loading', () => {
     it('asks for deprecated types too', () => {
@@ -569,10 +591,29 @@ describe('SignalTypesComponent', () => {
   });
 
   describe('what the table offers', () => {
+    /** This screen's own markup. The embedded source registry has its own
+     *  Add buttons, its own actions column and its own "retired" status, and
+     *  an unscoped query over the page finds all of them. */
+    function ownHtml(): string {
+      const clone = (fixture.nativeElement as HTMLElement).cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('app-source-registry').forEach((el) => el.remove());
+      return clone.textContent ?? '';
+    }
+
+    function ownQuery(selector: string): Element[] {
+      const host = fixture.nativeElement as HTMLElement;
+      return Array.from(host.querySelectorAll(selector)).filter(
+        (el) => !el.closest('app-source-registry'),
+      );
+    }
+
     function actionLabels(): string[] {
-      return fixture.debugElement
-        .queryAll(By.css('td.actcol .act-btn')) // row actions only, not the header info toggle
-        .map((b) => b.nativeElement.getAttribute('aria-label') as string);
+      // Scoped past the embedded source registry, which has an actions column
+      // of its own: an unscoped query counted thirteen buttons on a screen
+      // that shows three.
+      return ownQuery('td.actcol .act-btn').map(
+        (b) => b.getAttribute('aria-label') as string,
+      );
     }
 
     it('offers no actions on a deprecated row that has history', () => {
@@ -594,7 +635,7 @@ describe('SignalTypesComponent', () => {
       // Deprecating by mistake must not trap a row in the registry forever.
       boot([type({ key: 'typo_type', status: 'deprecated', signal_count: 0 })]);
       expect(actionLabels()).toEqual(['Delete typo_type']);
-      expect(fixture.nativeElement.textContent)
+      expect(ownHtml())
         .withContext('nothing to retire, so no retired label')
         .not.toContain('retired');
     });
@@ -663,13 +704,13 @@ describe('SignalTypesComponent', () => {
       // The visible label can drop the scope because the Company/Contact badge
       // sits beside it. A screen reader gets no such adjacency.
       boot([]);
-      const buttons = fixture.debugElement.queryAll(By.css('.sec-head button'));
+      const buttons = ownQuery('.sec-head button');
 
-      expect(buttons.map((b) => b.nativeElement.textContent.trim())).toEqual([
+      expect(buttons.map((b) => (b.textContent ?? '').trim())).toEqual([
         'Add Signal',
         'Add Signal',
       ]);
-      expect(buttons.map((b) => b.nativeElement.getAttribute('aria-label'))).toEqual([
+      expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([
         'Add company signal type',
         'Add contact signal type',
       ]);

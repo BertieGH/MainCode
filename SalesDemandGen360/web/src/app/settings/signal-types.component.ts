@@ -3,7 +3,9 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { ConfigService, ResearchSource, SignalType } from '../core/config.service';
+import { ListsService } from '../core/lists.service';
 import { IconComponent } from '../shared/icon.component';
+import { SourceRegistryComponent } from './source-registry.component';
 import { forkJoin } from 'rxjs';
 
 import { apiError } from '../shared/api-error';
@@ -37,7 +39,7 @@ function sameKeys(a: string[], b: string[]): boolean {
 @Component({
   selector: 'app-signal-types',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent],
+  imports: [CommonModule, FormsModule, IconComponent, SourceRegistryComponent],
   template: `
     <!-- Reference material, not a per-visit read: folded behind the icon so the
          registry itself is the first thing on screen. -->
@@ -515,6 +517,17 @@ function sameKeys(a: string[], b: string[]): boolean {
       still has to be able to explain itself. A type that has never produced a signal has no such
       history, so it can be deleted outright: a typo should not become a permanent tombstone.
     </p>
+
+    <!-- Where research looks, beside the types that claim it. The two are
+         edited together: a type names the sources its fact usually lives in,
+         and a source nothing claims is one nobody reads. -->
+    <app-source-registry
+      [sources]="sources"
+      [types]="types"
+      [trialAccounts]="trialAccounts"
+      [reuseWindow]="reuseDays()"
+      [reuseVersion]="reuseVersion()"
+      (changed)="reload()" />
   `,
   styles: [
     `
@@ -554,6 +567,7 @@ function sameKeys(a: string[], b: string[]): boolean {
 })
 export class SignalTypesComponent implements OnInit {
   private api = inject(ConfigService);
+  private lists = inject(ListsService);
 
   types = signal<SignalType[]>([]);
   loading = signal(true);
@@ -1026,7 +1040,36 @@ export class SignalTypesComponent implements OnInit {
     });
   }
 
+  /** Re-read after the embedded registry changes something. The parent owns
+   *  the data, so it owns the refresh. */
+  /** Accounts for the registry's Try button, and the stored reuse window.
+   *  Loaded here because the child does no I/O of its own — see its note. */
+  trialAccounts = signal<{ id: string; name: string; domain: string | null }[]>([]);
+  reuseDays = signal(30);
+  reuseVersion = signal(0);
+
+  reload(): void {
+    this.load();
+  }
+
   private load(): void {
+    this.lists.accounts({ field: 'name', direction: 'asc' }).subscribe({
+      next: (rows) =>
+        this.trialAccounts.set(
+          rows
+            .filter((a) => (a.domain || '').trim())
+            .slice(0, 40)
+            .map((a) => ({ id: a.id, name: a.name, domain: a.domain ?? null })),
+        ),
+      error: () => undefined,
+    });
+    this.api.researchSettings().subscribe({
+      next: (s) => {
+        this.reuseDays.set(s.freshness_days);
+        this.reuseVersion.set(s.version);
+      },
+      error: () => undefined,
+    });
     this.loading.set(true);
     this.api.signalTypes(undefined, true).subscribe({
       next: (rows) => {

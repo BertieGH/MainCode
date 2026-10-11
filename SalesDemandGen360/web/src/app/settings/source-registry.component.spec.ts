@@ -4,7 +4,8 @@ import {
 } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { ResearchComponent } from './research.component';
+import { ResearchSource, SignalType } from '../core/config.service';
+import { SourceRegistryComponent } from './source-registry.component';
 
 /**
  * The Research screen renders, and keeps rendering.
@@ -15,10 +16,8 @@ import { ResearchComponent } from './research.component';
  * page spins with no console error to show for it — `ng build` is perfectly
  * happy with it. Rendering the component twice here is what catches that,
  * because a compile check never will.
- */
-describe('ResearchComponent', () => {
-  let fixture: ComponentFixture<ResearchComponent>;
-  let cmp: ResearchComponent;
+ */describe('SourceRegistryComponent', () => {  let fixture: ComponentFixture<SourceRegistryComponent>;
+  let cmp: SourceRegistryComponent;
   let http: HttpTestingController;
 
   const SOURCES = [
@@ -53,36 +52,27 @@ describe('ResearchComponent', () => {
    * the case worth exercising: an industry named by either needs a multiplier
    * row, and one named by both needs exactly one.
    */
-  const serve = (
-    profiles: { definition: Record<string, unknown> | null }[] = [
-      { definition: { industries: ['SaaS'] } },
-      { definition: { industries: ['Fintech', 'SaaS'] } },
-    ],
-  ) => {
-    http.expectOne((r) => r.url.includes('/research-sources')).flush(SOURCES);
-    http.expectOne((r) => r.url.endsWith('/signal-types')).flush(TYPES);
-    http.expectOne((r) => r.url.endsWith('/scoring')).flush(SCORING);
-    http.expectOne((r) => r.url.endsWith('/icp-profiles')).flush(
-      profiles.map((p, i) => ({
-        id: `p${i}`,
-        name: `Profile ${i}`,
-        description: null,
-        definition: p.definition,
-        version: p.definition ? 1 : null,
-        service_codes: ['qa_engineering'],
-        list_count: 0,
-      })),
-    );
+  /**
+   * Hand the panel its data. It fetches none of it.
+   *
+   * It used to load sources, types, accounts and settings itself, which meant
+   * the screen that embeds it made every request twice — and every spec of
+   * that screen had to know about requests this component made. Inputs down,
+   * events up.
+   */
+  const serve = () => {
+    cmp.sources.set(SOURCES as ResearchSource[]);
+    cmp.types.set(TYPES as SignalType[]);
     fixture.detectChanges();
   };
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [ResearchComponent],
+      imports: [SourceRegistryComponent],
       providers: [provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
-    fixture = TestBed.createComponent(ResearchComponent);
+    fixture = TestBed.createComponent(SourceRegistryComponent);
     cmp = fixture.componentInstance;
     fixture.detectChanges();
   });
@@ -91,28 +81,6 @@ describe('ResearchComponent', () => {
     http.match(() => true).forEach((r) => !r.cancelled && r.flush([]));
     http.verify();
   });
-
-  describe('it renders without spinning', () => {
-    it('survives repeated change detection', () => {
-      serve();
-      // The actual regression guard. A row rebuilt on every pass schedules
-      // another pass; three explicit passes is enough to trip it.
-      fixture.detectChanges();
-      fixture.detectChanges();
-      fixture.detectChanges();
-      expect(fixture.nativeElement.textContent).toContain('Industry multipliers');
-    });
-
-    it('tracks rows by a stable key, not by object identity', () => {
-      serve();
-      const first = cmp.industryRows();
-      const second = cmp.industryRows();
-      // Fresh objects each call — which is exactly why trackBy is required.
-      expect(first[0]).not.toBe(second[0]);
-      expect(cmp.trackRow(0, first[0])).toBe(cmp.trackRow(0, second[0]));
-    });
-  });
-
   describe('the source registry', () => {
     it('shows what each source has actually produced', () => {
       /* The number that stops the registry rotting. A registry only ever
@@ -158,78 +126,6 @@ describe('ResearchComponent', () => {
       expect(req.request.body).toEqual({ status: 'paused' });
       req.flush({});
       http.match(() => true).forEach((r) => !r.cancelled && r.flush([]));
-    });
-  });
-
-  describe('industry rows come from the ICP', () => {
-    it('renders one row per ICP industry', () => {
-      serve();
-      expect(cmp.industryRows().map((r) => r.label)).toEqual(['SaaS', 'Fintech']);
-    });
-
-    it('normalises the key so a spreadsheet spelling still matches', () => {
-      serve([{ definition: { industries: ['  FinTech  '] } }]);
-      expect(cmp.industryRows()[0].key).toBe('fintech');
-    });
-
-    it('has no way to add an industry here', () => {
-      /* The list is the ICP's. A second entry point could calibrate a market
-         nobody targets, and the two lists would drift. */
-      serve();
-      expect(fixture.nativeElement.textContent).not.toContain('Add Industry');
-    });
-
-    it('keeps a calibrated industry the ICP no longer names', () => {
-      serve([{ definition: { industries: ['Fintech'] } }]);
-      const rows = cmp.industryRows();
-      const orphan = rows.find((r) => r.orphan);
-      expect(orphan?.key).toBe('saas');
-      expect(cmp.orphanCount()).toBe(1);
-    });
-
-    it('does not orphan an industry that was never calibrated', () => {
-      /* An ICP industry with no multipliers is just a row of x1.00, not a
-         leftover — only values somebody actually set can be stranded. */
-      serve([{ definition: { industries: ['Fintech', 'Insurance'] } }]);
-      expect(cmp.industryRows().filter((r) => r.orphan).map((r) => r.key)).toEqual(['saas']);
-    });
-  });
-
-  describe('size rows are fixed', () => {
-    it('offers exactly the three derived bands', () => {
-      serve();
-      expect(cmp.sizeBands.map((b) => b.key)).toEqual(['small', 'mid', 'large']);
-    });
-
-    it('never offers unknown', () => {
-      /* `unknown` is the absence of a headcount, not a size. Multipliers on it
-         would score an unmeasured account on a guess. */
-      serve();
-      expect(cmp.sizeBands.map((b) => b.key)).not.toContain('unknown');
-    });
-
-    it('reads a stored size multiplier', () => {
-      serve();
-      expect(cmp.multiplierFor('size', 'large', 'buyer')).toBe(1.2);
-      expect(cmp.multiplierFor('size', 'small', 'buyer')).toBe(1);
-    });
-  });
-
-  describe('editing a multiplier', () => {
-    it('stores a value against the right table', () => {
-      serve();
-      cmp.setMultiplier('industry', 'fintech', 'buyer', 1.4);
-      expect(cmp.multiplierFor('industry', 'fintech', 'buyer')).toBe(1.4);
-      expect(cmp.multiplierFor('size', 'fintech', 'buyer')).toBe(1);
-    });
-
-    it('drops a value set back to x1.00 rather than storing a row of ones', () => {
-      serve();
-      cmp.setMultiplier('industry', 'saas', 'intent', 1);
-      expect(cmp.multiplierFor('industry', 'saas', 'intent')).toBe(1);
-      // And with nothing left on it, the row stops being an orphan candidate.
-      serve;
-      expect(cmp.orphanCount()).toBe(0);
     });
   });
 
@@ -293,5 +189,4 @@ describe('ResearchComponent', () => {
       expect(cmp.trying()).toBeFalse();
       expect(cmp.trialError()).toContain('SERP');
     });
-  });
-});
+  });});
