@@ -335,6 +335,21 @@ import { apiError } from '../shared/api-error';
 
             </aside>
           </div>
+
+          <!--
+            With the brief, because this is what you export — and only
+            reachable here, where a rep can see what they are about to
+            hand over.
+          -->
+          <div class="exports">
+            <button class="btn" disabled>Export .pptx</button>
+            <button class="btn" disabled>Export .docx</button>
+            <button class="btn" disabled>Export .pdf</button>
+            <span class="row-sub">
+              Not built yet. A brief exists and these still do nothing — the
+              exports are their own piece of work.
+            </span>
+          </div>
         </ng-container>
       </section>
 
@@ -618,12 +633,6 @@ import { apiError } from '../shared/api-error';
           </div>
         </div>
         </ng-container>
-        <div class="exports">
-          <button class="btn" disabled>Export .pptx</button>
-          <button class="btn" disabled>Export .docx</button>
-          <button class="btn" disabled>Export .pdf</button>
-          <span class="row-sub">Enabled once a brief exists.</span>
-        </div>
       </section>
 
     </ng-container>
