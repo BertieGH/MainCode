@@ -476,6 +476,57 @@ export interface Service {
   is_active: boolean;
 }
 
+export interface StageCost {
+  scenario: string;
+  model: string;
+  calls: number;
+  failed: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  grounded_calls: number;
+  avg_seconds: number;
+  /** Null means no price is stored for this model — not that it was free. */
+  cost: number | null;
+}
+
+export interface StuckRun {
+  run_id: string;
+  account_id: string;
+  account_name: string;
+  stage: string;
+  status: string;
+  started_at: string;
+  open_seconds: number;
+}
+
+export interface Monitoring {
+  window_days: number;
+  since: string;
+  /** Runs open with nothing happening — the shape a deadlock takes. */
+  stuck: StuckRun[];
+  runs_finished: number;
+  runs_failed: number;
+  stages: StageCost[];
+  calls: number;
+  failed_calls: number;
+  token_cost: number | null;
+  grounding_cost: number | null;
+  /** Models with no row in the price sheet. The total is short by exactly these. */
+  unpriced_models: string[];
+  currency: string;
+  price_version: number | null;
+  serp_credits: number;
+  serp_calls: number;
+  failures: { reason: string; rows: number }[];
+  /**
+   * When the grounded flag began being recorded. Null means never: anything
+   * before it reads false because it was not measured, not because it was not
+   * grounded.
+   */
+  grounded_since: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ConfigService {
   private http = inject(HttpClient);
@@ -908,6 +959,19 @@ export class ConfigService {
   /** What the model calls used, by stage. Tokens — never currency. */
   llmSpend(days = 30): Observable<LlmSpend> {
     return this.http.get<LlmSpend>(`${this.base}/llm/spend`, { params: { days } });
+  }
+
+  /**
+   * What the pipeline spent, and what it got stuck on.
+   *
+   * This one *does* report currency, which `llmSpend` deliberately refused
+   * to. The refusal was right at the time: with no stored prices, any figure
+   * would have been a guess dressed as a total. There is a versioned price
+   * sheet now, so a cost is computed from a stored price and a counted call —
+   * and a model with no price is reported as unpriced rather than as free.
+   */
+  monitoring(days: number): Observable<Monitoring> {
+    return this.http.get<Monitoring>(`/api/monitoring`, { params: { days } });
   }
 }
 

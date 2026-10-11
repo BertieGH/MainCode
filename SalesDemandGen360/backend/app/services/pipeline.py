@@ -1159,6 +1159,22 @@ async def _run_family(
             # when nothing is on record: a page a rep or an import set wins.
             account.linkedin_url = found_page
             notes.append(f"LinkedIn company page taken from its own homepage: {found_page}")
+        # What the search provider charged, recorded beside the evidence it
+        # bought. Readers that buy nothing report zero and write no row.
+        if getattr(swept, "credits", 0) or getattr(swept, "queries", 0):
+            from app.models.cost import SerpCall
+
+            session.add(
+                SerpCall(
+                    provider=linkedin_serp.PROVIDER,
+                    run_id=run_id,
+                    account_id=account.id,
+                    family=family,
+                    queries=int(getattr(swept, "queries", 0)),
+                    credits=int(getattr(swept, "credits", 0)),
+                )
+            )
+
         stored = await evidence_service.store_found(
             session,
             account_id=account.id,

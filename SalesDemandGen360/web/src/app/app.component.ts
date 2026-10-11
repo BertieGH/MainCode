@@ -95,7 +95,14 @@ export class AppComponent implements OnInit {
    * 9. **Sales rules** — thread caps and persona weights, applied last, at
    *    strategy time.
    */
-  settingsNav = [
+  /**
+   * `path: null` means the screen is not built yet, and the nav renders it
+   * inert. Typed explicitly because every entry happens to have a route
+   * today — without this the inferred type forbids the null the template
+   * branch exists to handle, and the next person to add a menu item ahead of
+   * its screen would find the type fighting them.
+   */
+  settingsNav: { label: string; path: string | null; gated: boolean }[] = [
     { label: 'API config', path: '/settings/setup', gated: false },
     { label: 'Model config', path: '/settings/models', gated: true },
     // Beside Model config on purpose: one says how hard a stage thinks, the
@@ -113,11 +120,11 @@ export class AppComponent implements OnInit {
     // for what a thing is worth.
     { label: 'Weights & scoring', path: '/settings/scoring', gated: true },
     { label: 'Sales rules', path: '/settings/rules', gated: true },
-    // Last, and inert until the screen exists: what was spent and what is
-    // stuck is a thing you go looking for, not something passed on the way to
-    // somewhere else. Shown disabled rather than hidden, like Dashboard and
-    // Learning, because a link to a route with no component is a dead click.
-    { label: 'Monitoring', path: null, gated: false },
+    // Last: what was spent and what is stuck is a thing you go looking for,
+    // not something passed on the way elsewhere. Ungated, because it is where
+    // somebody looks when the pipeline is refusing to run — which is exactly
+    // when setup is unfinished.
+    { label: 'Monitoring', path: '/settings/monitoring', gated: false },
   ];
 
   ngOnInit(): void {

@@ -195,22 +195,28 @@ describe('AppComponent', () => {
     expect(labels[labels.length - 1]).toBe('Monitoring');
   });
 
-  it('renders an unbuilt settings entry inert rather than as a dead link', () => {
+  it('every settings entry has a route today', () => {
     settle(READY);
-    // This used to assert that every settings entry had a route, because a
-    // null path rendered as a live link to nowhere — a broken screen rather
-    // than an unbuilt one. The nav now has the same inert branch the main one
-    // has, so the rule is what it always meant: no dead links.
-    const unbuilt = cmp.settingsNav.filter((n) => !n.path).map((n) => n.label);
-    expect(unbuilt).toEqual(['Monitoring']);
+    // Monitoring was the last one without, and it is built. The rule below is
+    // what keeps that honest if another is added before its screen exists.
+    expect(cmp.settingsNav.filter((n) => !n.path)).toEqual([]);
+  });
 
-    const labels = [...fixture.nativeElement.querySelectorAll('.nav-item.disabled')].map(
-      (el: Element) => el.textContent?.trim(),
+  it('renders a settings entry with no route inert rather than as a dead link', () => {
+    settle(READY);
+    // Asserted by injecting one, because none exists at the moment and the
+    // branch would otherwise go untested until the next time somebody adds a
+    // menu item ahead of its screen — which is exactly when it matters. A
+    // null path used to render as a live link to nowhere: a broken screen
+    // rather than an unbuilt one.
+    cmp.settingsNav = [...cmp.settingsNav, { label: 'Not yet', path: null, gated: false }];
+    fixture.detectChanges();
+
+    const inert = [...fixture.nativeElement.querySelectorAll('.nav-item.disabled')].filter(
+      (el: Element) => el.textContent?.trim() === 'Not yet',
     );
-    expect(labels).toContain('Monitoring');
-    [...fixture.nativeElement.querySelectorAll('.nav-item.disabled')].forEach(
-      (el: Element) => expect(el.tagName).toBe('SPAN'),
-    );
+    expect(inert.length).toBe(1);
+    expect(inert[0].tagName).toBe('SPAN');
   });
 
   describe('the setup gate', () => {

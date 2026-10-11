@@ -68,6 +68,11 @@ export const routes: Routes = [
           import('./settings/writing-samples.component').then((m) => m.WritingSamplesComponent),
       },
       {
+        path: 'monitoring',
+        loadComponent: () =>
+          import('./settings/monitoring.component').then((m) => m.MonitoringComponent),
+      },
+      {
         path: 'scoring',
         loadComponent: () =>
           import('./settings/scoring.component').then((m) => m.ScoringComponent),

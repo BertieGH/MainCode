@@ -5357,3 +5357,58 @@ real low score with a reason, where before it was an absence.
 Backend 1,965 pass.
 
 `services/fit.py`, `tests/test_fit.py` (+10).
+
+## §115 — A screen for the bill nothing could add up (2026-10-11)
+
+**Problem.** A monthly spend cap stopped a fifty-account run and two days of
+work, and nothing in the application could have seen it coming. `llm_call`
+recorded tokens and duration — most of a call and almost none of its cost.
+Grounding is billed per request and is the larger part of a research bill; it
+was recorded nowhere. Searlo returns its credit cost on every response; it was
+read, written to a log line, and dropped. There was no price table, so no
+figure anywhere was in currency.
+
+**Built.** `GET /api/monitoring` and Settings → Monitoring, from three new
+pieces of storage:
+
+- `llm_call.grounded` (§114's sibling, added 10 October) — the adapter already
+  knew, since it attaches `googleSearch` only when the stage carries tools.
+- `model_price` — a versioned config, one active sheet of
+  `{model: {input_per_m, output_per_m, grounded_per_call}}`. Versioned because
+  prices change and "why was March cheaper" has to stay answerable.
+- `serp_call` — what a search provider charged, per run and per family. A
+  balance alone cannot say which run spent it, so a run costing ten times its
+  neighbours stayed invisible until the credits ran out.
+
+**Three rules the screen keeps.**
+
+*Nothing is estimated.* A cost is computed from a stored price and a counted
+call, or it is reported `unpriced` — never zero. A model missing from the sheet
+is named, and the total says it is short by exactly those. A screen that
+guesses the expensive half is how this went unnoticed, and a figure that looks
+authoritative is the one nobody re-checks.
+
+*History starts where measurement starts.* Grounding reads $0.00 with "not yet
+measured" rather than implying three quiet weeks. Rows written before the
+column existed are `false` because nobody can truthfully say otherwise.
+
+*A stuck run is the headline.* The §109 deadlock produced no error, no timeout
+and no log line — only a run that never finished. Runs open past four minutes
+are the first thing on the page, and the panel is absent rather than showing a
+reassuring zero: a permanent "0 stuck" tile is a thing the eye learns to skip.
+
+**What it shows on this installation.** 1,159 calls over seven days, 95 failed,
+$0.71 of tokens; `company_research` is 746 of those calls and 31% cache against
+0% everywhere else. Failures group to 35 × HTTP 429 and 5 × HTTP 402 — the
+spend cap under two different status codes.
+
+A note on `llmSpend`, whose comment reads "Tokens — never currency". That was
+right when written: with no stored prices any figure would have been a guess
+dressed as a total. The price sheet is what makes currency defensible, and the
+new endpoint says so where the old one refused.
+
+Backend 1,965 pass; frontend 388.
+
+`api/monitoring.py` (new), `models/cost.py` (new), `alembic/a3e91f7b60d4` (new),
+`services/linkedin_serp.py`, `services/pipeline.py`,
+`web/.../settings/monitoring.component.ts` (new), `web/.../core/config.service.ts`.

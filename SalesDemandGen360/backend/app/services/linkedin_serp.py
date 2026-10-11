@@ -108,6 +108,14 @@ class SweepResult:
     #: company silent for a year has nothing for a per-person post query to
     #: find either, and that is eight accounts in ten.
     recent_posts: int = 0
+    #: What the provider charged, and how many searches it charged for.
+    #:
+    #: Returned rather than only logged. It used to go into a note string and
+    #: nowhere else, which left the account balance as the only signal — and a
+    #: balance cannot say which run spent it, so a run costing ten times its
+    #: neighbours stayed invisible until the credits ran out.
+    credits: int = 0
+    queries: int = 0
 
 
 def window_from(max_age_days: int | None, *, today: date | None = None) -> str:
@@ -291,6 +299,8 @@ async def sweep_account(account: Any, *, key: str | None = None, http=None,
         tuple(misses),
         tuple(notes),
         recent_posts=recent,
+        credits=profiles.credits + posts.credits,
+        queries=2,
     )
 
 
