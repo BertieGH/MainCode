@@ -257,10 +257,13 @@ import { apiError } from '../shared/api-error';
         </div>
 
         <div class="hero">
-          <div class="seclabel" style="margin-top:0">Objective — one outcome</div>
-          <p class="obj">{{ b.call_objective }}</p>
-          <p class="row-sub" *ngIf="b.objective_excludes">
-            Not this call: {{ b.objective_excludes }}
+          <div class="seclabel" style="margin-top:0">What to find out — one thing</div>
+          <p class="obj">{{ b.what_to_find_out }}</p>
+          <p class="row-sub" *ngIf="b.what_not_to_attempt">
+            Not this call: {{ b.what_not_to_attempt }}
+          </p>
+          <p class="note" *ngIf="b.problem_is_unproven">
+            <span class="ep ep-hyp">hypothesis</span> {{ b.problem_is_unproven }}
           </p>
 
           <ng-container *ngIf="b.openings.length">

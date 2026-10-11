@@ -515,8 +515,11 @@ class TestTheIndex:
 def _brief(**over) -> dict:
     """A payload that satisfies the contract, so a test can vary one thing."""
     base = {
-        "call_objective": "Find out whether the AI surface work creates a constraint.",
-        "objective_excludes": "Convincing him he has an ingestion problem.",
+        "what_to_find_out": "Whether the AI surface work has created a constraint, and who owns it.",
+        "what_not_to_attempt": "Convincing him he has an ingestion problem.",
+        "problem_is_unproven": (
+            "We think the AI rollout strains engineering. Nothing establishes he agrees."
+        ),
         "openings": [
             {
                 "label": "Honest outsider",
@@ -601,7 +604,7 @@ class TestGeneratingTheBrief:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["mode"] == "pre_engagement"
-        assert body["brief"]["call_objective"]
+        assert body["brief"]["what_to_find_out"]
 
         from app.models.prep import SalesPrep
 
@@ -739,7 +742,7 @@ class TestAStoredBriefComesBackWithIt:
         assert (await _get(api, contact))["brief"] is None
         await api.post(f"/api/prep/{contact.id}/generate")
         body = await _get(api, contact)
-        assert body["brief"]["call_objective"]
+        assert body["brief"]["what_to_find_out"]
         assert body["brief_generated_at"]
         assert body["brief_mode"] == "pre_engagement"
 
@@ -768,3 +771,97 @@ class TestAStoredBriefComesBackWithIt:
         )
         await session.flush()
         assert (await _get(api, contact))["brief_is_stale"] is True
+
+
+class TestTheContractRefusesAPitchGoal:
+    """Three briefs running, the objective came back as what to *say*.
+
+    Prose did not move it, so the rule stopped being advice. The field is no
+    longer called an objective — the model was reading the field name, and
+    "call objective" means a pitch goal everywhere else in sales — and the
+    contract now rejects a sentence that talks about us.
+    """
+
+    def test_a_sentence_about_us_is_refused(self):
+        from pydantic import ValidationError
+
+        from app.schemas.prep import SalesPrepPayload
+
+        with pytest.raises(ValidationError, match="reads as a pitch goal"):
+            SalesPrepPayload.model_validate(
+                _brief(
+                    what_to_find_out=(
+                        "Validate whether their AI rollout is pulling engineering off "
+                        "the roadmap, and introduce our EIA services as a way to build "
+                        "capability faster."
+                    )
+                )
+            )
+
+    def test_the_pronoun_is_what_catches_it(self):
+        """Checked by pronoun rather than by product name: it needs no
+        catalogue and cannot be dodged by inventing a new offering."""
+        from pydantic import ValidationError
+
+        from app.schemas.prep import SalesPrepPayload
+
+        for bad in (
+            "Find out if they need what we sell.",
+            "Establish whether our framework would fit.",
+            "See if they would buy from us.",
+        ):
+            with pytest.raises(ValidationError):
+                SalesPrepPayload.model_validate(_brief(what_to_find_out=bad))
+
+    def test_a_question_about_them_passes(self):
+        from app.schemas.prep import SalesPrepPayload
+
+        ok = SalesPrepPayload.model_validate(
+            _brief(
+                what_to_find_out=(
+                    "Whether the run of AI launches has created an engineering or "
+                    "roadmap constraint, and who owns it."
+                )
+            )
+        )
+        assert ok.what_to_find_out.startswith("Whether")
+
+    def test_a_word_merely_containing_us_is_not_a_false_positive(self):
+        """`us` inside `focus` or `customers` must not trip the rule."""
+        from app.schemas.prep import SalesPrepPayload
+
+        ok = SalesPrepPayload.model_validate(
+            _brief(
+                what_to_find_out=(
+                    "Which customers their current focus is aimed at, and whether "
+                    "usage has shifted."
+                )
+            )
+        )
+        assert ok.what_to_find_out
+
+
+class TestTheHypothesisCannotBeForgotten:
+    """It was an item in `do_not_assume` and was dropped from every brief.
+
+    An item in a list is optional in practice however firmly the prompt asks.
+    A required field is not.
+    """
+
+    def test_a_brief_without_it_is_refused(self):
+        from pydantic import ValidationError
+
+        from app.schemas.prep import SalesPrepPayload
+
+        payload = _brief()
+        del payload["problem_is_unproven"]
+        with pytest.raises(ValidationError):
+            SalesPrepPayload.model_validate(payload)
+
+    def test_it_cannot_be_blank(self):
+        from pydantic import ValidationError
+
+        from app.schemas.prep import SalesPrepPayload
+
+        with pytest.raises(ValidationError):
+            SalesPrepPayload.model_validate(_brief(problem_is_unproven=""))

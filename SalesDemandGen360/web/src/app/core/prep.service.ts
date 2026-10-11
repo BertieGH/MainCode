@@ -134,8 +134,11 @@ export interface BriefNextStep {
 }
 
 export interface Brief {
-  call_objective: string;
-  objective_excludes: string | null;
+  /** Named for what it is, not for what sales calls it — see the contract. */
+  what_to_find_out: string;
+  what_not_to_attempt: string | null;
+  /** Required: the hypothesis, named as a hypothesis. */
+  problem_is_unproven: string;
   openings: BriefOpening[];
   listen_for: string[];
   next_steps: BriefNextStep[];

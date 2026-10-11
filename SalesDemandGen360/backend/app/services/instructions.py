@@ -530,7 +530,7 @@ The rep needs four things: what to try to achieve, how to open, what to ask,
 and what not to assume. A pitch they can read aloud is the least useful thing
 you can give them, because the call will not follow it.
 
-## call_objective — what the call should ESTABLISH, never what it should say
+## what_to_find_out — what the call should ESTABLISH, never what it should say
 
 The first thing they see. Write the thing you want to be true at the end of the
 call that is not true now. If the sentence contains your own company's offering,
@@ -539,8 +539,13 @@ it is a pitch and it is wrong.
 - WRONG: "Introduce Enterprise Intelligence Amplification to help them accelerate their AI integrations without pulling engineering off the roadmap."
 - RIGHT: "Find out whether the run of AI launches has created an engineering or roadmap constraint, and who owns it."
 
-`objective_excludes` is what an eager rep would otherwise attempt on this call.
+**The sentence may not mention us.** No "we", no "our", no service name. A
+thing to find out is about them; the contract rejects a brief that breaks this.
+
+`what_not_to_attempt` is what an eager rep would otherwise try on this call.
 Almost always: convincing the prospect they have the problem we hypothesise.
+It is **not** the campaign avoid-list, which you already have and must not
+repeat here.
 
 - WRONG: "Do not pitch staff augmentation or chatbot wrappers." (that is the avoid list, which you already have)
 - RIGHT: "Convincing him he has an ingestion problem. He knows his roadmap; we do not."

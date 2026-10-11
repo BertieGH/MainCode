@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -110,43 +112,69 @@ class Objection(BaseModel):
 class SalesPrepPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    #: **The single most important outcome of this call.** The first thing on
-    #: the screen, because a rep who knows what they are trying to achieve can
-    #: improvise and one who knows only what to say cannot. One sentence.
-    call_objective: str = Field(min_length=1)
-    #: What this call is explicitly *not* for. Usually the thing an eager rep
-    #: would otherwise try: convincing the prospect they have a problem.
-    objective_excludes: str | None = None
+    #: **The one thing this call should establish.** First on the screen,
+    #: because a rep who knows what they are trying to learn can improvise and
+    #: one who knows only what to say cannot.
+    #:
+    #: Named `what_to_find_out` rather than `call_objective` deliberately. Told
+    #: to write a "call objective", the model wrote a pitch goal three times
+    #: running — *"introduce Enterprise Intelligence Amplification to help
+    #: them…"* — which is what the phrase means everywhere else in sales. It
+    #: was not misreading the instruction; it was reading the field name, and
+    #: the field name won. This one carries no such prior.
+    what_to_find_out: str = Field(min_length=1, description=(
+        "The single thing this call should establish that is not known now. "
+        "About them, never about us: if it mentions what you sell, it is a "
+        "pitch goal and it is wrong."
+    ))
+    #: What an eager rep would otherwise attempt here, and should not.
+    what_not_to_attempt: str | None = Field(default=None, description=(
+        "The thing a rep would otherwise try on this call and must not — "
+        "usually convincing the prospect they have the problem. Not the "
+        "campaign avoid-list, which you already have."
+    ))
+    #: **That the hypothesis is a hypothesis**, in one sentence.
+    #:
+    #: A required field rather than an item in `do_not_assume`, because as an
+    #: item it was dropped from every brief generated. Research can establish
+    #: that a company shipped four AI surfaces; it cannot establish that the
+    #: company *minds*. A rep who forgets that argues with a founder about his
+    #: own roadmap, and the list this used to live in was exactly the wrong
+    #: place for the one entry that must never be missing.
+    problem_is_unproven: str = Field(min_length=1, description=(
+        "One sentence naming the hypothesised problem and saying plainly that "
+        "nothing establishes the prospect actually has it."
+    ))
     #: Two or three ways in, at different levels of exposure.
     openings: list[Opening] = Field(default_factory=list, max_length=3)
     #: Possible findings, not expected answers — including the finding that
     #: there is nothing here.
-    listen_for: list[str] = Field(default_factory=list)
+    listen_for: list[str] = Field(default_factory=list, description="Things you could LEARN on this call, phrased as findings — not keywords. Include the finding that there is nothing here.")
     next_steps: list[NextStep] = Field(default_factory=list)
 
     #: Facts read from a source.
-    what_we_know: list[str] = Field(default_factory=list)
+    what_we_know: list[str] = Field(default_factory=list, description="Facts read from the payload you were given — signals, the account profile, the contact profile. Never from your own knowledge.")
     #: Our reading of those facts. Not established.
-    what_we_suspect: list[str] = Field(default_factory=list)
+    what_we_suspect: list[str] = Field(default_factory=list, description="Your reading of those facts. Never phrased as fact.")
     #: Named gaps.
-    what_we_do_not_know: list[str] = Field(default_factory=list)
+    what_we_do_not_know: list[str] = Field(default_factory=list, description="Named gaps.")
     #: **Things the rep must not treat as true on the call.** Distinct from
     #: "what we do not know": an unknown is a gap, this is a trap. The more
     #: specific and personalised a brief reads, the easier it is to walk in
     #: believing its hypothesis is a finding.
-    do_not_assume: list[str] = Field(default_factory=list)
+    do_not_assume: list[str] = Field(default_factory=list, description="Traps, not gaps: what the rep must not treat as true on the call.")
 
-    elevator_pitch: str = Field(min_length=1)
+    elevator_pitch: str = Field(min_length=1, description="Thirty seconds, if he asks what you do.")
     pitch_structure: PitchStructure
     discovery_questions: list[DiscoveryQuestion] = Field(default_factory=list)
     objections: list[Objection] = Field(default_factory=list)
     #: What this account has already been told, in the rep's words. Generated
     #: from the sent touches, so the call does not restate the sequence.
-    already_said: list[str] = Field(default_factory=list)
+    already_said: list[str] = Field(default_factory=list, description="Only touches that actually sent. Empty if none did.")
     #: What they said back, if anything.
-    their_replies: list[str] = Field(default_factory=list)
+    their_replies: list[str] = Field(default_factory=list, description="Their words. Empty if nobody has replied.")
     #: Named gaps a rep should know they are walking in with.
-    open_questions: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list, description="Gaps the rep walks in with.")
 
     @model_validator(mode="after")
     def _a_brief_asks_something(self) -> SalesPrepPayload:
@@ -166,6 +194,29 @@ class SalesPrepPayload(BaseModel):
             raise ValueError(
                 "a brief with no opening leaves the rep to improvise the one "
                 "sentence that decides whether the call continues"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _what_to_find_out_is_about_them(self) -> SalesPrepPayload:
+        """A thing to find out cannot be a thing we say.
+
+        Checked by pronoun rather than by looking for product names, which
+        needs no catalogue and cannot be evaded by inventing a new one: a
+        sentence describing what to establish about a prospect has no reason
+        to mention us at all. The three briefs that failed this all failed on
+        the same word — *"and introduce **our** EIA services"* — tacked onto
+        an otherwise correct objective.
+        """
+        words = re.findall(r"[a-z']+", self.what_to_find_out.lower())
+        ours = {"we", "our", "ours", "us", "we'll", "we're", "we've"}
+        found = sorted(ours.intersection(words))
+        if found:
+            raise ValueError(
+                "what_to_find_out mentions us "
+                f"({', '.join(found)}) — it reads as a pitch goal rather than "
+                "something to establish about them. Say what the call should "
+                "make known, not what it should sell."
             )
         return self
 
