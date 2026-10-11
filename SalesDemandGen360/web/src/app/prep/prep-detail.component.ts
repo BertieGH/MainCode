@@ -165,7 +165,8 @@ import { apiError } from '../shared/api-error';
                   Not this call: {{ b.what_not_to_attempt }}
                 </p>
                 <p class="note" *ngIf="b.problem_is_unproven">
-                  <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span> {{ b.problem_is_unproven }}
+                  {{ b.problem_is_unproven }}
+                  <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span>
                 </p>
 
                 <ng-container *ngIf="b.openings.length">
@@ -263,25 +264,33 @@ import { apiError } from '../shared/api-error';
               <!-- 3 · why now -->
               <div class="seclabel" *ngIf="p.thread">Why this account, why now</div>
               <div class="card" *ngIf="p.thread as t">
-                <dl class="kv">
-                  <div>
-                    <dt>Trigger <span class="ep" [ngClass]="t.without_live_trigger ? 'ep-unk' : 'ep-fact'"
-                      [title]="t.without_live_trigger ? EP.unknown : EP.fact">
-                      {{ t.without_live_trigger ? 'no live trigger' : 'fact' }}</span></dt>
-                    <dd>{{ t.trigger_summary }}</dd>
-                  </div>
-                  <div>
-                    <dt>Hypothesis to test <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span></dt>
-                    <dd>{{ t.problem_hypothesis }}</dd>
-                  </div>
-                  <div>
-                    <dt>How we would help <span class="ep ep-fact" [title]="EP.approved">approved positioning</span></dt>
-                    <dd>{{ t.positioning }}</dd>
-                  </div>
-                  <div>
-                    <dt>The ask</dt>
-                    <dd>{{ t.cta }}</dd>
-                  </div>
+                <!-- The tag goes at the end of the claim it qualifies, not
+                     on the label. A label is the name of a field; the chip is
+                     a judgement about the sentence, and it reads where the
+                     sentence finishes. -->
+                <dl class="kv tight">
+                  <dt>Trigger</dt>
+                  <dd>
+                    {{ t.trigger_summary }}
+                    <span class="ep" [ngClass]="t.without_live_trigger ? 'ep-unk' : 'ep-fact'"
+                          [title]="t.without_live_trigger ? EP.unknown : EP.fact">{{
+                      t.without_live_trigger ? 'no live trigger' : 'fact' }}</span>
+                  </dd>
+
+                  <dt>Hypothesis to test</dt>
+                  <dd>
+                    {{ t.problem_hypothesis }}
+                    <span class="ep ep-hyp" [title]="EP.hypothesis">hypothesis</span>
+                  </dd>
+
+                  <dt>How we would help</dt>
+                  <dd>
+                    {{ t.positioning }}
+                    <span class="ep ep-fact" [title]="EP.approved">approved</span>
+                  </dd>
+
+                  <dt>The ask</dt>
+                  <dd>{{ t.cta }}</dd>
                 </dl>
                 <p class="note" *ngIf="t.strategy_confidence !== null">
                   Strategy confidence {{ t.strategy_confidence }} — how well this approach fits the
@@ -443,8 +452,11 @@ import { apiError } from '../shared/api-error';
               </ng-container>
 
               <ng-container *ngIf="s.business_implication">
-                <dt>Interpretation <span class="ep ep-inf" [title]="EP.inference">inference</span></dt>
-                <dd>{{ s.business_implication }}</dd>
+                <dt>Interpretation</dt>
+                <dd>
+                  {{ s.business_implication }}
+                  <span class="ep ep-inf" [title]="EP.inference">inference</span>
+                </dd>
               </ng-container>
 
               <dt>Relevance</dt>
