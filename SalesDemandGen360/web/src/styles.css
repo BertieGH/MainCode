@@ -447,3 +447,34 @@ blockquote { margin: 9px 0; padding: 10px 14px; background: var(--surface-2);
              font-size: 0.86rem; }
 @media (max-width: 740px) { .know { grid-template-columns: 1fr; } }
 @media (max-width: 740px) { .verdict { grid-template-columns: 1fr; } }
+
+
+/* ---------- prep: tabs, two columns, and the three steps ----------
+   Shared for the same reason the brief's own rules are: the exports will
+   render a brief too, and a screen and a document that disagree about what
+   a step looks like is a rep rehearsing one thing and carrying another. */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.step h3 { font-size: 0.88rem; margin-bottom: 6px; }
+.step p { margin: 0 0 11px; font-size: 0.79rem; color: var(--muted); }
+.step .n2 { font-family: 'IBM Plex Mono', monospace; font-size: 0.66rem;
+            color: var(--accent); background: var(--accent-soft);
+            border-radius: 999px; padding: 2px 8px; display: inline-block;
+            margin-bottom: 8px; }
+.step textarea.field { resize: vertical; font-size: 0.8rem; }
+.step { border: 1px solid var(--border); border-radius: 12px;
+        padding: 15px 16px; background: var(--surface); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border);
+        margin: 0 0 22px; flex-wrap: wrap; }
+.tab[aria-selected='true'] { color: var(--text);
+       border-bottom-color: var(--accent); font-weight: 600; }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tab { background: none; border: none; border-bottom: 2px solid transparent;
+       padding: 10px 14px; font: inherit; font-size: 0.85rem;
+       color: var(--muted); cursor: pointer; }
+.split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+         gap: 22px; align-items: start; }
+.col-main, .col-side { min-width: 0; }
+.col-side .seclabel:first-child { margin-top: 0; }
+.col-side { font-size: 0.95em; }
+@media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }

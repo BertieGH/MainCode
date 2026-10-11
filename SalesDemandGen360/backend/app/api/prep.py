@@ -36,13 +36,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_session, requires
-from app.models.account import Account, Contact
+from app.models.account import Account, AccountListMember, Contact, Run
 from app.models.campaign import OutreachSequence
 from app.models.config import ProofPoint
 from app.models.content import Touch
 from app.models.context import Qualification
 from app.models.execution import OutreachEvent
+from app.models.governance import Evaluation
 from app.models.prep import SalesPrep
+from app.models.research import ResearchCoverage
 from app.models.signal import Evidence, Signal, signal_evidence
 from app.models.strategy import StrategyThread
 from app.services import stages
@@ -105,6 +107,23 @@ class EngagementOut(BaseModel):
     detail: str
 
 
+class LastRunOut(BaseModel):
+    """What the last research run actually did, per family.
+
+    Shown before a refresh is bought rather than after it, so "is another one
+    worth 9 cents" is answerable: nine families planned and seven returning is
+    a different proposition from nine planned and two failing.
+    """
+
+    at: datetime | None
+    status: str | None
+    planned: int
+    ran: int
+    empty: int
+    failed: int
+    evidence: int
+
+
 class ProofOut(BaseModel):
     id: uuid.UUID
     kind: str
@@ -161,6 +180,38 @@ class QualificationOut(BaseModel):
     unassessed: list[str] = []
 
 
+#: What a rep may say about a signal, and how it lands in `evaluation`.
+#:
+#: "Outdated" is not "inaccurate": the first says our refresh cadence is wrong,
+#: the second that our reading is. Flattened to one verdict the evaluation
+#: layer could not tell us which to fix, so the word is kept in `issues`.
+REP_VERDICTS = {
+    "accurate": "pass",
+    "needs_verification": "warn",
+    "inaccurate": "fail",
+    "outdated": "fail",
+    "irrelevant": "fail",
+}
+
+
+class EvidenceOut(BaseModel):
+    """One passage behind a signal, with where and when it came from.
+
+    Two dates, not one. `observed_at` is when the source says the thing
+    happened; `retrieved_at` is when we read it. A nine-month-old post read
+    this morning is fresh research into a stale fact, and a screen showing one
+    date cannot say which it is holding.
+    """
+
+    id: uuid.UUID
+    source_name: str | None
+    source_url: str | None
+    excerpt: str
+    observed_at: date | None
+    retrieved_at: datetime | None
+    reliability: float | None
+
+
 class SignalBriefOut(BaseModel):
     id: uuid.UUID
     signal_type: str
@@ -176,8 +227,16 @@ class SignalBriefOut(BaseModel):
     lifecycle_state: str
     is_hypothesis: bool
     age_days: int | None
+    #: Days until it expires. Negative never appears — an expired signal is
+    #: filtered out before this.
+    expires_in_days: int | None = None
     evidence_count: int
     sources: list[str] = []
+    #: The passages themselves, so a rep can read what was actually written
+    #: rather than our summary of it.
+    evidence: list[EvidenceOut] = []
+    #: What a rep said about this signal, if they have said anything.
+    rep_verdict: str | None = None
 
 
 class PrepOut(BaseModel):
@@ -231,6 +290,10 @@ class PrepOut(BaseModel):
     brief_is_stale: bool = False
     hypothesis_verdict: str | None = None
     outcome: str | None = None
+    last_run: LastRunOut | None = None
+    #: The lists this account is on. A refresh needs to know which ICPs decide
+    #: what to look for; with exactly one the route resolves it itself.
+    list_ids: list[uuid.UUID] = []
     #: Decided from the ladder, not chosen by hand: nothing sent means there is
     #: no conversation to be aware of, and a brief opening on an observation
     #: the prospect already answered wastes the call.
@@ -441,16 +504,55 @@ async def prep_for_contact(
     # well-covered account holds dozens, and the screen opens with them.
     source_rows = (
         await session.execute(
-            select(signal_evidence.c.signal_id, Evidence.source_name)
+            select(signal_evidence.c.signal_id, Evidence)
             .join(Evidence, Evidence.id == signal_evidence.c.evidence_id)
             .where(Evidence.account_id == account.id)
         )
     ).all()
     by_signal: dict[uuid.UUID, list[str]] = {}
-    for signal_id, source_name in source_rows:
+    evidence_by_signal: dict[uuid.UUID, list[EvidenceOut]] = {}
+    for signal_id, row in source_rows:
         names = by_signal.setdefault(signal_id, [])
-        if source_name and source_name not in names:
-            names.append(source_name)
+        if row.source_name and row.source_name not in names:
+            names.append(row.source_name)
+        evidence_by_signal.setdefault(signal_id, []).append(
+            EvidenceOut(
+                id=row.id,
+                source_name=row.source_name,
+                source_url=row.source_url,
+                excerpt=row.excerpt,
+                observed_at=row.observed_at,
+                retrieved_at=row.retrieved_at,
+                reliability=float(row.reliability) if row.reliability is not None else None,
+            )
+        )
+
+    # Rep verdicts, one query for the set. `issues` holds the specific word;
+    # the verdict column holds only pass/warn/fail.
+    verdicts: dict[uuid.UUID, str] = {}
+    if signal_rows:
+        for ev in (
+            await session.execute(
+                select(Evaluation)
+                .where(
+                    Evaluation.method == "rep",
+                    Evaluation.subject_type == "signal",
+                    Evaluation.subject_id.in_([s.id for s in signal_rows]),
+                )
+                .order_by(Evaluation.created_at.desc())
+            )
+        ).scalars():
+            # Newest first, so the first seen per signal is the current one.
+            if ev.subject_id in verdicts:
+                continue
+            # `scores`, not `issues`. An "accurate" verdict maps to `pass`,
+            # a pass stores no issues, and the first version therefore read
+            # the rep's word back as "pass" — a value no button matches, so a
+            # recorded verdict vanished on reload. The word lives in `scores`
+            # where it is recorded for every verdict, and `issues` keeps the
+            # ones that are genuinely issues.
+            scores = ev.scores or {}
+            verdicts[ev.subject_id] = scores.get("rep_verdict") or ev.verdict
 
     signals_out = [
         SignalBriefOut(
@@ -466,8 +568,13 @@ async def prep_for_contact(
             lifecycle_state=s.lifecycle_state,
             is_hypothesis=s.is_hypothesis,
             age_days=_days_since(s.observed_at),
-            evidence_count=len(by_signal.get(s.id, [])),
+            expires_in_days=(
+                max((s.expires_at - date.today()).days, 0) if s.expires_at else None
+            ),
+            evidence_count=len(evidence_by_signal.get(s.id, [])),
             sources=by_signal.get(s.id, []),
+            evidence=evidence_by_signal.get(s.id, []),
+            rep_verdict=verdicts.get(s.id),
         )
         for s in signal_rows
     ]
@@ -485,6 +592,43 @@ async def prep_for_contact(
         (
             await session.execute(
                 select(ProofPoint).where(ProofPoint.is_approved.is_(True))
+            )
+        ).scalars()
+    )
+
+    last = (
+        await session.execute(
+            select(Run)
+            .where(Run.account_id == account.id, Run.finished_at.is_not(None))
+            .order_by(Run.finished_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    last_run = None
+    if last is not None:
+        rows = list(
+            (
+                await session.execute(
+                    select(ResearchCoverage).where(ResearchCoverage.run_id == last.id)
+                )
+            ).scalars()
+        )
+        last_run = LastRunOut(
+            at=last.finished_at,
+            status=last.status,
+            planned=len(rows),
+            ran=sum(1 for r in rows if r.status == "ran"),
+            empty=sum(1 for r in rows if r.status == "empty"),
+            failed=sum(1 for r in rows if r.status == "failed"),
+            evidence=sum(r.evidence_count or 0 for r in rows),
+        )
+
+    lists = list(
+        (
+            await session.execute(
+                select(AccountListMember.list_id).where(
+                    AccountListMember.account_id == account.id
+                )
             )
         ).scalars()
     )
@@ -590,6 +734,8 @@ async def prep_for_contact(
         brief_is_stale=brief_is_stale,
         hypothesis_verdict=(stored.hypothesis_verdict if stored else None),
         outcome=(stored.outcome if stored else None),
+        last_run=last_run,
+        list_ids=lists,
         mode="engagement_aware" if counts["replied"] else "pre_engagement",
     )
 
@@ -762,6 +908,10 @@ class VerdictIn(BaseModel):
     #: Whether the brief's hypothesis survived contact with the prospect.
     hypothesis_verdict: str | None = None
     outcome: str | None = None
+    last_run: LastRunOut | None = None
+    #: The lists this account is on. A refresh needs to know which ICPs decide
+    #: what to look for; with exactly one the route resolves it itself.
+    list_ids: list[uuid.UUID] = []
     rep_note: str | None = None
 
 
@@ -883,4 +1033,75 @@ async def record_verdict(
         raise HTTPException(400, "Not a recognised verdict or outcome.") from exc
     return GenerateOut(
         prep_id=row.id, mode=row.mode, brief=row.payload, generated_at=row.created_at
+    )
+
+
+class SignalVerdictIn(BaseModel):
+    verdict: str
+    note: str | None = None
+
+
+@router.post("/prep/signals/{signal_id}/verdict", response_model=SignalBriefOut)
+async def record_signal_verdict(
+    signal_id: uuid.UUID,
+    payload: SignalVerdictIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """What a rep says about a signal, kept where evaluations are kept.
+
+    **This is the loop closing.** Every other verdict in the system is the
+    model's own — extraction decides a passage is a product launch, scoring
+    decides what it is worth. A rep who reads the passage and says it is
+    outdated knows something no evaluator does, and until now there was
+    nowhere to put it.
+
+    `outdated` and `inaccurate` are deliberately kept apart. The first says
+    the refresh cadence is wrong, the second that the reading is, and they
+    send you to different code.
+    """
+    signal = await session.get(Signal, signal_id)
+    if signal is None:
+        raise HTTPException(404, "No such signal.")
+    verdict = REP_VERDICTS.get(payload.verdict)
+    if verdict is None:
+        raise HTTPException(
+            400, f"Verdict must be one of: {', '.join(sorted(REP_VERDICTS))}."
+        )
+
+    session.add(
+        Evaluation(
+            subject_type="signal",
+            subject_id=signal_id,
+            method="rep",
+            verdict=verdict,
+            # The rep's own word, always, because the column's three values
+            # cannot carry five and "outdated" is not "inaccurate".
+            scores={"rep_verdict": payload.verdict},
+            # Only the ones that are genuinely issues. The constraint requires
+            # one for anything but a pass.
+            issues=(
+                None
+                if verdict == "pass"
+                else [{"kind": payload.verdict, "note": payload.note}]
+            ),
+            evaluator_version="rep",
+        )
+    )
+    await session.commit()
+
+    return SignalBriefOut(
+        id=signal.id,
+        signal_type=signal.signal_type,
+        scope=signal.scope,
+        summary=signal.summary,
+        business_implication=signal.business_implication,
+        strength=signal.strength,
+        evidence_confidence=float(signal.confidence or 0),
+        observed_at=signal.observed_at,
+        expires_at=signal.expires_at,
+        lifecycle_state=signal.lifecycle_state,
+        is_hypothesis=signal.is_hypothesis,
+        age_days=_days_since(signal.observed_at),
+        evidence_count=0,
+        rep_verdict=payload.verdict,
     )

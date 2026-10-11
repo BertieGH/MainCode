@@ -1,11 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import {
   Freshness,
   Prep,
   PrepDimension,
+  PrepSignal,
   PrepService,
   ageLabel,
   ageTone,
@@ -30,7 +32,7 @@ import { apiError } from '../shared/api-error';
 @Component({
   selector: 'app-prep-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <p class="err" *ngIf="error()">{{ error() }}</p>
     <p class="muted" *ngIf="loading()">Loading…</p>
@@ -379,7 +381,7 @@ import { apiError } from '../shared/api-error';
         <div class="empty" *ngIf="!p.signals.length">
           No live signal. A brief here would argue from no trigger at all.
         </div>
-        <details class="ev" *ngFor="let s of p.signals">
+        <details class="ev" *ngFor="let s of p.signals; trackBy: bySignalId">
           <summary>
             <span>
               <strong>{{ s.summary }}</strong>
@@ -393,19 +395,63 @@ import { apiError } from '../shared/api-error';
           </summary>
           <div class="evbody">
             <dl class="kv tight">
-              <div *ngIf="s.business_implication">
-                <dt>What it may mean <span class="ep ep-inf" [title]="EP.inference">inference</span></dt>
-                <dd>{{ s.business_implication }}</dd>
+              <div>
+                <dt>Observed <span class="ep ep-fact" [title]="EP.fact">fact</span></dt>
+                <dd>{{ s.summary }}</dd>
               </div>
-              <div *ngIf="s.sources.length">
-                <dt>Sources</dt>
-                <dd>{{ s.sources.join(' · ') }}</dd>
+              <div *ngFor="let e of s.evidence">
+                <dt>Source</dt>
+                <dd>
+                  <a *ngIf="e.source_url" class="link" [href]="e.source_url"
+                     target="_blank" rel="noopener">{{ e.source_name || 'source' }}</a>
+                  <span *ngIf="!e.source_url">{{ e.source_name || 'source' }}</span>
+                  <!-- Two dates, deliberately. When it happened, and when we
+                       read it: a nine-month-old post read this morning is
+                       fresh research into a stale fact. -->
+                  <span class="muted" *ngIf="e.observed_at"> · dated {{ e.observed_at }}</span>
+                  <span class="muted" *ngIf="e.retrieved_at">
+                    · retrieved {{ e.retrieved_at | date: 'd MMM y' }}</span>
+                  <span class="muted" *ngIf="e.reliability != null">
+                    · reliability {{ e.reliability }}</span>
+                  <blockquote>{{ e.excerpt }}</blockquote>
+                </dd>
+              </div>
+              <div *ngIf="s.business_implication">
+                <dt>Interpretation <span class="ep ep-inf" [title]="EP.inference">inference</span></dt>
+                <dd>{{ s.business_implication }}</dd>
               </div>
               <div>
                 <dt>Status</dt>
-                <dd>{{ s.lifecycle_state }}<span *ngIf="s.expires_at"> · expires {{ s.expires_at }}</span></dd>
+                <dd>
+                  <span class="badge"
+                        [ngClass]="s.lifecycle_state === 'discovered' ? 'badge-good' : 'badge-neutral'">
+                    {{ s.lifecycle_state }}
+                  </span>
+                  <span class="muted" *ngIf="s.expires_in_days != null">
+                    · expires in {{ s.expires_in_days }} days</span>
+                </dd>
               </div>
             </dl>
+
+            <!--
+              The loop closing. Every other verdict here is the model's own;
+              a rep who reads the passage and says it is outdated knows
+              something no evaluator does. Kept apart from "inaccurate" on
+              purpose: one says the refresh cadence is wrong, the other that
+              the reading is, and they send you to different code.
+            -->
+            <div class="marks">
+              <span class="row-sub">Rep verdict:</span>
+              <button
+                class="btn btn-sm"
+                *ngFor="let v of signalVerdicts"
+                [class.btn-primary]="s.rep_verdict === v"
+                [disabled]="judging() === s.id"
+                (click)="judge(p, s, v)">
+                {{ v.replace('_', ' ') }}
+              </button>
+              <span class="row-sub" *ngIf="s.rep_verdict">· recorded</span>
+            </div>
           </div>
         </details>
 
@@ -424,19 +470,117 @@ import { apiError } from '../shared/api-error';
           </button>
         </div>
 
-        <div class="seclabel" *ngIf="p.brief">Regenerate</div>
-        <p class="note" *ngIf="p.brief">
-          A brief is kept as written, with the research age and send count it was
-          written from, so a hypothesis that turns out wrong can be read back
-          against what was known at the time. Regenerating adds one; it does not
-          replace this one.
-        </p>
-        <div style="margin:12px 0 4px" *ngIf="p.brief">
-          <button class="btn" (click)="generate(p)" [disabled]="busy()">
-            {{ busy() ? 'Writing…' : 'Generate a new brief' }}
-          </button>
+        <!--
+          Three steps in the order they are worth doing: make the picture
+          current, add what only the rep knows, then write the brief. Each one
+          states what it will do and what it costs before it is bought.
+        -->
+        <div class="seclabel">Before you generate</div>
+        <div class="steps">
+          <div class="step">
+            <span class="n2">step 1</span>
+            <h3>Refresh what we know</h3>
+            <p *ngIf="p.last_run">
+              Last run {{ age(lastRunDays(p)) }} · {{ p.last_run.planned }} families
+              planned, {{ p.last_run.ran }} returned, {{ p.last_run.empty }} empty,
+              {{ p.last_run.failed }} failed · {{ p.last_run.evidence }} passages.
+            </p>
+            <p *ngIf="!p.last_run">No research run has finished for this account.</p>
+            <button class="btn" (click)="refresh(p)" [disabled]="busy() || refreshing()">
+              {{ refreshing() ? 'Researching…' : 'Refresh · ~$0.09' }}
+            </button>
+            <p class="row-sub" *ngIf="p.list_ids.length > 1">
+              On {{ p.list_ids.length }} lists — the route will ask which one's ICPs
+              decide what to look for rather than pick.
+            </p>
+            <p class="note">
+              Adds evidence and never overwrites it. A refresh does not revalidate
+              older signals: the oldest here stays
+              {{ age(oldestSignalDays(p)) }} old whatever this run finds.
+            </p>
+          </div>
+
+          <div class="step">
+            <span class="n2">step 2</span>
+            <h3>Add what you know</h3>
+            <p>
+              Whatever surfaced when the call was booked — a post, a line from a
+              profile, something you were told. Stored as evidence attributed to
+              where you saw it, and treated as data, never as instructions.
+            </p>
+            <textarea
+              class="field"
+              rows="3"
+              placeholder="Paste what you saw — at least a sentence"
+              [(ngModel)]="intelText"></textarea>
+            <input
+              class="field"
+              style="margin-top:6px"
+              placeholder="Link it was seen at (optional)"
+              [(ngModel)]="intelUrl" />
+            <button
+              class="btn"
+              style="margin-top:8px"
+              (click)="addIntel(p)"
+              [disabled]="intelText.trim().length < 10 || savingIntel()">
+              {{ savingIntel() ? 'Saving…' : 'Add intel' }}
+            </button>
+            <p class="row-sub" *ngIf="intelSaved()">Saved against this contact.</p>
+            <p class="note">
+              Filed under {{ p.contact_name }}. There is no field for whether this is
+              something they said, something you observed or a hunch — it is all
+              stored as evidence with its source, so write the distinction into the
+              text if it matters.
+            </p>
+          </div>
+
+          <div class="step">
+            <span class="n2">step 3</span>
+            <h3>Generate</h3>
+            <p>
+              Stamped with what it was written from — research age, signal count,
+              what had been sent — so a hypothesis that turns out wrong can be read
+              back against what was known at the time.
+            </p>
+            <button class="btn btn-primary" (click)="generate(p)" [disabled]="busy()">
+              {{ busy() ? 'Writing…' : p.brief ? 'Generate a new brief' : 'Generate brief' }}
+            </button>
+            <p class="note">
+              Mode is decided from the engagement ladder, not chosen:
+              <strong>{{ p.mode === 'pre_engagement' ? 'nothing sent, so pre-engagement' : 'they have replied, so engagement-aware' }}</strong>.
+              Regenerating adds a brief; it never replaces one.
+            </p>
+          </div>
         </div>
+
         <p class="err" *ngIf="genError()">{{ genError() }}</p>
+
+        <!--
+          Stated as the plan it is. Today a regeneration rewrites the whole
+          brief, and a table implying otherwise would be the screen lying
+          about its own behaviour — the one thing this design exists not to do.
+        -->
+        <div class="seclabel">What each event should invalidate — not yet built</div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr><th>Event</th><th>What should be rebuilt</th><th>What should be left</th></tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let r of invalidation">
+                <td>{{ r.event }}</td>
+                <td>{{ r.rebuild }}</td>
+                <td class="muted">{{ r.keep }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">
+          Today every regeneration rewrites everything, which costs a call and
+          discards rep corrections along with the rest. Selective regeneration is
+          the next thing worth building here.
+        </p>
+
         <div class="empty" *ngIf="!p.brief">
           <strong>No brief yet.</strong>
           Generate one from the brief tab.
@@ -519,25 +663,11 @@ import { apiError } from '../shared/api-error';
       .rung em { font-style: normal; font-weight: 600; margin-left: 4px; }
       .rung em.q { color: var(--faint); }
       .ep { cursor: help; }
-      .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border);
-              margin: 0 0 22px; flex-wrap: wrap; }
-      .tab { background: none; border: none; border-bottom: 2px solid transparent;
-             padding: 10px 14px; font: inherit; font-size: 0.85rem;
-             color: var(--muted); cursor: pointer; }
-      .tab[aria-selected='true'] { color: var(--text);
-             border-bottom-color: var(--accent); font-weight: 600; }
-      .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
       /* The act, and what it rests on. The side column is narrower because
          it is scanned rather than read, and it collapses under the plan on a
          narrow screen rather than above it — the plan is the reason the
          screen exists. */
-      .split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-               gap: 22px; align-items: start; }
-      @media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }
-      .col-main, .col-side { min-width: 0; }
-      .col-side .seclabel:first-child { margin-top: 0; }
       /* A sidebar of full-size cards competes with the plan it supports. */
-      .col-side { font-size: 0.95em; }
       .kv { margin: 0; display: grid; gap: 13px; }
       .kv.tight { gap: 8px; }
       .kv dt { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem;
@@ -633,6 +763,148 @@ export class PrepDetailComponent implements OnInit {
     }
     const n = p.engagement.counts[rung] || 0;
     return n ? `${n} ${rung}` : `Nothing ${rung} yet`;
+  }
+
+  judging = signal<string | null>(null);
+  readonly signalVerdicts = [
+    'accurate',
+    'inaccurate',
+    'outdated',
+    'irrelevant',
+    'needs_verification',
+  ];
+
+  judge(p: Prep, s: PrepSignal, verdict: string): void {
+    this.judging.set(s.id);
+    this.api.judgeSignal(s.id, verdict).subscribe({
+      next: () => {
+        // Patch in place rather than re-reading: a verdict changes one
+        // chip, and re-reading the screen would throw away everything else
+        // on it. The loop needs `trackBy` for this to hold — without it
+        // Angular rebuilds every row and the card the rep was reading
+        // closes under them, which is what the first version did.
+        this.prep.set({
+          ...p,
+          signals: p.signals.map((x) =>
+            x.id === s.id ? { ...x, rep_verdict: verdict } : x,
+          ),
+        });
+        this.judging.set(null);
+      },
+      error: (err) => {
+        this.genError.set(apiError(err, 'Could not record that verdict.'));
+        this.judging.set(null);
+      },
+    });
+  }
+
+  /** Identity, so a changed verdict does not rebuild the row and close it. */
+  bySignalId(_i: number, s: PrepSignal): string {
+    return s.id;
+  }
+
+  refreshing = signal(false);
+  savingIntel = signal(false);
+  intelSaved = signal(false);
+  intelText = '';
+  intelUrl = '';
+
+  /**
+   * What a regeneration *should* cost, against what it costs today.
+   *
+   * Shown as the plan it is rather than as behaviour: a table describing
+   * selective invalidation on a screen that regenerates wholesale would be
+   * the interface lying about itself, which is the one thing this design
+   * exists not to do.
+   */
+  readonly invalidation = [
+    {
+      event: 'A new relevant signal',
+      rebuild: 'Why-now, the hypotheses it touches, the strategy',
+      keep: 'Verified company facts',
+    },
+    {
+      event: 'The prospect replies',
+      rebuild: 'Mode flips; what to find out, the openings, the objections',
+      keep: 'Signals and evidence',
+    },
+    { event: 'A meeting is booked', rebuild: 'A meeting-specific brief', keep: 'Qualification' },
+    {
+      event: 'A call transcript arrives',
+      rebuild: 'Facts, objections, commitments, next steps',
+      keep: 'Firmographics',
+    },
+    {
+      event: 'The rep corrects an inference',
+      rebuild: 'Everything that depended on it',
+      keep: 'The evidence it came from',
+    },
+    {
+      event: 'A signal expires',
+      rebuild: 'Removed from active recommendations',
+      keep: 'The evidence row — never deleted',
+    },
+  ];
+
+  /** Days since the last finished run, for the step-1 line. */
+  lastRunDays(p: Prep): number | null {
+    if (!p.last_run?.at) return null;
+    const ms = Date.now() - new Date(p.last_run.at).getTime();
+    return Math.max(0, Math.floor(ms / 86400000));
+  }
+
+  /** The oldest live signal, which a refresh does not make younger. */
+  oldestSignalDays(p: Prep): number | null {
+    const ages = p.signals.map((s) => s.age_days).filter((d): d is number => d !== null);
+    return ages.length ? Math.max(...ages) : null;
+  }
+
+  refresh(p: Prep): void {
+    this.refreshing.set(true);
+    this.genError.set(null);
+    const one = p.list_ids.length === 1 ? p.list_ids[0] : undefined;
+    this.api.refresh(p.account_id, one).subscribe({
+      next: () => this.reload(p.contact_id, () => this.refreshing.set(false)),
+      error: (err) => {
+        this.genError.set(apiError(err, 'Could not refresh research.'));
+        this.refreshing.set(false);
+      },
+    });
+  }
+
+  addIntel(p: Prep): void {
+    this.savingIntel.set(true);
+    this.genError.set(null);
+    this.api
+      .addIntel(p.account_id, {
+        text: this.intelText.trim(),
+        url: this.intelUrl.trim() || null,
+        contact_id: p.contact_id,
+      })
+      .subscribe({
+        next: () => {
+          this.intelText = '';
+          this.intelUrl = '';
+          this.intelSaved.set(true);
+          this.reload(p.contact_id, () => this.savingIntel.set(false));
+        },
+        error: (err) => {
+          this.genError.set(apiError(err, 'Could not save that.'));
+          this.savingIntel.set(false);
+        },
+      });
+  }
+
+  /** Re-read the whole screen. Anything that adds evidence moves the
+   *  freshness panel and the staleness flag as well as its own section. */
+  private reload(contactId: string, done: () => void): void {
+    this.api.forContact(contactId).subscribe({
+      next: (fresh) => {
+        this.prep.set(fresh);
+        done();
+      },
+      error: () => done(),
+    });
   }
 
   readonly verdicts = [

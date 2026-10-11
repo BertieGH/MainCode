@@ -77,7 +77,13 @@ class Evaluation(Base):
             "'outreach_sequence','draft','sales_prep','execution')",
             name="subject_type_valid",
         ),
-        CheckConstraint("method IN ('rules','llm','hybrid')", name="method_valid"),
+        # `rep` is a person pressing a button on the prep screen. It lives
+        # here rather than in a table of its own because "was this any good"
+        # has one home, and a rep's answer and the evaluator's belong in it
+        # together.
+        CheckConstraint(
+            "method IN ('rules','llm','hybrid','rep')", name="method_valid"
+        ),
         CheckConstraint("verdict IN ('pass','warn','fail')", name="verdict_valid"),
         CheckConstraint(
             "verdict = 'pass' OR (issues IS NOT NULL AND jsonb_array_length(issues) > 0)",

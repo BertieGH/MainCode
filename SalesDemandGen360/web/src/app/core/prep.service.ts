@@ -61,6 +61,18 @@ export interface PrepQualification {
   unassessed: string[];
 }
 
+export interface SignalEvidence {
+  id: string;
+  source_name: string | null;
+  source_url: string | null;
+  excerpt: string;
+  /** When the source says it happened. */
+  observed_at: string | null;
+  /** When we read it. A stale fact can be freshly retrieved. */
+  retrieved_at: string | null;
+  reliability: number | null;
+}
+
 export interface PrepSignal {
   id: string;
   signal_type: string;
@@ -75,8 +87,12 @@ export interface PrepSignal {
   lifecycle_state: string;
   is_hypothesis: boolean;
   age_days: number | null;
+  expires_in_days: number | null;
   evidence_count: number;
   sources: string[];
+  evidence: SignalEvidence[];
+  /** What a rep said about it, if anything. */
+  rep_verdict: string | null;
 }
 
 export interface PrepThread {
@@ -156,6 +172,16 @@ export interface Brief {
   open_questions: string[];
 }
 
+export interface LastRun {
+  at: string | null;
+  status: string | null;
+  planned: number;
+  ran: number;
+  empty: number;
+  failed: number;
+  evidence: number;
+}
+
 export interface Prep {
   contact_id: string;
   contact_name: string;
@@ -195,6 +221,9 @@ export interface Prep {
   brief_is_stale: boolean;
   hypothesis_verdict: string | null;
   outcome: string | null;
+  /** What the last research run actually did, shown before a refresh is bought. */
+  last_run: LastRun | null;
+  list_ids: string[];
   /** Decided from the engagement ladder, not chosen by a rep. */
   mode: 'pre_engagement' | 'engagement_aware';
 }
@@ -250,6 +279,39 @@ export class PrepService {
   /** One contact, on demand. Never batched — see the API docstring. */
   generate(contactId: string): Observable<GeneratedBrief> {
     return this.http.post<GeneratedBrief>(`/api/prep/${contactId}/generate`, {});
+  }
+
+  /**
+   * Re-run research for this account only, with the cost stated first.
+   *
+   * The list decides which ICPs say what to look for. With exactly one the
+   * route resolves it; with several it refuses rather than picking, because
+   * researching against the wrong ICP succeeds and is wrong.
+   */
+  refresh(accountId: string, listId?: string): Observable<unknown> {
+    const q = listId ? `?list_id=${listId}` : '';
+    return this.http.post(`/api/accounts/${accountId}/run-research${q}`, {});
+  }
+
+  /**
+   * What a rep saw, stored as attributed evidence. Research never opens
+   * LinkedIn; this is how a post or a profile line gets in.
+   */
+  addIntel(
+    accountId: string,
+    body: { text: string; url?: string | null; contact_id?: string },
+  ): Observable<unknown> {
+    return this.http.post(`/api/accounts/${accountId}/pasted-evidence`, body);
+  }
+
+  /**
+   * What a rep says about a signal, kept where evaluations are kept.
+   *
+   * `outdated` and `inaccurate` stay apart: one says the refresh cadence is
+   * wrong, the other that the reading is.
+   */
+  judgeSignal(signalId: string, verdict: string, note?: string) {
+    return this.http.post(`/api/prep/signals/${signalId}/verdict`, { verdict, note });
   }
 
   /**

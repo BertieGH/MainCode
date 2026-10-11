@@ -865,3 +865,147 @@ class TestTheHypothesisCannotBeForgotten:
 
         with pytest.raises(ValidationError):
             SalesPrepPayload.model_validate(_brief(problem_is_unproven=""))
+
+
+class TestARepCanJudgeASignal:
+    """The loop closing: every other verdict in the system is the model's own.
+
+    A rep who reads the passage and says it is outdated knows something no
+    evaluator does, and until this there was nowhere to put it.
+    """
+
+    @pytest.fixture
+    async def signal(self, session, contact):
+        # Evidence first: a database trigger enforces invariant 1, so a bare
+        # signal cannot be committed. These tests commit, which is how the
+        # trigger found the fixture.
+        from app.models.signal import Evidence, signal_evidence
+
+        ev = Evidence(
+            account_id=contact.account_id,
+            source_type="web",
+            source_url="https://example.invalid/mcp",
+            source_name="Doist blog",
+            excerpt="A set of tools to connect AI agents to Todoist.",
+            observed_at=date.today(),
+            source_hash="a" * 64,
+            excerpt_hash="b" * 64,
+            raw_status="unavailable",
+        )
+        row = Signal(
+            account_id=contact.account_id,
+            signal_type="product_launch",
+            scope="company",
+            summary="Released todoist-mcp.",
+            strength="medium",
+            confidence=0.95,
+            observed_at=date.today(),
+            lifecycle_state="discovered",
+        )
+        session.add_all([ev, row])
+        await session.flush()
+        await session.execute(
+            signal_evidence.insert().values(signal_id=row.id, evidence_id=ev.id)
+        )
+        await session.flush()
+        return row
+
+    async def test_a_verdict_is_recorded_where_evaluations_live(
+        self, api, session, contact, signal
+    ):
+        from app.models.governance import Evaluation
+
+        r = await api.post(
+            f"/api/prep/signals/{signal.id}/verdict", json={"verdict": "outdated"}
+        )
+        assert r.status_code == 200, r.text
+
+        row = (await session.execute(select(Evaluation))).scalars().one()
+        assert row.subject_type == "signal" and row.method == "rep"
+        # Three values cannot carry five, so the word is kept beside them.
+        assert row.verdict == "fail"
+        assert row.scores["rep_verdict"] == "outdated"
+        assert row.issues[0]["kind"] == "outdated"
+
+    async def test_outdated_is_not_inaccurate(self, api, session, contact, signal):
+        """One says the refresh cadence is wrong, the other that the reading
+        is. Flattened to `fail` the evaluation layer cannot tell us which to
+        fix, which is the only reason either is worth collecting."""
+        from app.models.governance import Evaluation
+
+        await api.post(
+            f"/api/prep/signals/{signal.id}/verdict", json={"verdict": "inaccurate"}
+        )
+        row = (await session.execute(select(Evaluation))).scalars().one()
+        assert row.verdict == "fail"
+        assert row.scores["rep_verdict"] == "inaccurate"
+
+    async def test_an_accurate_verdict_survives_a_reload(
+        self, api, session, contact, signal
+    ):
+        """`accurate` maps to `pass`, and a pass stores no issues. Read back
+        from `issues` it came out as "pass" — a value no button matches — so a
+        recorded verdict silently vanished when the screen reloaded."""
+        await api.post(
+            f"/api/prep/signals/{signal.id}/verdict", json={"verdict": "accurate"}
+        )
+        body = await _get(api, contact)
+        found = next(s for s in body["signals"] if s["id"] == str(signal.id))
+        assert found["rep_verdict"] == "accurate"
+
+    async def test_an_unknown_verdict_is_refused(self, api, signal):
+        r = await api.post(
+            f"/api/prep/signals/{signal.id}/verdict", json={"verdict": "rubbish"}
+        )
+        assert r.status_code == 400
+        assert "accurate" in r.json()["detail"]
+
+    async def test_the_newest_verdict_is_the_one_shown(
+        self, api, session, contact, signal
+    ):
+        """A rep may change their mind; the record keeps both."""
+        from app.models.governance import Evaluation
+
+        for verdict in ("inaccurate", "accurate"):
+            await api.post(
+                f"/api/prep/signals/{signal.id}/verdict", json={"verdict": verdict}
+            )
+        body = await _get(api, contact)
+        found = next(s for s in body["signals"] if s["id"] == str(signal.id))
+        assert found["rep_verdict"] == "accurate"
+        kept = (await session.execute(select(Evaluation))).scalars().all()
+        assert len(kept) == 2, "an evaluation is a record, not a setting"
+
+    async def test_the_evidence_carries_both_dates(self, api, session, contact, signal):
+        """When it happened, and when we read it. A nine-month-old post read
+        this morning is fresh research into a stale fact."""
+        from app.models.signal import Evidence, signal_evidence
+
+        ev = Evidence(
+            account_id=contact.account_id,
+            source_type="web",
+            source_url="https://example.invalid/post",
+            source_name="Doist blog",
+            excerpt="A set of tools to connect AI agents to Todoist.",
+            observed_at=date.today() - timedelta(days=270),
+            source_hash="h" * 64,
+            excerpt_hash="e" * 64,
+            raw_status="unavailable",
+        )
+        session.add(ev)
+        await session.flush()
+        await session.execute(
+            signal_evidence.insert().values(signal_id=signal.id, evidence_id=ev.id)
+        )
+        await session.flush()
+
+        body = await _get(api, contact)
+        found = next(s for s in body["signals"] if s["id"] == str(signal.id))
+        old = next(
+            e for e in found["evidence"] if e["source_url"].endswith("/post")
+        )
+        assert old["excerpt"].startswith("A set of tools")
+        assert old["source_name"] == "Doist blog"
+        # Dated nine months ago, retrieved just now.
+        assert old["observed_at"] != str(date.today())
+        assert old["retrieved_at"].startswith(str(date.today()))
