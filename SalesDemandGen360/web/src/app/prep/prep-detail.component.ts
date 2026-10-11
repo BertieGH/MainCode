@@ -392,15 +392,29 @@ import { apiError } from '../shared/api-error';
         </div>
 
         <!-- 5 · evidence -->
-        <div class="seclabel">Intelligence supporting this brief · {{ p.signals.length }} live</div>
+        <div class="seclabel">
+          Intelligence supporting this brief — {{ p.signals.length }} signals, each openable
+        </div>
         <div class="empty" *ngIf="!p.signals.length">
           No live signal. A brief here would argue from no trigger at all.
         </div>
-        <details class="ev" *ngFor="let s of p.signals; trackBy: bySignalId">
+        <details
+          class="ev"
+          *ngFor="let s of p.signals; trackBy: bySignalId; let i = index"
+          [open]="i === 0">
+          <!--
+            The heading IS the observation, so the body does not repeat it.
+            It did, word for word, directly beneath itself — the longest line
+            on the card, said twice, pushing everything that differed below
+            the fold.
+          -->
           <summary>
             <span>
               <strong>{{ s.summary }}</strong>
-              <span class="row-sub">{{ s.signal_type }} · {{ s.observed_at }} · {{ age(s.age_days) }} old</span>
+              <span class="row-sub">
+                <span class="ep ep-fact" [title]="EP.fact">fact</span>
+                {{ s.signal_type }} · {{ s.observed_at }} · {{ age(s.age_days) }} old
+              </span>
             </span>
             <span class="tags">
               <span class="badge badge-good">evidence {{ s.evidence_confidence }}</span>
@@ -410,11 +424,7 @@ import { apiError } from '../shared/api-error';
           </summary>
           <div class="evbody">
             <dl class="kv tight">
-              <div>
-                <dt>Observed <span class="ep ep-fact" [title]="EP.fact">fact</span></dt>
-                <dd>{{ s.summary }}</dd>
-              </div>
-              <div *ngFor="let e of s.evidence">
+              <ng-container *ngFor="let e of s.evidence">
                 <dt>Source</dt>
                 <dd>
                   <a *ngIf="e.source_url" class="link" [href]="e.source_url"
@@ -430,22 +440,29 @@ import { apiError } from '../shared/api-error';
                     · reliability {{ e.reliability }}</span>
                   <blockquote>{{ e.excerpt }}</blockquote>
                 </dd>
-              </div>
-              <div *ngIf="s.business_implication">
+              </ng-container>
+
+              <ng-container *ngIf="s.business_implication">
                 <dt>Interpretation <span class="ep ep-inf" [title]="EP.inference">inference</span></dt>
                 <dd>{{ s.business_implication }}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>
-                  <span class="badge"
-                        [ngClass]="s.lifecycle_state === 'discovered' ? 'badge-good' : 'badge-neutral'">
-                    {{ s.lifecycle_state }}
-                  </span>
-                  <span class="muted" *ngIf="s.expires_in_days != null">
-                    · expires in {{ s.expires_in_days }} days</span>
-                </dd>
-              </div>
+              </ng-container>
+
+              <dt>Relevance</dt>
+              <dd *ngIf="s.relevance">{{ s.relevance }}</dd>
+              <dd *ngIf="!s.relevance" class="muted">
+                Nothing cites this — not the trigger, and no dimension scored from it.
+                Found and paid for, and so far unused.
+              </dd>
+
+              <dt>Status</dt>
+              <dd>
+                <span class="badge"
+                      [ngClass]="s.lifecycle_state === 'discovered' ? 'badge-good' : 'badge-neutral'">
+                  {{ s.lifecycle_state }}
+                </span>
+                <span class="muted" *ngIf="s.expires_in_days != null">
+                  · expires in {{ s.expires_in_days }} days</span>
+              </dd>
             </dl>
 
             <!--
@@ -603,15 +620,14 @@ import { apiError } from '../shared/api-error';
 
         <ng-container *ngIf="p.brief as b">
         <div class="seclabel">After the call</div>
-        <div class="card">
-          <p class="row-sub" style="margin-top:0">
-            The hypothesis verdict is the measure worth watching. Hypotheses that keep
-            being rejected mean the interpretation or the account selection is wrong —
-            not the writing.
-          </p>
-          <div class="verdict">
-            <div>
-              <div class="seclabel" style="margin-top:0">Did the hypothesis hold?</div>
+        <p class="note" style="margin-top:0">
+          This is what makes the system learn rather than only generate. It feeds the
+          evaluation layer, beside the verdicts a rep gives individual signals.
+        </p>
+        <div class="know" style="margin-top:14px">
+          <div>
+            <h4>Did the hypothesis hold?</h4>
+            <div class="marks">
               <button
                 class="btn btn-sm"
                 *ngFor="let v of verdicts"
@@ -620,8 +636,16 @@ import { apiError } from '../shared/api-error';
                 {{ v.label }}
               </button>
             </div>
-            <div>
-              <div class="seclabel" style="margin-top:0">Outcome</div>
+            <p class="row-sub" style="margin:10px 0 0">
+              The measure worth watching. Hypotheses that prospects keep rejecting mean
+              the interpretation or the account selection is wrong — not the writing,
+              and rewriting is the thing everyone reaches for first.
+            </p>
+          </div>
+
+          <div>
+            <h4>Outcome</h4>
+            <div class="marks">
               <button
                 class="btn btn-sm"
                 *ngFor="let o of outcomes"
@@ -630,6 +654,33 @@ import { apiError } from '../shared/api-error';
                 {{ o.label }}
               </button>
             </div>
+            <p class="row-sub" style="margin:10px 0 0">
+              What the call produced, kept apart from whether the reasoning was right.
+              A good brief can lose, and a lucky one can win.
+            </p>
+          </div>
+        </div>
+
+        <!--
+          Which question opened it up, and which facts were wrong. Free text
+          because the useful part is never in a fixed vocabulary, and because
+          the row already had somewhere to put it.
+        -->
+        <div class="card" style="margin-top:14px">
+          <div class="seclabel" style="margin-top:0">What actually happened</div>
+          <textarea
+            class="field"
+            rows="3"
+            placeholder="Which question opened it up, what we had wrong, anything the brief should have said"
+            [(ngModel)]="repNote"></textarea>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button
+              class="btn btn-sm"
+              (click)="record(p, { rep_note: repNote })"
+              [disabled]="!repNote.trim()">
+              Save note
+            </button>
+            <span class="row-sub" *ngIf="p.rep_note">Saved.</span>
           </div>
         </div>
         </ng-container>
@@ -678,7 +729,15 @@ import { apiError } from '../shared/api-error';
          screen exists. */
       /* A sidebar of full-size cards competes with the plan it supports. */
       .kv { margin: 0; display: grid; gap: 13px; }
-      .kv.tight { gap: 8px; }
+      /* Two columns, labels in the left one, so they line up down the card
+         rather than each pair stacking on its own. The dt and dd must be
+         direct children for this — wrapping each pair in a div made every
+         row its own little layout, which is what it looked like. */
+      .kv.tight { grid-template-columns: max-content minmax(0, 1fr);
+                  gap: 7px 16px; align-items: baseline; }
+      @media (max-width: 620px) {
+        .kv.tight { grid-template-columns: 1fr; gap: 3px 0; }
+      }
       .kv dt { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem;
                letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint);
                margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
@@ -815,6 +874,7 @@ export class PrepDetailComponent implements OnInit {
   refreshing = signal(false);
   savingIntel = signal(false);
   intelSaved = signal(false);
+  repNote = '';
   intelText = '';
   intelUrl = '';
 
@@ -953,7 +1013,10 @@ export class PrepDetailComponent implements OnInit {
     });
   }
 
-  record(p: Prep, body: { hypothesis_verdict?: string; outcome?: string }): void {
+  record(
+    p: Prep,
+    body: { hypothesis_verdict?: string; outcome?: string; rep_note?: string },
+  ): void {
     if (!p.brief_id) return;
     this.api.verdict(p.brief_id, body).subscribe({
       next: () => this.prep.set({ ...p, ...body }),

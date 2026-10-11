@@ -80,6 +80,14 @@ function basis_is(dim: { basis: string }, value: string): boolean {
                     title="Ignore the reuse window and buy every planned family again">
               Rerun
             </button>
+            <!-- To the index filtered to this company, not to a brief: prep is
+                 one contact at a time, and which person you are calling is a
+                 choice this screen cannot make for you. -->
+            <a class="btn" [routerLink]="['/prep']"
+               [queryParams]="{ q: d.account_name }"
+               title="Prepare for a call with someone here">
+              Sales prep
+            </a>
           </div>
         </div>
       </div>

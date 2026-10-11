@@ -91,6 +91,12 @@ export interface PrepSignal {
   evidence_count: number;
   sources: string[];
   evidence: SignalEvidence[];
+  /**
+   * Why this signal matters here, derived from what cites it — the strategy
+   * names its trigger, the scorer names the evidence each dimension used.
+   * Null means nothing cites it, which is worth seeing on its own.
+   */
+  relevance: string | null;
   /** What a rep said about it, if anything. */
   rep_verdict: string | null;
 }
@@ -221,6 +227,7 @@ export interface Prep {
   brief_is_stale: boolean;
   hypothesis_verdict: string | null;
   outcome: string | null;
+  rep_note: string | null;
   /** What the last research run actually did, shown before a refresh is bought. */
   last_run: LastRun | null;
   list_ids: string[];

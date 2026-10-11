@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { PrepIndex, PrepRow, PrepService, ageLabel } from '../core/prep.service';
 import { DataTableComponent } from '../shared/data-table.component';
@@ -155,6 +155,7 @@ import { apiError } from '../shared/api-error';
 export class PrepComponent implements OnInit {
   private api = inject(PrepService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   query = '';
   data = signal<PrepIndex | null>(null);
@@ -205,6 +206,10 @@ export class PrepComponent implements OnInit {
   sorted = computed(() => sortRows(this.data()?.results ?? [], this.sort(), this.accessors));
 
   ngOnInit(): void {
+    // Arriving from an account screen carries the company name, so the rep
+    // lands on that company's people rather than on all 124 contacts and a
+    // search box.
+    this.query = this.route.snapshot.queryParamMap.get('q') ?? '';
     this.search();
   }
 
