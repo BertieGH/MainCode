@@ -913,8 +913,17 @@ export class ListDetailComponent implements OnInit {
     const lead = out.cancelled
       ? `Research stopped after ${out.completed} of ${rows.length}: `
       : 'Research: ';
-    const text = `${lead}${summary()}.`
-      + (t.reused ? ` Reused means answered within the last ${t.window} days.` : '');
+    // **A run that only reused says so first.** It used to open with
+    // "0 researched · 0 evidence rows", which is the success message for
+    // this case and reads exactly like a button that did nothing — reported
+    // as broken, twice. Nothing was bought because nothing needed buying,
+    // and the sentence now says that before it says any number.
+    const onlyReused = !out.cancelled && t.reused && !t.researched && !t.partial && !t.failed;
+    const text = onlyReused
+      ? `Already researched in the last ${t.window} days — nothing re-bought`
+        + `${t.reused > 1 ? ` for ${t.reused} accounts` : ''}.`
+      : `${lead}${summary()}.`
+        + (t.reused ? ` Reused means answered within the last ${t.window} days.` : '');
     // The company was still researched; the people need finding first.
     const enrichFirst = t.noContacts
       ? `${t.noContacts} account${t.noContacts === 1 ? ' has' : 's have'} no ICP contact with a `
@@ -927,6 +936,13 @@ export class ListDetailComponent implements OnInit {
       );
     } else if (out.cancelled || enrichFirst) {
       this.notify.warning(text, enrichFirst);
+    } else if (onlyReused) {
+      // Named, because a rep who wanted fresh evidence has just been told
+      // nothing happened and needs the next move, not an explanation.
+      this.notify.success(
+        text,
+        "Rerun research ignores the window and pays for every family again.",
+      );
     } else {
       this.notify.success(text);
     }
@@ -1159,6 +1175,12 @@ export class ListDetailComponent implements OnInit {
     // Research and finding people are company-wide work reached from a person:
     // the row a rep is looking at is where they notice it is needed.
     { key: 'research', label: 'Research their company' },
+    // The same work with the reuse window ignored. It exists here because a
+    // company researched a fortnight ago answers "Research their company"
+    // with "0 researched · 1 reused", and the only way to force it used to
+    // be leaving the person you were looking at, switching to Accounts and
+    // finding their company by name.
+    { key: 'rerun_company', label: "Rerun their company's research" },
     { key: 'find_contacts', label: 'Find more people there' },
     {
       key: 'copy_email',
@@ -1215,6 +1237,9 @@ export class ListDetailComponent implements OnInit {
         return;
       case 'research':
         void this.runResearch(this.companiesOf(run.rows));
+        return;
+      case 'rerun_company':
+        void this.rerunResearch(this.companiesOf(run.rows));
         return;
       case 'research_person':
         void this.researchPeople(run.rows);
