@@ -820,16 +820,25 @@ export class ListDetailComponent implements OnInit {
   }
 
   /** Research again, ignoring the reuse window — after asking, since it pays twice. */
-  private async rerunResearch(rows: RunItem[]): Promise<void> {
+  private async rerunResearch(
+    rows: RunItem[],
+    scope: 'both' | 'company' | 'contacts' = 'company',
+  ): Promise<void> {
     const n = rows.length;
+    const half = scope === 'company' ? "company's" : scope === 'contacts' ? "people's" : '';
     const ok = await this.confirm.ask({
-      title: `Rerun research for ${n} account${n === 1 ? '' : 's'}?`,
+      title: `Rerun ${half} research for ${n} account${n === 1 ? '' : 's'}?`,
       body:
-        'This ignores the reuse window and pays for every family again — including ones ' +
-        'answered in the last few days. Run research reuses those instead.',
+        `This ignores the reuse window and pays for every ${half || ''} family again — ` +
+        'including ones answered in the last few days. Run research reuses those instead.'
+        // Said plainly, because the opposite assumption is what cost the money:
+        // a rerun used to re-buy both halves whichever one you meant.
+        + (scope === 'company'
+          ? ' Their people are left alone — research the people separately if you need them again.'
+          : ''),
       confirmLabel: 'Rerun research',
     });
-    if (ok) await this.runResearch(rows, true);
+    if (ok) await this.runResearch(rows, true, scope);
   }
 
   /**
@@ -838,7 +847,11 @@ export class ListDetailComponent implements OnInit {
    * asked. The server already researched one account at a time; this only
    * moves the loop to where it can be watched.
    */
-  private async runResearch(rows: RunItem[], force = false): Promise<void> {
+  private async runResearch(
+    rows: RunItem[],
+    force = false,
+    scope: 'both' | 'company' | 'contacts' = 'both',
+  ): Promise<void> {
     this.working.set(force ? 'rerun' : 'research');
     const t = {
       researched: 0, partial: 0, reused: 0, failed: 0, halted: 0, skipped: 0,
@@ -869,7 +882,13 @@ export class ListDetailComponent implements OnInit {
               : { kind: 'success', text: r.reused ? 'reused recent research' : `${r.evidence_stored ?? 0} evidence · ${r.signals_stored ?? 0} signals` },
       items: rows,
       call: (id) =>
-        this.api.researchAccounts(this.listId, [id], force, this.researchContacts()?.[id]),
+        this.api.researchAccounts(this.listId, [id], force, this.researchContacts()?.[id], {
+          scope,
+          // A rerun re-sweeps what was asked for. Defaulting this to `both`
+          // is the behaviour that re-bought a contact pass on every one of
+          // the seven reruns one account had in an afternoon.
+          forceScope: scope,
+        }),
       onResult: (_, r) => {
         if (!r.ran || r.blocked) {
           // A blocked capability is the same answer for every account.
@@ -1236,10 +1255,12 @@ export class ListDetailComponent implements OnInit {
         this.askEnrichPeople(run.rows);
         return;
       case 'research':
-        void this.runResearch(this.companiesOf(run.rows));
+        // The company only. Buying its people as well was invisible on the
+        // screen and 40% of the bill.
+        void this.runResearch(this.companiesOf(run.rows), false, 'company');
         return;
       case 'rerun_company':
-        void this.rerunResearch(this.companiesOf(run.rows));
+        void this.rerunResearch(this.companiesOf(run.rows), 'company');
         return;
       case 'research_person':
         void this.researchPeople(run.rows);

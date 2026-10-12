@@ -77,6 +77,40 @@ class EvidenceBatch(BaseModel):
         return self
 
 
+class SweepBatch(EvidenceBatch):
+    """What the cheap scan found, **and which families are worth buying**.
+
+    A subclass rather than two more fields on `EvidenceBatch`, because every
+    family returns that contract and only the scan is asked to plan.
+
+    **Why the scan plans at all.** It is the most efficient grounded call in
+    the system — measured over 88 runs: 2.3 evidence rows each, 2 empties, at
+    one search apiece — and it already sees the whole family list. It was
+    being used as a doorman: all families, or none. In 88 runs "none" fired
+    twice. Meanwhile `regulators_and_registers` was bought 80 times and came
+    back empty 50 of them, because a family runs when it is in the plan, not
+    when there is something to find.
+    """
+
+    #: The instruction lives here, not only in the prompt, because this text
+    #: reaches the model: it is compiled into Gemini's `responseSchema`,
+    #: where a Python comment would not be.
+    families_worth_buying: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Keys from `families_available` that a deeper search would "
+            "plausibly find something in for THIS company, judged from what "
+            "the scan just saw. Name a family when the scan found a trace of "
+            "it, when the company's size, sector or situation makes it "
+            "likely, or when you are unsure — leaving one out stops it being "
+            "bought at all. Omit only a family you are confident holds "
+            "nothing here: a private company with no filings, a firm with no "
+            "conference presence. An empty list means every family is bought, "
+            "so say nothing rather than guess wildly."
+        ),
+    )
+
+
 # --------------------------------------------------------------------------
 # contact research — the same rules, about named people
 # --------------------------------------------------------------------------

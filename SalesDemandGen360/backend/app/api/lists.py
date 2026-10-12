@@ -1198,12 +1198,29 @@ class ResearchTargetsIn(BaseModel):
     contact_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200)
 
 
+#: Which halves of a run to buy.
+#:
+#: **Measured, which is why this exists.** A company pass is six grounded
+#: searches and a contact pass is four more — 40% of the bill for 4% of the
+#: evidence — and one button used to buy both. A rep re-sweeping a company
+#: paid for its people again every time, and nothing on the screen said so.
+RESEARCH_SCOPES = ("both", "company", "contacts")
+
+
 @router.post("/lists/{list_id}/run-research", response_model=ResearchOut)
 async def run_research_for_list(
     list_id: uuid.UUID,
     limit: int = Query(5, ge=1, le=100),
     payload: ResearchTargetsIn | None = Body(None),
     force: bool = Query(False),
+    #: What `force` ignores the reuse window *for*.
+    #:
+    #: It used to ignore it for everything, which made "rerun this company"
+    #: re-buy its contact pass at full price — the largest single waste in
+    #: the ledger. A rerun now re-sweeps what you asked to re-sweep.
+    force_scope: str = Query("company", pattern="^(both|company|contacts)$"),
+    #: Which halves run at all. `company` leaves the people alone entirely.
+    scope: str = Query("both", pattern="^(both|company|contacts)$"),
     # One cheap sweep before the per-family passes; nothing found means the
     # families are not bought. On by default — it is the saving — and a query
     # param rather than buried config because the first thing anyone needs to
@@ -1300,12 +1317,27 @@ async def run_research_for_list(
     list_plan = await research_service.plan_for_list(session, list_id)
     planned = set(list_plan.company.keys)
     contact_families = set(list_plan.contact.keys)
+    # **Scope narrows the plan, not the runner.** Emptying a family set here
+    # means the reuse arithmetic, the "nothing to do" check and the report all
+    # agree with what was actually bought. Suppressing it at the call instead
+    # would leave this function counting work that never happened.
+    if scope == "company":
+        contact_families = set()
+    elif scope == "contacts":
+        planned = set()
+    # A plan that buys nothing. `None` would mean "the whole registry" to the
+    # runner — the opposite of what a narrowed scope is asking for.
+    empty_plan = research_service.ResearchPlan(families=[])
 
     crm = StubCrmAdapter()
     for account in ready:
+        # `force` is scoped now. A contacts-only rerun must not drag the
+        # company's families back through the window with it.
+        force_company = force and force_scope in ("both", "company")
+        force_contacts = force and force_scope in ("both", "contacts")
         fresh = (
             {}
-            if force
+            if force_company
             else await research_service.fresh_families(session, account.id, days=window)
         )
         fresh = {family: when for family, when in fresh.items() if family in planned}
@@ -1328,7 +1360,7 @@ async def run_research_for_list(
         )
         person_fresh = (
             {}
-            if force or chosen_people or not people
+            if force_contacts or chosen_people or not people
             else await research_service.fresh_contact_families(session, account.id, days=window)
         )
         contact_skip = {
@@ -1401,9 +1433,18 @@ async def run_research_for_list(
                 ),
                 skip_families=frozenset(fresh),
                 quarantined=held,
-                company_plan=list_plan.company,
-                contacts=people,
-                contact_plan=list_plan.contact,
+                company_plan=(
+                    list_plan.company if scope != "contacts" else empty_plan
+                ),
+                # The people half is withheld by passing nobody rather than by
+                # a flag inside the pipeline: the pipeline's rule is that a
+                # contact pass happens when there are contacts and a plan for
+                # them, and keeping that rule single is what stops a third
+                # caller inventing a fourth way to skip it.
+                contacts=people if scope != "company" else [],
+                contact_plan=(
+                    list_plan.contact if scope != "company" else None
+                ),
                 run_contact_family=pipeline.llm_contact_runner(session, run_id=run_id),
                 contact_skip=contact_skip,
                 icp_version_ids=list_plan.icp_version_ids,
@@ -1583,6 +1624,8 @@ async def run_research_for_account(
         None, description="Research only these people at the account. Omit for the company."
     ),
     force: bool = Query(False),
+    force_scope: str = Query("company", pattern="^(both|company|contacts)$"),
+    scope: str = Query("both", pattern="^(both|company|contacts)$"),
     fast_sweep: bool = Query(True),
     profiles: bool = Query(True),
     session: AsyncSession = Depends(get_session),
@@ -1648,6 +1691,8 @@ async def run_research_for_account(
             account_ids=[account_id], contact_ids=list(contact_ids or [])
         ),
         force=force,
+        force_scope=force_scope,
+        scope=scope,
         fast_sweep=fast_sweep,
         profiles=profiles,
         session=session,

@@ -664,13 +664,29 @@ export class ListsService {
    * Research only the selected accounts. Unconfirmed ones are skipped
    * server-side, and families answered inside the reuse window are reused —
    * unless `force`, which is "Rerun research".
+   *
+   * `scope` decides which halves are bought and `forceScope` which halves a
+   * rerun re-buys. Both default the way the money says they should: a rerun
+   * re-sweeps the company and leaves its people inside their window, because
+   * the contact pass is four grounded searches for a tenth of the evidence
+   * and re-buying it on every rerun is what made a day's work cost $10.
    */
-  researchAccounts(listId: string, accountIds: string[], force = false,
-    contactIds?: string[]): Observable<any> {
+  researchAccounts(
+    listId: string,
+    accountIds: string[],
+    force = false,
+    contactIds?: string[],
+    opts: { scope?: 'both' | 'company' | 'contacts';
+            forceScope?: 'both' | 'company' | 'contacts' } = {},
+  ): Observable<any> {
+    const params: Record<string, string> = {};
+    if (force) params['force'] = 'true';
+    if (opts.scope) params['scope'] = opts.scope;
+    if (opts.forceScope) params['force_scope'] = opts.forceScope;
     return this.http.post(
       `/api/lists/${listId}/run-research`,
       { account_ids: accountIds, contact_ids: contactIds ?? [] },
-      { params: force ? { force: 'true' } : {} },
+      { params },
     );
   }
 

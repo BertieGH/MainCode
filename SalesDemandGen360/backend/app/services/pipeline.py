@@ -200,6 +200,11 @@ class SweepOutcome:
     #: a finding rather than a blank: these are the questions that were asked.
     not_found: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+    #: Families the scan judged worth a closer look here. `None` means it did
+    #: not say — an older sweep, a stub, a model that returned nothing — and
+    #: is **not** the same as the empty tuple. None buys everything; empty
+    #: would buy nothing, and a silent model must never empty a run.
+    worth_buying: tuple[str, ...] | None = None
 
 
 def _stale_note(count: int) -> tuple[str, ...]:
@@ -446,21 +451,34 @@ async def run_research(
             )
             if sweep.found == 0:
                 reason = "fast sweep found nothing worth a closer look"
-                for planned in plan.families:
-                    await record_coverage(
-                        session,
-                        run_id=run.id,
-                        account_id=account.id,
-                        family=planned.family,
-                        evidence_count=0,
-                        skipped=reason,
-                    )
-                result.gated_out = tuple(f.family for f in plan.families)
-                log.info(
-                    "pipeline.gated account=%s families_skipped=%d",
-                    account.id, len(result.gated_out),
+                dropped = list(plan.families)
+            else:
+                # **Per family, not all-or-nothing.** The scan sees the family
+                # list and now says which are worth buying here; the branch
+                # above only ever fired for an account with nothing at all,
+                # which was 2 runs in 88. The waste was never the dead
+                # account — it was `regulators_and_registers` bought 80 times
+                # and empty 50 of them, on accounts that were otherwise live.
+                dropped = _not_worth_buying(plan, sweep.worth_buying)
+                reason = "fast sweep found no trace of this here"
+
+            for planned in dropped:
+                await record_coverage(
+                    session,
+                    run_id=run.id,
+                    account_id=account.id,
+                    family=planned.family,
+                    evidence_count=0,
+                    skipped=reason,
                 )
-                plan = ResearchPlan(families=[], orphan_types=plan.orphan_types)
+            if dropped:
+                result.gated_out = tuple(f.family for f in dropped)
+                log.info(
+                    "pipeline.gated account=%s families_skipped=%d of=%d",
+                    account.id, len(dropped), len(plan.families),
+                )
+                kept = [f for f in plan.families if f not in dropped]
+                plan = ResearchPlan(families=kept, orphan_types=plan.orphan_types)
 
     if concurrent_families:
         # **Nothing of ours may be uncommitted once a family starts.** The
@@ -1018,6 +1036,46 @@ def llm_profile_runner(session: AsyncSession):
     return run
 
 
+def _not_worth_buying(plan: ResearchPlan, worth: tuple[str, ...] | None) -> list:
+    """Which planned families the scan's judgement lets us skip.
+
+    Three guards, each of which a naive filter gets wrong.
+
+    **Silence buys everything.** `None` is "the scan did not say" — an older
+    sweep, a stub, a model that returned no list. Only a model that named
+    *some* families has expressed an opinion about the ones it left out.
+
+    **A free family is never skipped.** `fetch` sources cost no grounded
+    search, so gating one saves nothing and can only lose evidence — and they
+    are the good ones: `company_site` and `linkedin_index` produce two thirds
+    of all evidence between them. The scan's opinion is about spend, so it
+    only gets to decide about spending.
+
+    **A family nothing else can answer is never skipped.** If a planned
+    family is the only one feeding a signal type, dropping it makes that
+    conclusion unreachable for the account — and a cheaper run that cannot
+    answer the question is not cheaper, it is a different run.
+    """
+    if not worth:
+        return []
+    named = {k.strip() for k in worth if k and k.strip()}
+
+    # Which types another surviving family could still answer.
+    covered: set[str] = set()
+    for family in plan.families:
+        if family.family in named or family.kind != "search":
+            covered.update(family.feeds)
+
+    dropped = []
+    for family in plan.families:
+        if family.family in named or family.kind != "search":
+            continue
+        if set(family.feeds) - covered:
+            continue  # the only route to those types
+        dropped.append(family)
+    return dropped
+
+
 def llm_sweep_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
     """The real fast sweep: one broad call, before anything expensive.
 
@@ -1043,6 +1101,10 @@ def llm_sweep_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
         ):
             result = await stages.signal_scan(session, account=account)
         batch = result.parsed
+        # Absent and empty mean different things, and `or None` would collapse
+        # them. A model that named nothing has not said "buy nothing".
+        named = getattr(batch, "families_worth_buying", None)
+        worth = tuple(named) if named else None
         outcome = await evidence_service.store_found(
             session,
             account_id=account.id,
@@ -1063,6 +1125,7 @@ def llm_sweep_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
             found=outcome.count + outcome.duplicates,
             not_found=tuple(batch.not_found),
             notes=_stale_note(outcome.stale),
+            worth_buying=worth,
         )
 
     return run

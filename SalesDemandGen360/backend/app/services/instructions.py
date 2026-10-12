@@ -167,15 +167,34 @@ Fill `verbatim` with the sentences you actually read, **quoted exactly** - \nthe
 **No contact routes in `verbatim` either.** A quoted line carrying an \naddress is still an address, and this is the likeliest field for one to \narrive in.
 """,
     "signal_scan": """
-# Task: a fast, broad sweep for anything worth a closer look
+# Task: a fast, broad sweep, and a plan for the run that follows
 
-Cheaper and shallower than a family run. You are looking for *whether* there is \
-something here, not building the case for it. Prefer breadth: one solid passage \
-each from several angles beats five from one.
+Cheaper and shallower than a family run. Prefer breadth: one solid passage each \
+from several angles beats five from one.
 
 Same evidence rules as full research — quote, date by when the fact was true, \
 link. Do not follow a promising thread to its end; note it and move on. The \
 family run that follows will do that properly.
+
+## Then say which families are worth buying
+
+`families_available` lists what the full run *could* search. Each one you name \
+in `families_worth_buying` is bought; each one you leave out is not searched at \
+all for this company.
+
+Judge from what you just saw and from what this company is. Name a family when \
+the sweep turned up a trace of it, when the company's size, sector or situation \
+makes it likely, **or when you are unsure** — the cost of naming one that finds \
+nothing is one search, and the cost of leaving out one that would have found \
+something is a conclusion nobody can reach.
+
+Leave a family out only when you are confident it holds nothing *here*: company \
+registers for a private firm that files nothing, a conference circuit for a \
+business whose people never speak, a job board for a company not hiring.
+
+Name at least one family whenever you found anything at all. An empty list is \
+read as "no opinion" and buys everything, so it says nothing — use it only when \
+the sweep found nothing whatsoever.
 """,
     "decision_maker_enrichment": """
 # Task: who at this account would care, and why

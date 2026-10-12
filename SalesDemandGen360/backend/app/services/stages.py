@@ -47,7 +47,7 @@ from app.schemas.contact import ContactBatch
 from app.schemas.context import AccountContextPayload
 from app.schemas.draft import DraftSet, FreshnessVerdict
 from app.schemas.evaluation import EvaluationResult
-from app.schemas.evidence import EvidenceBatch
+from app.schemas.evidence import EvidenceBatch, SweepBatch
 from app.schemas.resolution import CompanyResolution
 from app.schemas.prep import SalesPrepPayload
 from app.schemas.qualification import DimensionAssessments
@@ -845,8 +845,14 @@ async def resolve_company(
 
 async def signal_scan(
     session: AsyncSession, *, account: Account, client: Any | None = None
-) -> llm.CallResult[EvidenceBatch]:
-    """The cheap sweep that decides whether a full run is worth buying."""
+) -> llm.CallResult[SweepBatch]:
+    """The cheap sweep that decides **which** of a run is worth buying.
+
+    It used to decide only *whether*: anything found meant buy every family,
+    nothing found meant buy none, and in 88 runs the second branch fired
+    twice. It is handed `families_available` either way, so the judgement was
+    already in front of it and simply never asked for — `SweepBatch` asks.
+    """
     prefix = await load_prefix(session, "signal_scan", tools=WEB_TOOLS)
     plan = await build_plan(session)
     payload = {
@@ -858,7 +864,7 @@ async def signal_scan(
         "signal_scan",
         prefix=prefix,
         user_content=stable_json(payload),
-        output_model=EvidenceBatch,
+        output_model=SweepBatch,
         client=client,
     )
 
