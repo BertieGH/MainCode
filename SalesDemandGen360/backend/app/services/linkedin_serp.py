@@ -310,6 +310,96 @@ async def sweep_account(account: Any, *, key: str | None = None, http=None,
 PROVIDER = "searlo"
 
 
+@dataclass
+class PersonSweep:
+    """What the index holds about the people named, per person."""
+
+    #: `{contact_id: [evidence]}`. A person with nothing gets no key.
+    by_contact: dict = field(default_factory=dict)
+    misses: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+    credits: int = 0
+    queries: int = 0
+    error: str | None = None
+
+
+async def sweep_people(
+    account: Any,
+    people: list,
+    *,
+    key: str | None = None,
+    http=None,
+    max_age_days: int | None = 365,
+) -> PersonSweep:
+    """One X-Ray query per person, read from the index rather than the model.
+
+    **Why this exists.** The same search was being made by a grounded model
+    call: `contact_content_activity` is a signal type whose instruction is
+    literally `site:linkedin.com/posts "{person}" "{company}"`. That is a
+    lookup, not a judgement — a fixed query whose results are parsed, with
+    nothing for a model to decide — and it was costing a grounded search at
+    $0.035 where a credit here is between $0.0003 and $0.01.
+
+    **One query per person, not one per family.** The model call was batched
+    across everybody, which was its one advantage; a query naming two people
+    returns results for neither. The arithmetic still favours this below
+    roughly three or thirty-five people depending on the credit price, and
+    the waterfall gate in `pipeline` is what keeps the count low: these
+    queries are only reached for a company the index already showed posting.
+
+    Both operators in one query per person, which is the saving the separate
+    profile and post queries in `sweep_account` do not take: a profile and a
+    recent post for the same named person come back on one page often enough
+    to be worth one credit instead of two.
+    """
+    company = (getattr(account, "name", None) or "").strip()
+    if not company:
+        return PersonSweep(misses=("no company name — nothing to search the index for",))
+    if not key:
+        # A missing credential is not a coverage gap. Saying "found nothing"
+        # would be indistinguishable from a person with no public footprint.
+        return PersonSweep(
+            misses=("no SERP credential configured",),
+            notes=("contact LinkedIn needs a Searlo key before it can read anything",),
+        )
+
+    after = window_from(max_age_days)
+    own = http or _client(TIMEOUT)
+    owned = http is None
+    out = PersonSweep()
+    misses: list[str] = []
+    try:
+        for person in people:
+            name = (getattr(person, "full_name", None) or "").strip()
+            if not name:
+                misses.append("a contact with no name was not searched for")
+                continue
+            query = (
+                f'(site:linkedin.com/posts OR site:linkedin.com/in) '
+                f'"{name}" "{company}" {after}'.strip()
+            )
+            result = await _ask(own, key, query)
+            out.queries += 1
+            out.credits += result.credits
+            if result.error:
+                # Per person, so one refusal does not lose the others.
+                misses.append(f"{name}: {result.error}")
+                continue
+            if result.found:
+                out.by_contact[person.id] = result.found
+            else:
+                misses.append(f"nothing indexed for {name} at {company}")
+    finally:
+        if owned:
+            await own.aclose()
+    out.misses = tuple(misses)
+    log.info(
+        "linkedin_serp.people account=%s queries=%d credits=%d with_evidence=%d",
+        getattr(account, "id", None), out.queries, out.credits, len(out.by_contact),
+    )
+    return out
+
+
 async def api_key(session: AsyncSession) -> str | None:
     """The stored SERP key, or None when none is configured.
 

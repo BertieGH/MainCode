@@ -103,6 +103,12 @@ class RunResult:
     swept: int | None = None
     sweep_failed: str | None = None
     gated_out: tuple[str, ...] = ()
+    #: Dated LinkedIn posts the index holds for this company, if a family
+    #: looked. `None` is "nobody looked" and buys the people pass as before;
+    #: `0` is "looked, and this company's people are silent".
+    recent_posts: int | None = None
+    #: Set when the people pass was skipped because of the line above.
+    contacts_gated: bool = False
     #: The contact pass. Evidence stored per person; the people looked into;
     #: contact families that failed; person-families answered, and reused.
     contact_evidence: dict[uuid.UUID, int] = field(default_factory=dict)
@@ -172,6 +178,15 @@ class FamilyOutcome:
     #: Remarks about the shape of what came back — how much was kept, how much
     #: fell outside the window. Not misses, and shown apart from them.
     notes: tuple[str, ...] = ()
+    #: Dated LinkedIn posts the index holds for this company, when the family
+    #: that ran was the one that can see them. `None` means it did not look.
+    #:
+    #: **This is the waterfall's gate.** Roughly one professional in ten posts
+    #: at all, and the per-person pass costs a grounded search whether or not
+    #: there is anything to find: 29 of them returned one evidence row and no
+    #: signal. `linkedin_serp` has computed this number since the day it was
+    #: written and nothing has ever read it.
+    recent_posts: int | None = None
 
 
 #: Coverage is recorded per family, and the sweep is not one — it is the call
@@ -604,6 +619,8 @@ async def run_research(
 
         if isinstance(outcome, FamilyOutcome):
             count, not_found, notes = outcome.stored, outcome.not_found, outcome.notes
+            if outcome.recent_posts is not None:
+                result.recent_posts = outcome.recent_posts
         else:
             count, not_found, notes = int(outcome), (), ()
         result.evidence_by_family[family] = count
@@ -620,7 +637,46 @@ async def run_research(
     result.gaps = await gaps_for_run(session, run.id, plan)
 
     # --- 4. The people: the families their signals need, per person ---
-    if contacts and contact_plan is not None and run_contact_family is not None:
+    # **The waterfall.** About one professional in ten posts at all, and the
+    # per-person pass costs a grounded search whether or not there is anything
+    # to find: 29 of them returned a single evidence row and no signal.
+    #
+    # The company's own LinkedIn sweep already counted the dated posts the
+    # index holds — two Searlo credits, bought for other reasons — and has
+    # reported that number since the day it was written with nothing reading
+    # it. An index holding no post for the whole company will not hold one for
+    # its CFO.
+    #
+    # `None` is not `0`. Nobody looked is not the same as looked and found
+    # none, and only the second is evidence of silence.
+    silent = (
+        contacts
+        and contact_plan is not None
+        and run_contact_family is not None
+        and result.recent_posts == 0
+    )
+    if silent:
+        result.contacts_gated = True
+        for planned in contact_plan.families:
+            for person in contacts:
+                await record_coverage(
+                    session,
+                    run_id=run.id,
+                    account_id=account.id,
+                    contact_id=person.id,
+                    family=planned.family,
+                    evidence_count=0,
+                    skipped=(
+                        "the index holds no recent LinkedIn post for anyone at "
+                        "this company"
+                    ),
+                )
+        log.info(
+            "pipeline.contacts_gated account=%s people=%d families=%d",
+            account.id, len(contacts), len(contact_plan.families),
+        )
+
+    if contacts and contact_plan is not None and run_contact_family is not None and not silent:
         await _contact_pass(
             session,
             run_id=run.id,
@@ -903,6 +959,20 @@ def keep_own_linkedin(batch, *, company_url: str | None = None, person_url: str 
     return batch.model_copy(update={"evidence": kept, "not_found": [*batch.not_found, note]}), dropped
 
 
+#: The one contact family that is a lookup rather than a judgement.
+#:
+#: Its instruction is literally `site:linkedin.com/posts "{person}"
+#: "{company}"` — a fixed query whose results are parsed, with nothing for a
+#: model to weigh. It was being run as a grounded search at $0.035 a call
+#: while `linkedin_index` read the same index through Searlo at a credit, and
+#: outperformed it twenty to one on the company side.
+#:
+#: Named here rather than inferred from the instruction text: deciding at
+#: runtime that a prompt "looks like an X-Ray" would route a reworded one
+#: somewhere its author did not intend.
+SERP_CONTACT_FAMILY = "type:contact_content_activity"
+
+
 def llm_contact_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None):
     """The real contact runner: one search per family for the chosen people,
     stored per person.
@@ -910,37 +980,75 @@ def llm_contact_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None
     A passage whose `contact_id` is not one we sent is dropped and counted. It
     cannot be filed under a person, and filing it under the nearest match is
     how a namesake's job change becomes a prospect's.
+
+    **Two routes in, one route out.** The LinkedIn family reads the search
+    index directly; every other family asks a model to go and look. What
+    happens to what comes back — the namesake filter, the per-person storage,
+    the coverage rows — is identical, and deliberately so: the filter that
+    stops a stranger's job change becoming a prospect's must not have two
+    implementations, one per route.
     """
 
     async def run(account: Account, family: str, people: list) -> ContactFamilyOutcome:
         from app.schemas.evidence import EvidenceBatch, FoundEvidence
         from app.services import evidence as evidence_service
-        from app.services import stages
+        from app.services import linkedin, linkedin_serp, stages
 
-        # One search for everybody in the family, so no person's id goes on
-        # the row. `scope` is what splits this half of a research bill off —
-        # a null `contact_id` here would otherwise read as company work.
-        with stages.attributed(
-            run_id=run_id, account_id=account.id, scope="contact"
-        ):
-            result = await stages.research_contacts(
-                session, account=account, family=family, people=people
-            )
-        batch = result.parsed
         known = {str(p.id): p.id for p in people}
-
         grouped: dict[uuid.UUID, list] = {}
         dropped = 0
-        for found in batch.evidence:
-            contact_id = known.get(found.contact_id.strip())
-            if contact_id is None:
-                dropped += 1
-                continue
-            grouped.setdefault(contact_id, []).append(
-                FoundEvidence(**found.model_dump(exclude={"contact_id"}))
-            )
+        searched: dict[uuid.UUID, list[str]] = {}
 
-        from app.services import linkedin
+        if family == SERP_CONTACT_FAMILY:
+            key = await linkedin_serp.api_key(session)
+            swept = await linkedin_serp.sweep_people(
+                account, people, key=key
+            )
+            grouped = dict(swept.by_contact)
+            raw_not_found = list(swept.misses)
+            extra_notes = list(swept.notes)
+            # Recorded beside the evidence it bought, like the company sweep.
+            # A reader that buys nothing writes no row.
+            if swept.credits or swept.queries:
+                from app.models.cost import SerpCall
+
+                session.add(
+                    SerpCall(
+                        provider=linkedin_serp.PROVIDER,
+                        run_id=run_id,
+                        account_id=account.id,
+                        family=family,
+                        queries=swept.queries,
+                        credits=swept.credits,
+                        ok=swept.error is None,
+                        error=swept.error,
+                    )
+                )
+        else:
+            # One search for everybody in the family, so no person's id goes
+            # on the row. `scope` is what splits this half of a research bill
+            # off — a null `contact_id` would otherwise read as company work.
+            with stages.attributed(
+                run_id=run_id, account_id=account.id, scope="contact"
+            ):
+                result = await stages.research_contacts(
+                    session, account=account, family=family, people=people
+                )
+            batch = result.parsed
+            raw_not_found = list(batch.not_found)
+            extra_notes = []
+            for found in batch.evidence:
+                contact_id = known.get(found.contact_id.strip())
+                if contact_id is None:
+                    dropped += 1
+                    continue
+                grouped.setdefault(contact_id, []).append(
+                    FoundEvidence(**found.model_dump(exclude={"contact_id"}))
+                )
+            for entry in batch.searched_for:
+                contact_id = known.get(entry.contact_id.strip())
+                if contact_id is not None:
+                    searched.setdefault(contact_id, []).extend(entry.searched)
 
         profiles = {p.id: p.linkedin_url for p in people}
         foreign = 0
@@ -972,13 +1080,7 @@ def llm_contact_runner(session: AsyncSession, *, run_id: uuid.UUID | None = None
             )
             stored[contact_id] = outcome.count
 
-        searched: dict[uuid.UUID, list[str]] = {}
-        for entry in batch.searched_for:
-            contact_id = known.get(entry.contact_id.strip())
-            if contact_id is not None:
-                searched.setdefault(contact_id, []).extend(entry.searched)
-
-        notes = list(batch.not_found)
+        notes = list(raw_not_found) + extra_notes
         if dropped:
             notes.append(
                 f"{dropped} passage(s) named someone not asked about and were discarded"
@@ -1239,6 +1341,8 @@ async def _run_family(
             raise RuntimeError(f"no reader for fetch source {family!r}")
         swept = await reader(account)
         notes = list(swept.notes)
+        # Only `linkedin_serp` reports this; the others have no posts to count.
+        seen_posts = getattr(swept, "recent_posts", None)
         found_page = getattr(swept, "linkedin_company", None)
         if found_page and not getattr(account, "linkedin_url", None):
             # The company's own homepage names its LinkedIn page, so this is
@@ -1277,6 +1381,7 @@ async def _run_family(
             stored=stored.count,
             not_found=tuple(swept.misses),
             notes=tuple(notes) + _stale_note(stored.stale),
+            recent_posts=seen_posts,
         )
 
     brief = await search_brief(session, family)

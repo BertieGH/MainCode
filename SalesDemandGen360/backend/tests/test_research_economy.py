@@ -197,3 +197,127 @@ def test_the_empty_plan_is_not_the_absent_plan():
     empty = ResearchPlan(families=[])
     assert empty.families == []
     assert empty is not None
+
+
+# ==========================================================================
+# the waterfall, and the route that stops paying a model to run a query
+# ==========================================================================
+class TestTheWaterfallGate:
+    """Roughly one professional in ten posts at all, and the per-person pass
+    costs a grounded search whether or not there is anything to find — 29 of
+    them returned one evidence row and no signal.
+
+    The company's own LinkedIn sweep has counted the index's dated posts since
+    the day it was written, and its docstring called that number "the gate
+    that decides whether per-person post queries are worth making for this
+    account at all". Nothing read it. These assert the three states it has.
+    """
+
+    def test_none_is_not_zero(self):
+        """`None` is "nobody looked" and must buy the people pass as before.
+        Collapsing it to zero would silently stop researching people at every
+        account whose LinkedIn family did not run."""
+        from app.services.pipeline import FamilyOutcome, RunResult
+
+        assert FamilyOutcome(stored=0).recent_posts is None
+        assert RunResult(run_id=uuid.uuid4()).recent_posts is None
+
+    def test_a_count_travels_off_the_family_that_saw_it(self):
+        from app.services.pipeline import FamilyOutcome
+
+        assert FamilyOutcome(stored=3, recent_posts=0).recent_posts == 0
+        assert FamilyOutcome(stored=3, recent_posts=11).recent_posts == 11
+
+    @pytest.mark.parametrize(
+        "recent_posts,gated",
+        [(None, False), (0, True), (1, False), (40, False)],
+    )
+    def test_only_a_measured_zero_closes_the_gate(self, recent_posts, gated):
+        """The condition as `run_research` writes it. An index holding no post
+        for the whole company will not hold one for its CFO; an index nobody
+        asked has established nothing."""
+        contacts = [object()]
+        contact_plan, runner = object(), object()
+        silent = bool(
+            contacts
+            and contact_plan is not None
+            and runner is not None
+            and recent_posts == 0
+        )
+        assert silent is gated
+
+
+class TestTheLinkedInFamilyReadsTheIndex:
+    def test_the_serp_family_is_named_not_sniffed(self):
+        """Deciding at runtime that a prompt "looks like an X-Ray" would route
+        a reworded one somewhere its author did not intend."""
+        from app.services.pipeline import SERP_CONTACT_FAMILY
+
+        assert SERP_CONTACT_FAMILY == "type:contact_content_activity"
+
+    async def test_a_person_with_no_name_is_skipped_not_searched(self):
+        """A credit spent on `"" "Acme"` buys ten results about Acme filed
+        under a person they are not about."""
+        from app.services import linkedin_serp
+
+        class _P:
+            id = uuid.uuid4()
+            full_name = "   "
+
+        out = await linkedin_serp.sweep_people(
+            type("A", (), {"name": "Acme", "id": uuid.uuid4()})(), [_P()], key="k",
+        )
+        assert out.queries == 0 and out.credits == 0
+        assert any("no name" in m for m in out.misses)
+
+    async def test_a_missing_credential_is_not_a_coverage_gap(self):
+        """Reporting "found nothing" without a key is indistinguishable from
+        a person with no public footprint."""
+        from app.services import linkedin_serp
+
+        out = await linkedin_serp.sweep_people(
+            type("A", (), {"name": "Acme", "id": uuid.uuid4()})(), [object()], key=None,
+        )
+        assert out.queries == 0
+        assert any("credential" in m for m in out.misses)
+
+    async def test_one_persons_refusal_does_not_lose_the_others(self):
+        """Per person, because a provider that rate-limits on the third name
+        must not discard the two it already answered."""
+        from app.services import linkedin_serp
+
+        people = []
+        for name in ("Ann Blake", "Cal Dover"):
+            people.append(type("P", (), {"id": uuid.uuid4(), "full_name": name})())
+
+        calls = {"n": 0}
+
+        async def fake_ask(_client, _key, _query):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return linkedin_serp.SerpResult(error="HTTP 429", credits=1)
+            return linkedin_serp.SerpResult(
+                found=[object()], total=1, credits=1,
+            )
+
+        original = linkedin_serp._ask
+        linkedin_serp._ask = fake_ask
+        try:
+            out = await linkedin_serp.sweep_people(
+                type("A", (), {"name": "Acme", "id": uuid.uuid4()})(),
+                people, key="k", http=_NoHttp(),
+            )
+        finally:
+            linkedin_serp._ask = original
+
+        assert out.queries == 2, "the second person was not searched for"
+        assert out.credits == 2, "a refused query still charged and must be counted"
+        assert len(out.by_contact) == 1
+        assert any("429" in m for m in out.misses)
+
+
+class _NoHttp:
+    """A client the sweep is handed so it does not open one of its own."""
+
+    async def aclose(self):  # pragma: no cover - never reached, never needed
+        return None
