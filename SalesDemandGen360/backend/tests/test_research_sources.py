@@ -242,10 +242,15 @@ class TestTheIcpsSourcesAreThePlan:
         """Apollo's waterfall spends credits and reports through verification.
         Running it as though it were a search charges for it twice and reports
         "coverage gap" when the truth is "no credential"."""
+        # Paired with `trade_press` rather than `linkedin_index`: this test
+        # is about providers, and it needs any contact-scoped search source
+        # beside the provider to show that one survives and one does not.
+        # `linkedin_index` stopped being contact-scoped when 29 searches of
+        # it produced one evidence row and no signal.
         plan = await build_plan(
-            session, scope="contact", source_keys={"enrichment", "linkedin_index"}
+            session, scope="contact", source_keys={"enrichment", "trade_press"}
         )
-        assert plan.keys == ["linkedin_index"]
+        assert plan.keys == ["trade_press"]
 
 
 # ==========================================================================

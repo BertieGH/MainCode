@@ -106,7 +106,10 @@ QUERY_FAMILIES: tuple[QueryFamily, ...] = (
         "Conference agendas and speaker bios, podcast episode pages, webinar listings and "
         "trade-press interviews. Read for a named person at this company saying something "
         "in public, in their own words, with the event and the date.",
-        ("company", "contact"),
+        # Company only. Measured over 29 contact-scope searches: 13 evidence
+        # rows, **not one of them cited by a signal**. The company scope is
+        # kept — it is weak there too, but it has produced four.
+        ("company",),
     ),
     QueryFamily(
         "regulators_and_registers", "Regulators and licence registers",
@@ -121,7 +124,16 @@ QUERY_FAMILIES: tuple[QueryFamily, ...] = (
         "site:linkedin.com/in for a profile and site:linkedin.com/posts for a dated post, "
         "paired with the quoted company and person name. Read through a SERP API. "
         "**Never by opening linkedin.com.**",
-        ("company", "contact"),
+        # Company only, and the company scope is the best source in the
+        # registry: 905 evidence rows, 23 signals, no grounded search bought.
+        #
+        # The contact scope was the worst. It searched the same two X-Ray
+        # paths as the `contact_content_activity` signal type over the same
+        # person at the same company — one index, bought twice — and in 29
+        # searches returned a single evidence row that no signal ever cited,
+        # against that type's 38 rows and 3 signals. Removed as a duplicate,
+        # not as a capability: the search still happens, once.
+        ("company",),
     ),
     QueryFamily(
         "ats_boards", "ATS job boards",
