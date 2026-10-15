@@ -68,3 +68,4 @@ __pycache__/
 LeadPulse/**/bin/
 LeadPulse/**/obj/
 LeadPulse/**/.playwright/
+LeadPulse/**/*.log
