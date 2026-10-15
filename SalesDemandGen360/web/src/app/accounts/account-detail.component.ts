@@ -20,6 +20,8 @@ import { RowAction } from '../shared/table-view';
 import { RunProgressComponent } from '../shared/run-progress.component';
 import { RunItem, SequentialRun } from '../shared/sequential-run';
 import { Contact, ListsService } from '../core/lists.service';
+import { ResearchModeComponent } from '../shared/research-mode.component';
+import { ResearchModeService } from '../shared/research-mode.service';
 
 type Tab = 'contacts' | 'profile' | 'signals' | 'coverage' | 'qualification' | 'outreach';
 
@@ -39,7 +41,7 @@ function basis_is(dim: { basis: string }, value: string): boolean {
 @Component({
   selector: 'app-account-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, IconComponent, SortableDirective, DataTableComponent, RunProgressComponent],
+  imports: [CommonModule, RouterLink, IconComponent, SortableDirective, DataTableComponent, RunProgressComponent, ResearchModeComponent],
   template: `
     <a routerLink="/lists" class="back"><app-icon name="back" [size]="14" />All lists</a>
 
@@ -51,9 +53,15 @@ function basis_is(dim: { basis: string }, value: string): boolean {
       <div class="head">
         <div>
           <h2>{{ d.account_name }}</h2>
-          <p class="row-sub">
-            {{ d.domain ?? 'no domain' }}
-            <span *ngIf="d.context_version"> · context v{{ d.context_version }}</span>
+          <p class="row-sub" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <span>
+              {{ d.domain ?? 'no domain' }}
+              <span *ngIf="d.context_version"> · context v{{ d.context_version }}</span>
+            </span>
+            <!-- No list default to inherit here: an account can sit on
+                 several lists that disagree, so the installation answers
+                 unless somebody picks otherwise for this visit. -->
+            <app-research-mode scopeName="this account" />
           </p>
         </div>
         <div style="display:flex;align-items:center;gap:16px;flex:none;">
@@ -828,6 +836,9 @@ export class AccountDetailComponent implements OnInit {
   ];
 
   private lists = inject(ListsService);
+  // The depth the status-line chip shows. Read at the moment of the run, so
+  // switching the chip and pressing the button do the same thing.
+  mode = inject(ResearchModeService);
 
   readonly contactColumns = CONTACT_COLUMNS;
   contacts = signal<Contact[]>([]);
@@ -964,11 +975,21 @@ export class AccountDetailComponent implements OnInit {
 
   /** The company's own families. One item, so the bar reads 1 of 1 — what it
    *  buys here is the elapsed clock and a Cancel, not a count. */
+  /**
+   * The company's own families, at the depth the status line shows.
+   *
+   * **The depth is read, not asked for.** The list screen asks in a dialog
+   * because it may be about to research fifty accounts and the price scales;
+   * here it is one account and the chip on the status line already says what
+   * will be bought, so a dialog would be a second place to say the same
+   * thing — and the one place a rep is not looking.
+   */
   research(force = false): void {
     const d = this.data();
+    const tier = this.mode.effective();
     void this.runResearch(
       [{ id: this.accountId, name: d?.account_name ?? 'this company' }],
-      (id) => this.lists.researchAccount(id, { force }),
+      (id) => this.lists.researchAccount(id, { force, tier }),
       force ? 'Re-researching' : 'Researching',
     );
   }
@@ -980,7 +1001,10 @@ export class AccountDetailComponent implements OnInit {
     // the bar should say which person it is on.
     void this.runResearch(
       picked.map((r) => ({ id: r.id, name: r.full_name ?? 'this person' })),
-      (contactId) => this.lists.researchAccount(this.accountId, { contactIds: [contactId] }),
+      (contactId) => this.lists.researchAccount(this.accountId, {
+        contactIds: [contactId],
+        tier: this.mode.effective(),
+      }),
     );
   }
 

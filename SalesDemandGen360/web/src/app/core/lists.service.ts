@@ -728,12 +728,21 @@ export class ListsService {
    */
   researchAccount(
     accountId: string,
-    opts: { contactIds?: string[]; force?: boolean; listId?: string } = {},
+    opts: {
+      contactIds?: string[];
+      force?: boolean;
+      listId?: string;
+      tier?: ResearchTier;
+    } = {},
   ): Observable<any> {
     const params: Record<string, string | string[]> = {};
     if (opts.force) params['force'] = 'true';
     if (opts.listId) params['list_id'] = opts.listId;
     if (opts.contactIds?.length) params['contact_ids'] = opts.contactIds;
+    // Omitted means "whatever applies here" — the account's list, else the
+    // installation. Sending a tier the caller did not choose would make the
+    // chip on the status line a lie.
+    if (opts.tier) params['tier'] = opts.tier;
     return this.http.post(`/api/accounts/${accountId}/run-research`, null, { params });
   }
 

@@ -27,6 +27,7 @@ import {
   asUnsortableField,
   ResearchTier,
 } from '../core/lists.service';
+import { ResearchModeComponent } from '../shared/research-mode.component';
 import { PipelineService } from '../core/pipeline.service';
 import { ACCOUNT_ACTIONS, ACCOUNT_COLUMNS } from '../shared/account-columns';
 import { CONTACT_COLUMNS } from '../shared/contact-columns';
@@ -54,14 +55,18 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
 @Component({
   selector: 'app-list-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, SortableDirective, CsvImportComponent, IconComponent, FormsModule, FilterPanelComponent, DataTableComponent, RunProgressComponent],
+  imports: [CommonModule, RouterLink, SortableDirective, CsvImportComponent, IconComponent, FormsModule, FilterPanelComponent, DataTableComponent, RunProgressComponent, ResearchModeComponent],
   template: `
     <a routerLink="/lists" class="back"><app-icon name="back" [size]="13" />All lists</a>
 
     <div class="head">
       <div>
         <h2>{{ meta()?.label ?? 'List' }}</h2>
-        <p class="row-sub">{{ accounts().length }} accounts · {{ contacts().length }} contacts</p>
+        <p class="row-sub" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <span>{{ accounts().length }} accounts · {{ contacts().length }} contacts</span>
+          <app-research-mode [scopeDefault]="meta()?.research_tier ?? null"
+                             scopeName="this list" />
+        </p>
       </div>
 
       <button class="btn btn-primary" (click)="importing.set(!importing())">

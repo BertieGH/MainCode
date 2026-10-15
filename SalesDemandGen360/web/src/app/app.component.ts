@@ -12,6 +12,7 @@ import { ConfirmHostComponent } from './shared/confirm-host.component';
 import { ToastHostComponent } from './shared/toast-host.component';
 import { ActivityBarComponent } from './shared/activity-bar.component';
 import { ActivityService } from './shared/activity.service';
+import { ResearchModeService } from './shared/research-mode.service';
 
 @Component({
   selector: 'app-root',
@@ -24,6 +25,7 @@ export class AppComponent implements OnInit {
   private api = inject(ConfigService);
   private router = inject(Router);
   private activity = inject(ActivityService);
+  private mode = inject(ResearchModeService);
 
   /**
    * Three external connections are mandatory. Until each is stored *and*
@@ -243,6 +245,16 @@ export class AppComponent implements OnInit {
   }
 
   private refresh(): void {
+    // The installation's research depth, loaded where every other app-wide
+    // fact is. The service that holds it does not fetch: root-provided and
+    // self-loading is how a shared service ends up in every parent's tests.
+    this.api.researchSettings().subscribe({
+      next: (s) => this.mode.setAppDefault(s.default_tier),
+      // The built-in default stands. Screens still work and still say what
+      // they will buy; only the inherited label would be wrong, and a toast
+      // about it would be noise on every page.
+      error: () => undefined,
+    });
     this.api.readiness().subscribe({
       next: (r) => this.readiness.set(r),
       // A failed readiness call must not lock the application. The server is

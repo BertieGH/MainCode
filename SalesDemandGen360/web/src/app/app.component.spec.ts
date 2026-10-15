@@ -64,9 +64,15 @@ describe('AppComponent', () => {
   let cmp: AppComponent;
   let http: HttpTestingController;
 
-  /** Answer the readiness call the shell makes on init. */
+  /** Answer the calls the shell makes on init. */
   const settle = (state: Readiness) => {
     http.match('/api/config/readiness').forEach((r) => r.flush(state));
+    // The installation's research depth. Loaded here rather than by the
+    // service that holds it: root-provided and self-loading put this request
+    // into every component spec that rendered anything using it.
+    http.match('/api/config/research-settings').forEach((r) =>
+      r.flush({ id: null, version: 0, freshness_days: 30, default_tier: 'standard' }),
+    );
     fixture.detectChanges();
   };
 
@@ -89,6 +95,9 @@ describe('AppComponent', () => {
 
   afterEach(() => {
     http.match('/api/config/readiness').forEach((r) => r.flush(READY));
+    http.match('/api/config/research-settings').forEach((r) =>
+      r.flush({ id: null, version: 0, freshness_days: 30, default_tier: 'standard' }),
+    );
     http.verify();
   });
 

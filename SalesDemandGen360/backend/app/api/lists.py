@@ -127,8 +127,15 @@ class AccountListOut(BaseModel):
     description: str | None
     source: str
     created_by: str
-    #: `light` | `standard` | `deep` — what the research dialog opens on.
-    research_tier: str = "standard"
+    #: What this list itself says. **Null means inherit** — and the two are
+    #: not the same thing on screen: a list showing "Standard" because it was
+    #: set to Standard will not follow the installation when that changes,
+    #: and one showing "Standard (inherited)" will.
+    research_tier: str | None = None
+    #: What a run here would actually use. The list's answer, else the
+    #: installation's. Resolved server-side so no screen has to know the
+    #: order — the order is the thing that would drift.
+    effective_tier: str = "standard"
     account_count: int = 0
     #: What this list is worked for, resolved to names rather than ids so the
     #: index can be read without a second request per row.
@@ -619,6 +626,8 @@ async def build_from_apollo(
 @router.get("/lists/{list_id}", response_model=AccountListOut)
 async def get_list(list_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
     """One list, so the detail page can name what you are looking at."""
+    from app.services import research as research_service
+
     row = await session.get(AccountList, list_id)
     if row is None:
         raise HTTPException(404, "list not found")
@@ -636,13 +645,17 @@ async def get_list(list_id: uuid.UUID, session: AsyncSession = Depends(get_sessi
             )
         },
         account_count=members or 0,
+        effective_tier=await research_service.tier_for_list(session, list_id),
     )
 
 
 class ListSettingsIn(BaseModel):
     """What a list can be told about itself after it exists."""
 
-    research_tier: Literal["light", "standard", "deep"]
+    #: `null` puts the list back to inheriting the installation's default,
+    #: which is a thing a rep needs to be able to say — otherwise the first
+    #: time anybody touches this dropdown the list is pinned forever.
+    research_tier: Literal["light", "standard", "deep"] | None = None
 
 
 @router.patch("/lists/{list_id}/settings", response_model=AccountListOut)
@@ -658,6 +671,8 @@ async def update_list_settings(
     would be a way to rewrite a list's identity by accident. This one changes
     a preference and nothing else.
     """
+    from app.services import research as research_service
+
     row = await session.get(AccountList, list_id)
     if row is None:
         raise HTTPException(404, "list not found")
@@ -677,6 +692,7 @@ async def update_list_settings(
             )
         },
         account_count=members or 0,
+        effective_tier=await research_service.tier_for_list(session, list_id),
     )
 
 
@@ -1060,6 +1076,10 @@ RATE_LIMIT_MAX_WAIT = 90.0
 class ResearchOut(BaseModel):
     ran: bool
     blocked: str | None = None
+    #: What depth the run resolved to, which is often not what the caller
+    #: asked for — it asks for nothing and the list or the installation
+    #: answers. Reported so the report can say which one it was.
+    tier: str = "standard"
     #: Set when the provider's quota ended the run before the list did. The
     #: accounts not reached were not researched and nothing was spent on them.
     stopped_early: str | None = None
@@ -1281,7 +1301,10 @@ async def run_research_for_list(
     #:
     #: `deep` is the default so that a caller which says nothing gets what it
     #: got before. The screens choose deliberately.
-    tier: str = Query("deep", pattern="^(light|standard|deep)$"),
+    #: Omitted means "whatever applies here": the list's own answer, else
+    #: the installation's. A literal default of `deep` would have been a
+    #: fourth opinion nobody set.
+    tier: str | None = Query(None, pattern="^(light|standard|deep)$"),
     # One cheap sweep before the per-family passes; nothing found means the
     # families are not bought. On by default — it is the saving — and a query
     # param rather than buried config because the first thing anyone needs to
@@ -1375,14 +1398,11 @@ async def run_research_for_list(
     report.window_days = window
     # What to look for comes from the list's ICPs: their company signals for
     # the company; their contact signals, and buyer personas, for the people.
+    tier = await research_service.tier_for_list(session, list_id, tier)
+    report.tier = tier
     list_plan = await research_service.plan_for_list(session, list_id, tier=tier)
     planned = set(list_plan.company.keys)
     contact_families = set(list_plan.contact.keys)
-    # Contacts are deep-only. The whole per-person programme has produced
-    # five signals for its lifetime, so it is not something a cheaper run
-    # should reach for — a rep who wants it asks for the tier that says so.
-    if tier != "deep":
-        contact_families = set()
     # **Scope narrows the plan, not the runner.** Emptying a family set here
     # means the reuse arithmetic, the "nothing to do" check and the report all
     # agree with what was actually bought. Suppressing it at the call instead
@@ -1692,7 +1712,7 @@ async def run_research_for_account(
     force: bool = Query(False),
     force_scope: str = Query("company", pattern="^(both|company|contacts)$"),
     scope: str = Query("both", pattern="^(both|company|contacts)$"),
-    tier: str = Query("deep", pattern="^(light|standard|deep)$"),
+    tier: str | None = Query(None, pattern="^(light|standard|deep)$"),
     fast_sweep: bool = Query(True),
     profiles: bool = Query(True),
     session: AsyncSession = Depends(get_session),

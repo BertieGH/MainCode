@@ -7,6 +7,7 @@ import { FormsModule } from '@angular/forms';
 import { ConfigService, ResearchSource, SignalType, SourceTrial } from '../core/config.service';
 import { IconComponent } from '../shared/icon.component';
 import { apiError } from '../shared/api-error';
+import { ResearchModeService } from './../shared/research-mode.service';
 
 /**
  * The source registry: where research looks, and how often it looks again.
@@ -40,7 +41,19 @@ import { apiError } from '../shared/api-error';
         working the same company pays only for what is new. <em>Rerun research</em> on an account
         list ignores it. A family that failed is never reused. Saving writes a new version.
       </p>
+      <!-- Beside the reuse window because they are the same kind of fact —
+           how research spends — and saved together because the endpoint
+           writes a whole new version rather than patching one. -->
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:8px;">
+          <span class="row-sub">Research depth by default</span>
+          <select class="field" style="width:130px;" [(ngModel)]="defaultTier"
+                  aria-label="Default research depth for the installation">
+            <option value="light">Light</option>
+            <option value="standard">Standard</option>
+            <option value="deep">Deep</option>
+          </select>
+        </label>
         <label style="display:flex;align-items:center;gap:8px;">
           <span class="row-sub">Reuse results younger than</span>
           <input class="field" type="number" min="1" max="365" step="1" style="width:90px;"
@@ -48,15 +61,19 @@ import { apiError } from '../shared/api-error';
           <span class="row-sub">days</span>
         </label>
         <button class="btn btn-primary" (click)="saveReuse()" [class.busy]="savingReuse()"
-                [disabled]="savingReuse() || !reuseValid() || reuseDays === reuseSaved">
+                [disabled]="savingReuse() || !reuseValid()
+                            || (reuseDays === reuseSaved && defaultTier === tierSaved)">
           <app-icon *ngIf="!savingReuse()" name="check" [size]="13" />
           {{ savingReuse() ? 'Saving…' : 'Save' }}
         </button>
         <span class="row-sub" *ngIf="!reuseValid()" style="color:var(--critical);">
           Between 1 and 365 days.
         </span>
-        <span class="row-sub" *ngIf="reuseValid() && reuseDays === reuseSaved">
-          {{ reuseVersion ? 'Version ' + reuseVersion : 'Default' }} · {{ reuseSaved }} days.
+        <span class="row-sub"
+              *ngIf="reuseValid() && reuseDays === reuseSaved && defaultTier === tierSaved">
+          {{ reuseVersion ? 'Version ' + reuseVersion : 'Default' }} ·
+          {{ reuseSaved }} days · {{ tierSaved }}.
+          A list can still say otherwise, and any run can.
         </span>
       </div>
     </div>
@@ -402,6 +419,9 @@ import { apiError } from '../shared/api-error';
 })
 export class SourceRegistryComponent {
   private api = inject(ConfigService);
+  // Every screen shows the inherited depth somewhere, so a save here makes
+  // all of them stale at once.
+  private mode = inject(ResearchModeService);
 
   /**
    * Both lists come from the parent, which already holds them.
@@ -422,9 +442,15 @@ export class SourceRegistryComponent {
     this.reuseDays = this.reuseSaved = value;
   }
   @Input() reuseVersion = 0;
+  @Input() set appTier(value: 'light' | 'standard' | 'deep' | undefined) {
+    if (value) this.defaultTier = this.tierSaved = value;
+  }
 
   /** The reuse window as edited, and as last saved. */
   reuseDays = 30;
+  /** The installation's default depth, and what is saved for it. */
+  defaultTier: 'light' | 'standard' | 'deep' = 'standard';
+  tierSaved: 'light' | 'standard' | 'deep' = 'standard';
   reuseSaved = 30;
   savingReuse = signal(false);
 
@@ -613,11 +639,16 @@ export class SourceRegistryComponent {
 
   saveReuse(): void {
     this.savingReuse.set(true);
-    this.api.saveResearchSettings(Number(this.reuseDays)).subscribe({
+    this.api.saveResearchSettings(Number(this.reuseDays), this.defaultTier).subscribe({
       next: (s) => {
         this.savingReuse.set(false);
         this.reuseDays = this.reuseSaved = s.freshness_days;
+        this.defaultTier = this.tierSaved = s.default_tier;
         this.reuseVersion = s.version;
+        // Every screen shows the inherited depth, so they are all stale
+        // now. Told rather than re-fetched: the service deliberately makes
+        // no request of its own, and the response is already in hand.
+        this.mode.setAppDefault(s.default_tier);
       },
       error: (err) => {
         this.savingReuse.set(false);

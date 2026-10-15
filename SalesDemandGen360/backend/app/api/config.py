@@ -706,13 +706,14 @@ async def get_research_settings(session: AsyncSession = Depends(get_session)):
     """The active reuse window. Never 404s: no row means the default applies,
     which is a working state, not a missing one."""
     from app.models.config import ResearchConfig
-    from app.services.research import DEFAULT_FRESHNESS_DAYS
+    from app.services.research import DEFAULT_FRESHNESS_DAYS, DEFAULT_TIER
 
     row = await get_active(session, ResearchConfig)
     if row is not None:
         return row
     return ResearchConfigOut(
-        id=None, version=0, is_active=True, freshness_days=DEFAULT_FRESHNESS_DAYS
+        id=None, version=0, is_active=True, freshness_days=DEFAULT_FRESHNESS_DAYS,
+        default_tier=DEFAULT_TIER,
     )
 
 

@@ -14,6 +14,9 @@ import {
   freshnessOf,
 } from '../core/prep.service';
 import { apiError } from '../shared/api-error';
+import { ListsService } from '../core/lists.service';
+import { ResearchModeComponent } from '../shared/research-mode.component';
+import { ResearchModeService } from '../shared/research-mode.service';
 
 /**
  * One contact's prep brief.
@@ -32,7 +35,7 @@ import { apiError } from '../shared/api-error';
 @Component({
   selector: 'app-prep-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, ResearchModeComponent],
   template: `
     <p class="err" *ngIf="error()">{{ error() }}</p>
     <p class="muted" *ngIf="loading()">Loading…</p>
@@ -72,14 +75,34 @@ import { apiError } from '../shared/api-error';
               Do not contact{{ p.do_not_contact_reason ? ' — ' + p.do_not_contact_reason : '' }}
             </div>
           </div>
-          <span
-            class="badge"
-            [ngClass]="p.mode === 'pre_engagement' ? 'badge-neutral' : 'badge-accent'"
-            [title]="p.mode === 'pre_engagement'
-              ? 'Nothing has been sent, so there is no conversation to be aware of. Decided from the record, not chosen.'
-              : 'They have replied. The brief is written around the conversation so far. Decided from the record, not chosen.'">
-            {{ p.mode === 'pre_engagement' ? 'pre-engagement' : 'engagement-aware' }}
-          </span>
+          <div class="status-right">
+            <span
+              class="badge"
+              [ngClass]="p.mode === 'pre_engagement' ? 'badge-neutral' : 'badge-accent'"
+              [title]="p.mode === 'pre_engagement'
+                ? 'Nothing has been sent, so there is no conversation to be aware of. Decided from the record, not chosen.'
+                : 'They have replied. The brief is written around the conversation so far. Decided from the record, not chosen.'">
+              {{ p.mode === 'pre_engagement' ? 'pre-engagement' : 'engagement-aware' }}
+            </span>
+            <!-- Prep reads what research stored and buys nothing itself, so
+                 a stale picture used to be a dead end here: the ages below
+                 said the research was four weeks old and the only way to do
+                 anything about it was to leave. These two buy, at the depth
+                 the chip beside them names. -->
+            <app-research-mode scopeName="this account" />
+            <button type="button" class="btn tiny" (click)="researchNow('company')"
+                    [disabled]="researching() !== null"
+                    title="Research the company again now, at the depth shown">
+              {{ researching() === 'company' ? 'Researching…' : 'Research company' }}
+            </button>
+            <button type="button" class="btn tiny" (click)="researchNow('contacts')"
+                    [disabled]="researching() !== null || p.do_not_contact"
+                    [title]="p.do_not_contact
+                      ? 'Marked do not contact'
+                      : 'Research this person again now, at the depth shown'">
+              {{ researching() === 'contacts' ? 'Researching…' : 'Research person' }}
+            </button>
+          </div>
         </div>
 
         <div class="status-bar">
@@ -712,6 +735,9 @@ import { apiError } from '../shared/api-error';
       .status-top { display: flex; justify-content: space-between;
                     align-items: flex-start; gap: 16px; flex-wrap: wrap; }
       .status-top h2 { font-size: 1.22rem; margin-bottom: 4px; }
+      .status-right { display: flex; align-items: center; gap: 10px;
+                      flex-wrap: wrap; justify-content: flex-end; }
+      .btn.tiny { font-size: .74rem; padding: 3px 8px; }
       .status-bar { display: flex; flex-wrap: wrap; gap: 0;
                     margin: 14px -18px 0; border-top: 1px solid var(--border); }
       .stat { flex: 1 1 auto; min-width: 128px; padding: 10px 18px;
@@ -792,11 +818,16 @@ import { apiError } from '../shared/api-error';
 export class PrepDetailComponent implements OnInit {
   private api = inject(PrepService);
   private route = inject(ActivatedRoute);
+  private lists = inject(ListsService);
+  mode = inject(ResearchModeService);
 
   prep = signal<Prep | null>(null);
   loading = signal(true);
   error = signal<string | null>(null);
   busy = signal(false);
+  /** Which half is being bought, or null. One at a time: both at once would
+   *  leave the page unable to say which of its ages is being refreshed. */
+  researching = signal<'company' | 'contacts' | null>(null);
   genError = signal<string | null>(null);
   /** Which opening the rep has picked. Their choice, not the model's. */
   opening = signal(0);
@@ -978,6 +1009,36 @@ export class PrepDetailComponent implements OnInit {
 
   /** Re-read the whole screen. Anything that adds evidence moves the
    *  freshness panel and the staleness flag as well as its own section. */
+  /**
+   * Buy fresh research from here, at the depth the chip names.
+   *
+   * **Prep itself buys nothing**, by design — it reads what research stored,
+   * which is what makes opening a brief free. That left a stale picture as a
+   * dead end: the ages on the status bar would say four weeks old and the
+   * only way to act on it was to leave the screen and find the account.
+   *
+   * The brief is reloaded, not regenerated. New evidence must not rewrite a
+   * brief somebody may be reading mid-call; it changes the ages beside it,
+   * and generating again stays their decision.
+   */
+  researchNow(scope: 'company' | 'contacts'): void {
+    const p = this.prep();
+    if (!p || this.researching()) return;
+    this.researching.set(scope);
+    this.lists
+      .researchAccount(p.account_id, {
+        tier: this.mode.effective(),
+        ...(scope === 'contacts' ? { contactIds: [p.contact_id] } : {}),
+      })
+      .subscribe({
+        next: () => this.reload(p.contact_id, () => this.researching.set(null)),
+        error: (err) => {
+          this.researching.set(null);
+          this.error.set(apiError(err, 'Could not research that.'));
+        },
+      });
+  }
+
   private reload(contactId: string, done: () => void): void {
     this.api.forContact(contactId).subscribe({
       next: (fresh) => {

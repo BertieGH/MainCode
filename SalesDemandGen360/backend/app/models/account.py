@@ -359,9 +359,12 @@ class AccountList(Base):
     #:
     #: It pre-selects rather than decides — a default that could not be
     #: overridden on the run would be a setting, not a default.
-    research_tier: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default=text("'standard'")
-    )
+    #: Null means inherit `research_config.default_tier`.
+    #:
+    #: **Nullable on purpose.** A non-null column would make every list hold
+    #: a frozen copy of the default from the day it was made, and changing
+    #: the installation's answer would change nothing.
+    research_tier: Mapped[str | None] = mapped_column(Text)
 
     members: Mapped[list[AccountListMember]] = relationship(
         back_populates="list", cascade="all, delete-orphan"

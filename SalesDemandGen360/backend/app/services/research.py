@@ -71,6 +71,46 @@ def merged_instruction(members) -> str:
 #: found for 29% of what a run costs.
 TIERS = ("light", "standard", "deep")
 
+#: What a run costs when nothing nearer has an opinion.
+#:
+#: `standard`, not `light`. Light is the cheapest answer and the wrong
+#: default: an installation nobody has configured should not quietly stop
+#: buying the sources its ICPs name. Light is a decision, taken per list or
+#: per run, and it should look like one.
+DEFAULT_TIER = "standard"
+
+
+async def default_tier(session: AsyncSession) -> str:
+    """The installation's answer, or the built-in one.
+
+    Never raises and never 404s: no saved config is a working state, not a
+    missing one, in exactly the way `freshness_days` is.
+    """
+    from app.models.config import ResearchConfig
+
+    row = (
+        await session.execute(
+            select(ResearchConfig).where(ResearchConfig.is_active.is_(True))
+        )
+    ).scalar_one_or_none()
+    return getattr(row, "default_tier", None) or DEFAULT_TIER
+
+
+async def tier_for_list(session: AsyncSession, list_id, asked: str | None = None) -> str:
+    """Nearest wins: the run, then the list, then the installation.
+
+    One function because three callers resolved it and a fourth would have
+    guessed. A list whose column is null is *inheriting*, which is why that
+    column is nullable — a frozen copy of the default would make changing the
+    installation's answer change nothing.
+    """
+    if asked:
+        return asked
+    from app.models.account import AccountList
+
+    row = await session.get(AccountList, list_id)
+    return (getattr(row, "research_tier", None) or await default_tier(session))
+
 
 def within(tier: str, ceiling: str) -> bool:
     """Is a source at `tier` bought by a run at `ceiling`?
@@ -615,9 +655,12 @@ async def plan_for_list(
     company = await build_plan(
         session, scope="company", type_keys=keys, exclude=excluded, tier=tier
     )
-    # Contacts are deep-only. The whole per-person programme has produced
-    # five signals, so it is not something a light run should reach for; a
-    # rep who wants it asks for the tier that says so.
+    # **The tier applies to both halves, and scope decides which half runs.**
+    # Making contacts deep-only looked like the cheap answer and was the
+    # wrong one: a rep asking to research a person on a standard list would
+    # have got silence, with the screen saying the run succeeded. Depth is
+    # about which sources are worth buying; which half to buy is `scope`,
+    # and conflating the two hides one behind the other.
     contact = await build_plan(
         session, scope="contact", type_keys=keys, exclude=excluded, tier=tier
     )

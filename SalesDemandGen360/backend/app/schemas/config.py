@@ -443,6 +443,10 @@ class ResearchConfigIn(BaseModel):
     #: How old a family's result may be and still be reused. A day to a year:
     #: zero would mean "never reuse", which is what "Rerun research" is for.
     freshness_days: int = Field(ge=1, le=365)
+    #: How deep research goes when nothing nearer says otherwise. Nearest
+    #: wins: what the rep picked on the run, else the list's own answer,
+    #: else this.
+    default_tier: Literal["light", "standard", "deep"] = "standard"
 
 
 class ResearchConfigOut(ORMModel):
@@ -451,6 +455,7 @@ class ResearchConfigOut(ORMModel):
     version: int
     is_active: bool
     freshness_days: int
+    default_tier: str = "standard"
     created_at: datetime | None = None
 
 

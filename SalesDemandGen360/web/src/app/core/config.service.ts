@@ -472,6 +472,11 @@ export interface ResearchSettings {
   id: string | null;
   version: number;
   freshness_days: number;
+  /**
+   * How deep research goes when nothing nearer says otherwise. Nearest wins:
+   * what was picked for the run, else the list's own answer, else this.
+   */
+  default_tier: 'light' | 'standard' | 'deep';
 }
 
 export interface Service {
@@ -887,9 +892,21 @@ export class ConfigService {
   researchSettings(): Observable<ResearchSettings> {
     return this.http.get<ResearchSettings>(`${this.base}/research-settings`);
   }
-  /** A new version of the reuse window. */
-  saveResearchSettings(freshness_days: number): Observable<ResearchSettings> {
-    return this.http.put<ResearchSettings>(`${this.base}/research-settings`, { freshness_days });
+  /**
+   * A new version of the research settings.
+   *
+   * Both fields every time, because the endpoint writes a whole new version
+   * rather than patching one: sending only the window would save a version
+   * whose depth had quietly reverted to the schema default.
+   */
+  saveResearchSettings(
+    freshness_days: number,
+    default_tier: 'light' | 'standard' | 'deep',
+  ): Observable<ResearchSettings> {
+    return this.http.put<ResearchSettings>(`${this.base}/research-settings`, {
+      freshness_days,
+      default_tier,
+    });
   }
 
   /** Edit what a service says about itself. The code never changes. */

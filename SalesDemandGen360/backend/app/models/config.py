@@ -727,6 +727,17 @@ class ResearchConfig(Base):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    #: How deep research goes when nothing nearer says otherwise.
+    #:
+    #: Beside `freshness_days` because it is the same kind of fact — how
+    #: research spends — and versioned for the same reason: a run from last
+    #: month must stay explicable after the figure changes.
+    #:
+    #: The order that resolves a run is nearest-wins: what the rep picked on
+    #: the run, else the list's own answer, else this.
+    default_tier: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'standard'")
+    )
 
     __table_args__ = (
         Index(
