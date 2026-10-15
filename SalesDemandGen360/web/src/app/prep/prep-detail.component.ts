@@ -17,6 +17,8 @@ import { apiError } from '../shared/api-error';
 import { ListsService } from '../core/lists.service';
 import { ResearchModeComponent } from '../shared/research-mode.component';
 import { ResearchModeService } from '../shared/research-mode.service';
+import { RunProgressComponent } from '../shared/run-progress.component';
+import { SequentialRun } from '../shared/sequential-run';
 
 /**
  * One contact's prep brief.
@@ -35,7 +37,7 @@ import { ResearchModeService } from '../shared/research-mode.service';
 @Component({
   selector: 'app-prep-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, ResearchModeComponent],
+  imports: [CommonModule, FormsModule, RouterLink, ResearchModeComponent, RunProgressComponent],
   template: `
     <p class="err" *ngIf="error()">{{ error() }}</p>
     <p class="muted" *ngIf="loading()">Loading…</p>
@@ -84,24 +86,6 @@ import { ResearchModeService } from '../shared/research-mode.service';
                 : 'They have replied. The brief is written around the conversation so far. Decided from the record, not chosen.'">
               {{ p.mode === 'pre_engagement' ? 'pre-engagement' : 'engagement-aware' }}
             </span>
-            <!-- Prep reads what research stored and buys nothing itself, so
-                 a stale picture used to be a dead end here: the ages below
-                 said the research was four weeks old and the only way to do
-                 anything about it was to leave. These two buy, at the depth
-                 the chip beside them names. -->
-            <app-research-mode scopeName="this account" />
-            <button type="button" class="btn tiny" (click)="researchNow('company')"
-                    [disabled]="researching() !== null"
-                    title="Research the company again now, at the depth shown">
-              {{ researching() === 'company' ? 'Researching…' : 'Research company' }}
-            </button>
-            <button type="button" class="btn tiny" (click)="researchNow('contacts')"
-                    [disabled]="researching() !== null || p.do_not_contact"
-                    [title]="p.do_not_contact
-                      ? 'Marked do not contact'
-                      : 'Research this person again now, at the depth shown'">
-              {{ researching() === 'contacts' ? 'Researching…' : 'Research person' }}
-            </button>
           </div>
         </div>
 
@@ -148,7 +132,35 @@ import { ResearchModeService } from '../shared/research-mode.service';
           (click)="tab.set(t.key)">
           {{ t.label }}
         </button>
+
+        <!-- Prep reads what research stored and buys nothing itself, which is
+             what makes opening a brief free — and left a stale picture as a
+             dead end: the ages above say four weeks and the only way to act
+             on it was to leave. These buy, at the depth beside them. -->
+        <span class="tabs-right">
+          <app-research-mode scopeName="this account" />
+          <button type="button" class="btn tiny" (click)="researchNow('company')"
+                  [class.busy]="researching() === 'company'"
+                  [disabled]="researching() !== null"
+                  title="Research the company again now, at the depth shown">
+            {{ researching() === 'company' ? 'Researching…' : 'Research company' }}
+          </button>
+          <button type="button" class="btn tiny" (click)="researchNow('contacts')"
+                  [class.busy]="researching() === 'contacts'"
+                  [disabled]="researching() !== null || p.do_not_contact"
+                  [title]="p.do_not_contact
+                    ? 'Marked do not contact'
+                    : 'Research this person again now, at the depth shown'">
+            {{ researching() === 'contacts' ? 'Researching…' : 'Research person' }}
+          </button>
+        </span>
       </div>
+
+      <!-- Research is forty to seventy seconds. A disabled button saying
+           "Researching…" for that long is the spinner that never moves; this
+           is the same bar every other screen that buys something shows, with
+           the elapsed clock and a Cancel. -->
+      <app-run-progress [run]="researchRun"></app-run-progress>
 
       <section *ngIf="tab() === 'brief'">
         <!-- the generated half -->
@@ -828,6 +840,9 @@ export class PrepDetailComponent implements OnInit {
   /** Which half is being bought, or null. One at a time: both at once would
    *  leave the page unable to say which of its ages is being refreshed. */
   researching = signal<'company' | 'contacts' | null>(null);
+  /** One account, so the bar reads "1 of 1" — what it buys here is the
+   *  elapsed clock and a Cancel, not a count. */
+  readonly researchRun = new SequentialRun();
   genError = signal<string | null>(null);
   /** Which opening the rep has picked. Their choice, not the model's. */
   opening = signal(0);
@@ -1025,18 +1040,30 @@ export class PrepDetailComponent implements OnInit {
     const p = this.prep();
     if (!p || this.researching()) return;
     this.researching.set(scope);
-    this.lists
-      .researchAccount(p.account_id, {
-        tier: this.mode.effective(),
-        ...(scope === 'contacts' ? { contactIds: [p.contact_id] } : {}),
-      })
-      .subscribe({
-        next: () => this.reload(p.contact_id, () => this.researching.set(null)),
-        error: (err) => {
-          this.researching.set(null);
+    const who = scope === 'contacts' ? p.contact_name : p.account_name;
+    void this.researchRun
+      .run<any>({
+        verb: 'Researching',
+        items: [{ id: p.account_id, name: who }],
+        call: () =>
+          this.lists.researchAccount(p.account_id, {
+            tier: this.mode.effective(),
+            ...(scope === 'contacts' ? { contactIds: [p.contact_id] } : {}),
+          }),
+        describe: (_, r: any) =>
+          r?.blocked
+            ? { kind: 'error', text: r.blocked }
+            : { kind: 'success', text: `${r?.evidence_stored ?? 0} evidence` },
+        onResult: () => undefined,
+        onError: (_, err) => {
           this.error.set(apiError(err, 'Could not research that.'));
+          return undefined;
         },
-      });
+        // The bar's "So far:" line. One account, so the running total it
+        // carries elsewhere would only ever repeat the describe line.
+        summary: () => '',
+      })
+      .then(() => this.reload(p.contact_id, () => this.researching.set(null)));
   }
 
   private reload(contactId: string, done: () => void): void {

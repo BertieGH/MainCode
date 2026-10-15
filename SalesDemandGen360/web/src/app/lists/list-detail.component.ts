@@ -62,11 +62,6 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
     <div class="head">
       <div>
         <h2>{{ meta()?.label ?? 'List' }}</h2>
-        <p class="row-sub" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-          <span>{{ accounts().length }} accounts · {{ contacts().length }} contacts</span>
-          <app-research-mode [scopeDefault]="meta()?.research_tier ?? null"
-                             scopeName="this list" />
-        </p>
       </div>
 
       <button class="btn btn-primary" (click)="importing.set(!importing())">
@@ -87,18 +82,11 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
     </div>
 
     <!-- What this list is worked for. Configuration, not an action: set once,
-         read by enrichment and research. Collapsed to a summary once set, so the
-         table keeps the height; open by default when nothing is chosen yet. -->
-    <div class="worked" [class.open]="targetingOpen()">
-      <button type="button" class="worked-head" (click)="targetingOpen.set(!targetingOpen())"
-              [attr.aria-expanded]="targetingOpen()">
-        <span class="chev">›</span>
-        <h3>Worked for</h3>
-        <span class="row-sub" *ngIf="targetingSet()">{{ targetingSummary() }}</span>
-        <span class="row-sub pending" *ngIf="!targetingSet()">
-          not set — enrichment needs a service to know who to look for
-        </span>
-      </button>
+         read by enrichment and research. Its summary lives on the tab row now
+         — a collapsed band of its own was a full row of chrome to say four
+         words, above the table it was pushing down. Only the body is here,
+         and only while it is open. -->
+    <div class="worked" [hidden]="!targetingOpen()">
       <div class="worked-body" [hidden]="!targetingOpen()">
       <!-- A list is the unit of intent: a cold import of two hundred is a
            light list, a shortlist a rep is working is a deep one. This
@@ -234,6 +222,7 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
           <option *ngFor="let sv of chosenServices()" [value]="sv.id">{{ sv.code }}</option>
         </select>
         <button class="btn btn-primary" (click)="confirmEnrich()"
+                [class.busy]="!!working()"
                 [disabled]="!enrichService || !!working()">{{ enrichMode() === 'find' ? 'Find contacts' : 'Enrich' }}</button>
         <button class="btn" (click)="pendingEnrich.set(null); enrichContacts.set(null)">Cancel</button>
       </div>
@@ -300,6 +289,23 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
         Suggested <span class="count">{{ openSuggestions().length }}</span>
         <span class="row-sub" *ngIf="acceptedCount()"> · {{ acceptedCount() }} accepted</span>
       </button>
+
+      <!-- Everything that describes the list, on the line that already does.
+           The counts, what it is worked for and how deep research goes were
+           three stacked rows saying one paragraph; here they read left to
+           right and the table starts a hundred pixels higher. -->
+      <span class="tabs-right">
+        <button type="button" class="status-chip" [class.pending]="!targetingSet()"
+                (click)="targetingOpen.set(!targetingOpen())"
+                [attr.aria-expanded]="targetingOpen()"
+                title="What this list is worked for — the services and ICPs enrichment and research read">
+          <span class="k">worked for</span>
+          <span *ngIf="targetingSet()">{{ targetingSummary() }}</span>
+          <span *ngIf="!targetingSet()">not set</span>
+        </button>
+        <app-research-mode [scopeDefault]="meta()?.research_tier ?? null"
+                           scopeName="this list" />
+      </span>
     </div>
 
     <p class="row-sub hint" *ngIf="tab() === 'accounts' && accounts().length">
@@ -530,17 +536,13 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
       /* A band across the top of the table, not a boxed panel adrift in a
          wide page. */
       .worked { border:1px solid var(--line); border-radius:8px;
-                background:var(--card, #fff); padding:12px 14px; margin:12px 0 16px; }
-      .worked-head { display:flex; align-items:baseline; gap:10px;
-                     margin-bottom:10px; flex-wrap:wrap; }
-      .worked-head h3 { font-size:.95rem; margin:0; }
-      .worked-head .done { color:var(--muted); }
+                background:var(--card,#fff); padding:12px 14px; margin:0 0 14px; }
       /* Two pickers and the actions, across. The actions column is fixed so
          it does not shrink as the other two fill up. */
       .depth { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
                padding-bottom: 12px; margin-bottom: 12px;
                border-bottom: 1px solid var(--line); }
-      .depth .field { max-width: 420px; font-size: .82rem; }
+      .depth .field { max-width:420px; font-size:.82rem; }
       .bands { display:grid; grid-template-columns:1fr 1fr; gap:20px;
                align-items:start; }
       @media (max-width: 900px) { .bands { grid-template-columns:1fr 1fr; }
@@ -559,12 +561,6 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
       .enrich-row { display:flex; gap:6px; }
       .enrich-row .field { flex:1; min-width:0; }
       .report { margin-top:10px; }
-      .worked-head { display:flex; align-items:baseline; gap:10px; width:100%; text-align:left;
-                     background:none; border:none; padding:0; cursor:pointer; font:inherit;
-                     color:inherit; flex-wrap:wrap; }
-      .worked-head h3 { font-size:.95rem; margin:0; }
-      .worked-head .chev { display:inline-block; transition:transform .15s; color:var(--muted); }
-      .worked.open .worked-head .chev { transform:rotate(90deg); }
       .worked-body { margin-top:12px; }
       .worked-foot { display:flex; gap:10px; align-items:center; margin-top:12px; }
       .pending { color:var(--critical); }

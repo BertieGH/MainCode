@@ -45,7 +45,8 @@ import { apiError } from '../shared/api-error';
         placeholder="Name, title, or company"
         [(ngModel)]="query"
         (keyup.enter)="search()" />
-      <button class="btn" (click)="search()" [disabled]="loading()">Search</button>
+      <button class="btn" (click)="search()" [class.busy]="loading()"
+              [disabled]="loading()">{{ loading() ? 'Searching…' : 'Search' }}</button>
       <button class="btn" (click)="query = ''; search()" *ngIf="query">Clear</button>
     </div>
 

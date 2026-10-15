@@ -53,16 +53,6 @@ function basis_is(dim: { basis: string }, value: string): boolean {
       <div class="head">
         <div>
           <h2>{{ d.account_name }}</h2>
-          <p class="row-sub" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-            <span>
-              {{ d.domain ?? 'no domain' }}
-              <span *ngIf="d.context_version"> · context v{{ d.context_version }}</span>
-            </span>
-            <!-- No list default to inherit here: an account can sit on
-                 several lists that disagree, so the installation answers
-                 unless somebody picks otherwise for this visit. -->
-            <app-research-mode scopeName="this account" />
-          </p>
         </div>
         <div style="display:flex;align-items:center;gap:16px;flex:none;">
           <div *ngIf="d.qualification as q" class="score">
@@ -103,12 +93,25 @@ function basis_is(dim: { basis: string }, value: string): boolean {
       <app-run-progress [run]="researchRun"></app-run-progress>
       <p class="row-sub" style="margin:-8px 0 14px;" *ngIf="researchNote()">{{ researchNote() }}</p>
 
+      <!-- Everything that describes the account, on the line that already
+           does. Same shape as the list and the brief: counts left, what it
+           is and how deep research goes right. -->
       <div class="tabs">
         <button *ngFor="let t of tabs" class="tab" [class.on]="tab() === t.key"
                 (click)="tab.set(t.key)" [attr.aria-current]="tab() === t.key">
           {{ t.label }}
           <span class="count">{{ countFor(t.key, d) }}</span>
         </button>
+
+        <span class="tabs-right">
+          <span class="status-chip" *ngIf="d.domain">
+            <span class="k">domain</span>{{ d.domain }}
+          </span>
+          <!-- No list default to inherit: an account can sit on several
+               lists that disagree, so the installation answers unless
+               somebody picks otherwise for this visit. -->
+          <app-research-mode scopeName="this account" />
+        </span>
       </div>
 
       <!-- contacts -->

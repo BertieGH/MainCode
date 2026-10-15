@@ -164,14 +164,26 @@ table.data tbody tr:last-child td { border-bottom: none; }
 }
 
 /* ---------- sortable headers (shared) ---------- */
-th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-th.sortable:hover { color: var(--text); }
-th.sortable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-th.sortable .arrow { display: inline-block; margin-left: 5px; opacity: .3; font-size: .7rem; }
-th.sortable .arrow::after { content: "\2195"; }
-th.sortable.sort-asc .arrow, th.sortable.sort-desc .arrow { opacity: 1; color: var(--accent); }
-th.sortable.sort-asc .arrow::after { content: "\2191"; }
-th.sortable.sort-desc .arrow::after { content: "\2193"; }
+/* Keyed on `.sortable` alone rather than `th.sortable`, and the glyph comes
+   from the directive's own element rather than from a child span.
+
+   Both halves of the previous rule were wrong, in opposite directions, and
+   between them no table in the application drew an arrow at all:
+   `app-data-table` puts the directive on a span inside the `th`, so
+   `th.sortable` never matched; `campaign-detail` and `icp-profiles` put it on
+   the `th` and had no `.arrow` child for the content to land in.
+
+   A directive that styles itself works wherever it is applied, which is the
+   only version of this that cannot drift apart again. */
+.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable:hover { color: var(--text); }
+.sortable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sortable::after {
+  content: "\2195"; display: inline-block; margin-left: 5px;
+  opacity: .32; font-size: .7rem;
+}
+.sortable.sort-asc::after { content: "\2191"; opacity: 1; color: var(--accent); }
+.sortable.sort-desc::after { content: "\2193"; opacity: 1; color: var(--accent); }
 
 /* ---------- icons in buttons ---------- */
 .btn app-icon { flex: 0 0 auto; }
@@ -478,3 +490,23 @@ blockquote { margin: 9px 0; padding: 10px 14px; background: var(--surface-2);
 .col-side { font-size: 0.95em; }
 @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
 @media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }
+
+/* ---------- the status row (shared) ----------
+   Everything that describes what you are looking at, on the line that
+   already does: counts on the left, what it is configured for and how deep
+   research goes on the right. Three screens use it, which is why it is here
+   — the first version lived in one component and would have been copied
+   twice, and a copied rule is one that drifts. */
+.tabs-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.status-chip {
+  display: inline-flex; align-items: center; gap: 7px; font: inherit;
+  font-size: .78rem; color: var(--muted); background: none; cursor: pointer;
+  padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line);
+}
+.status-chip:hover { color: var(--text); }
+/* Not set yet, and something downstream needs it. */
+.status-chip.pending { color: var(--warn); border-color: var(--warn); }
+.status-chip .k {
+  font-family: 'IBM Plex Mono', monospace; font-size: .6rem;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--faint);
+}

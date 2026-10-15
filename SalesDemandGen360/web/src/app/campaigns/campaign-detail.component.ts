@@ -83,16 +83,25 @@ interface ThreadRow {
     <h2 style="font-size:1.15rem;margin-bottom:2px;">
       Outreach — {{ approval()?.campaign_label ?? 'campaign' }}
     </h2>
-    <p class="row-sub" style="margin-bottom:18px;">
-      {{ total() }} thread(s) · {{ approvedCount() }} approved
-    </p>
-
     <div class="tabs">
       <button *ngFor="let t of tabs" class="tab" [class.on]="tab() === t.key"
               (click)="openTab(t.key)" [attr.aria-current]="tab() === t.key">
         {{ t.label }}
         <span class="dot" *ngIf="t.key === 'approval' && pending()"></span>
       </button>
+
+      <!-- The counts move off their own line onto this one. No research
+           chip here: a campaign buys no research — it spends what research
+           already found — and a control that did nothing would be worse
+           than none. -->
+      <span class="tabs-right">
+        <span class="status-chip">
+          <span class="k">threads</span>{{ total() }}
+        </span>
+        <span class="status-chip">
+          <span class="k">approved</span>{{ approvedCount() }}
+        </span>
+      </span>
     </div>
 
     <!-- ============================ APPROVAL ============================ -->
@@ -353,18 +362,21 @@ interface ThreadRow {
                   <app-icon name="eye" [size]="15" />
                 </button>
                 <button class="act-btn" *ngIf="c.withdrawn" (click)="reinstate(c)"
+                        [class.busy]="working() === 'withdraw'"
                         [disabled]="!!working()"
                         [attr.aria-label]="'Put ' + c.contact_name + ' back'"
                         title="Put them back — they will need drafting and approving again">
                   <app-icon name="refresh" [size]="15" />
                 </button>
                 <button class="act-btn" *ngIf="!c.withdrawn && !enrolled(c)" (click)="askWithdraw(c)"
+                        [class.busy]="working() === 'withdraw'"
                         [disabled]="!!working()"
                         [attr.aria-label]="'Withdraw ' + c.contact_name"
                         title="Take them out of this campaign — nothing is deleted">
                   <app-icon name="x" [size]="15" />
                 </button>
                 <button class="act-btn danger" *ngIf="c.card && !c.withdrawn" (click)="stopOne(c.card)"
+                        [class.busy]="!!working()"
                         [disabled]="!!working()"
                         [attr.aria-label]="'Stop ' + c.contact_name"
                         [title]="'Stop this sequence — the only post-enrolment lever'">

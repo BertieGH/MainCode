@@ -154,7 +154,7 @@ export interface BulkRun {
             <th *ngFor="let c of shown()" [style.width.px]="widthOf(c)"
                 [class.mono]="c.numeric">
               <span [appSortable]="c.key" [state]="sort" (sortChange)="sortChange.emit($event)">
-                {{ c.label }}<span class="arrow"></span>
+                {{ c.label }}
               </span>
               <span class="grip" (mousedown)="startResize($event, c)"
                     (touchstart)="startResize($event, c)"
