@@ -186,6 +186,15 @@ export interface ResearchSource {
   support_only: boolean;
   /** Overrides the global reuse window. News weekly, filings quarterly. */
   reuse_days: number | null;
+  /**
+   * `light` | `standard` | `deep` — how much an account has to be worth
+   * before this source is bought for it.
+   *
+   * A ceiling, not another reducer: the reuse window, the scan's per-family
+   * plan and the LinkedIn waterfall all subtract from a run, and this alone
+   * sets its maximum.
+   */
+  tier: string;
   /** Shipped with the product: its key and kind cannot change. */
   builtin: boolean;
   status: string;

@@ -350,6 +350,18 @@ class AccountList(Base):
     description: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    #: How deep research goes on this list by default.
+    #:
+    #: **A list is the unit of intent.** A cold import of two hundred is a
+    #: light list; a shortlist a rep is working is a deep one. Without a
+    #: standing answer the tier dialog asks the same question once per
+    #: account, and a question asked two hundred times is one nobody reads.
+    #:
+    #: It pre-selects rather than decides — a default that could not be
+    #: overridden on the run would be a setting, not a default.
+    research_tier: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'standard'")
+    )
 
     members: Mapped[list[AccountListMember]] = relationship(
         back_populates="list", cascade="all, delete-orphan"

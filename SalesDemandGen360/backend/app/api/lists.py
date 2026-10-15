@@ -6,6 +6,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import asdict
+from typing import Literal
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
@@ -126,6 +127,8 @@ class AccountListOut(BaseModel):
     description: str | None
     source: str
     created_by: str
+    #: `light` | `standard` | `deep` — what the research dialog opens on.
+    research_tier: str = "standard"
     account_count: int = 0
     #: What this list is worked for, resolved to names rather than ids so the
     #: index can be read without a second request per row.
@@ -627,7 +630,51 @@ async def get_list(list_id: uuid.UUID, session: AsyncSession = Depends(get_sessi
     return AccountListOut(
         **{
             k: getattr(row, k)
-            for k in ("id", "label", "description", "source", "created_by", "created_at")
+            for k in (
+                "id", "label", "description", "source", "created_by",
+                "created_at", "research_tier",
+            )
+        },
+        account_count=members or 0,
+    )
+
+
+class ListSettingsIn(BaseModel):
+    """What a list can be told about itself after it exists."""
+
+    research_tier: Literal["light", "standard", "deep"]
+
+
+@router.patch("/lists/{list_id}/settings", response_model=AccountListOut)
+async def update_list_settings(
+    list_id: uuid.UUID,
+    payload: ListSettingsIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Set the list's standing research depth.
+
+    Its own route rather than a general list PATCH: `label`, `source` and
+    `created_by` are what a list is, and a route that accepted all of them
+    would be a way to rewrite a list's identity by accident. This one changes
+    a preference and nothing else.
+    """
+    row = await session.get(AccountList, list_id)
+    if row is None:
+        raise HTTPException(404, "list not found")
+    row.research_tier = payload.research_tier
+    await session.commit()
+    members = await session.scalar(
+        select(func.count())
+        .select_from(AccountListMember)
+        .where(AccountListMember.list_id == list_id)
+    )
+    return AccountListOut(
+        **{
+            k: getattr(row, k)
+            for k in (
+                "id", "label", "description", "source", "created_by",
+                "created_at", "research_tier",
+            )
         },
         account_count=members or 0,
     )

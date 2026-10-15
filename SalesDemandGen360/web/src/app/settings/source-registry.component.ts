@@ -253,7 +253,12 @@ import { apiError } from '../shared/api-error';
       <table class="data">
         <thead>
           <tr>
-            <th>Source</th><th>Reads</th><th class="brief-col">What lives there</th>
+            <th>Source</th><th>Reads</th>
+            <th class="tier-col"
+                title="How much an account must be worth before this is bought for it">
+              Bought at
+            </th>
+            <th class="brief-col">What lives there</th>
             <th class="claim-col">Claimed by</th><th>Lately</th>
             <th class="actcol">Actions</th>
           </tr>
@@ -282,6 +287,25 @@ import { apiError } from '../shared/api-error';
                     [ngClass]="s === 'company' ? 'badge-accent' : 'badge-warn'"
                     style="margin-right:4px;">{{ s }}</span>
               <div class="row-sub" *ngIf="f.kind !== 'search'">{{ kindWord(f.kind) }}</div>
+            </td>
+            <!-- Saved on change rather than behind the row's edit mode: a
+                 tier is the one field somebody comes here to change after
+                 reading the two columns to its right, and making them open an
+                 editor first puts the decision a click away from its own
+                 evidence. -->
+            <td class="tier-col">
+              <select class="field tier-pick" [ngModel]="f.tier"
+                      (ngModelChange)="setTier(f, $event)"
+                      [disabled]="f.kind !== 'search' && f.kind !== 'fetch'"
+                      [attr.aria-label]="'Tier for ' + f.key">
+                <option value="light">Light</option>
+                <option value="standard">Standard</option>
+                <option value="deep">Deep</option>
+              </select>
+              <!-- A free source costs no search, so its tier decides only
+                   whether a cheap run still reads it — never what it saves.
+                   Said here so nobody demotes one expecting a saving. -->
+              <div class="row-sub" *ngIf="f.kind === 'fetch'">costs no search</div>
             </td>
             <td class="row-sub brief">
               <ng-container *ngIf="editing() !== f.key">{{ f.description }}</ng-container>
@@ -365,6 +389,8 @@ import { apiError } from '../shared/api-error';
          squeezed the brief into 217, because a run of comma-separated keys
          has no wrap opportunity a browser will take by itself. */
       td.brief, th.brief-col { white-space: normal; width: 42%; min-width: 260px; }
+      .tier-col { width: 118px; }
+      .tier-pick { width: 100%; font-size: 0.78rem; padding: 4px 6px; }
       td.claim-col, th.claim-col { white-space: normal; width: 22%;
                                    overflow-wrap: anywhere; }
       .retired-row { opacity: .6; }
@@ -512,6 +538,27 @@ export class SourceRegistryComponent {
    * Pause or resume. Never a delete: the key is written into every coverage
    * row that recorded reading it.
    */
+  /**
+   * Saved on change, not behind the row editor.
+   *
+   * A tier is the one field somebody comes here to change after reading the
+   * two columns beside it — what the source is claimed by, and what it has
+   * actually produced. Putting it behind an edit button would move the
+   * decision one click away from its own evidence.
+   */
+  setTier(row: ResearchSource, tier: string): void {
+    if (tier === row.tier) return;
+    this.api.updateResearchSource(row.key, { tier }).subscribe({
+      next: () => this.changed.emit(),
+      error: (err) => {
+        this.error.set(apiError(err, 'Could not change that source.'));
+        // Reload anyway, or the select keeps showing a tier the server
+        // refused — the screen would disagree with what research will buy.
+        this.changed.emit();
+      },
+    });
+  }
+
   setStatus(row: ResearchSource, status: string): void {
     this.api.updateResearchSource(row.key, { status }).subscribe({
       next: () => this.changed.emit(),

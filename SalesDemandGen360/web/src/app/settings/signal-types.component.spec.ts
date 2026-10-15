@@ -29,6 +29,7 @@ function source(over: Partial<ResearchSource> = {}): ResearchSource {
     scopes: ['company'],
     support_only: false,
     reuse_days: null,
+    tier: 'light',
     builtin: true,
     status: 'active',
     status_reason: null,

@@ -5,6 +5,8 @@ import { Observable } from 'rxjs';
 import { SortState, sortParams } from '../shared/sortable';
 
 export interface AccountList {
+  /** `light` | `standard` | `deep` — what the research dialog opens on. */
+  research_tier?: ResearchTier;
   id: string;
   label: string;
   description: string | null;
@@ -682,6 +684,19 @@ export class ListsService {
    * the contact pass is four grounded searches for a tenth of the evidence
    * and re-buying it on every rerun is what made a day's work cost $10.
    */
+  /**
+   * The list's standing research depth.
+   *
+   * Its own route rather than a general list patch: `label` and `source` are
+   * what a list *is*, and an endpoint that accepted those too would be a way
+   * to rewrite a list's identity by accident.
+   */
+  setListTier(listId: string, tier: ResearchTier): Observable<AccountList> {
+    return this.http.patch<AccountList>(`/api/lists/${listId}/settings`, {
+      research_tier: tier,
+    });
+  }
+
   researchAccounts(
     listId: string,
     accountIds: string[],

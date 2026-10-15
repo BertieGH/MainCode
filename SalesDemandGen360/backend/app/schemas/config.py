@@ -902,6 +902,7 @@ class ResearchSourcePatch(BaseModel):
     support_only: bool | None = None
     reuse_days: Annotated[int, Field(ge=1, le=3650)] | None = None
     status: Literal["active", "paused", "deprecated"] | None = None
+    tier: Literal["light", "standard", "deep"] | None = None
 
 
 class ResearchSourceOut(ORMModel):
@@ -915,6 +916,11 @@ class ResearchSourceOut(ORMModel):
     reuse_days: int | None
     builtin: bool
     status: str
+    #: `light` | `standard` | `deep` — how much an account has to be worth
+    #: before this source is bought for it. A ceiling, not another reducer:
+    #: the reuse window, the scan's plan and the LinkedIn waterfall all
+    #: subtract from a run, and this alone sets its maximum.
+    tier: str = "light"
     #: Why it is not active. Shown beside the status, because that is where
     #: someone stands when they decide whether to turn it back on.
     status_reason: str | None = None

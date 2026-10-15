@@ -95,6 +95,21 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
         </span>
       </button>
       <div class="worked-body" [hidden]="!targetingOpen()">
+      <!-- A list is the unit of intent: a cold import of two hundred is a
+           light list, a shortlist a rep is working is a deep one. This
+           pre-selects the research dialog rather than deciding for it — a
+           default nobody could override on the run would be a setting. -->
+      <div class="depth">
+        <span class="lbl">Research depth</span>
+        <select class="field" [ngModel]="meta()?.research_tier ?? 'standard'"
+                (ngModelChange)="setListTier($event)"
+                aria-label="Default research depth for this list">
+          <option value="light">Light — their site, job boards, the index, trade press</option>
+          <option value="standard">Standard — plus company and funding data</option>
+          <option value="deep">Deep — plus registers, conferences and their people</option>
+        </select>
+        <span class="row-sub">What the research dialog opens on. Every run can still change it.</span>
+      </div>
       <div class="bands">
         <!-- Each column scrolls once its list grows. Wrapping checkboxes read
              fine with three services and become unusable with thirty; a fixed
@@ -517,6 +532,10 @@ import { RunItem, SequentialRun } from '../shared/sequential-run';
       .worked-head .done { color:var(--muted); }
       /* Two pickers and the actions, across. The actions column is fixed so
          it does not shrink as the other two fill up. */
+      .depth { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+               padding-bottom: 12px; margin-bottom: 12px;
+               border-bottom: 1px solid var(--line); }
+      .depth .field { max-width: 420px; font-size: .82rem; }
       .bands { display:grid; grid-template-columns:1fr 1fr; gap:20px;
                align-items:start; }
       @media (max-width: 900px) { .bands { grid-template-columns:1fr 1fr; }
@@ -851,7 +870,9 @@ export class ListDetailComponent implements OnInit {
       title: opts.title,
       body: opts.body,
       confirmLabel: opts.confirmLabel,
-      chosen: opts.chosen ?? 'standard',
+      // The list's standing answer, so a batch does not ask the same
+      // question once per account and get a different answer each time.
+      chosen: opts.chosen ?? this.meta()?.research_tier ?? 'standard',
       choices: [
         {
           value: 'light',
@@ -900,6 +921,18 @@ export class ListDetailComponent implements OnInit {
       confirmLabel: 'Rerun research',
     });
     if (tier) await this.runResearch(rows, true, scope, tier);
+  }
+
+  /** Change what this list's research dialog opens on. */
+  setListTier(tier: ResearchTier): void {
+    const current = this.meta();
+    if (!current || current.research_tier === tier) return;
+    this.api.setListTier(this.listId, tier).subscribe({
+      next: (row) => this.meta.set(row),
+      error: (err) => this.notify.error(
+        'Could not change the research depth.', apiError(err, 'the request failed'),
+      ),
+    });
   }
 
   /** Pick a tier, then research. The dialog is where the price is said. */
