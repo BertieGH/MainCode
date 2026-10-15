@@ -65,3 +65,6 @@ __pycache__/
 .claude/settings.local.json
 *.zip
 *.bundle
+LeadPulse/**/bin/
+LeadPulse/**/obj/
+LeadPulse/**/.playwright/
