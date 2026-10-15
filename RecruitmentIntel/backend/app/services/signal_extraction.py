@@ -484,31 +484,41 @@ async def _backfill_location_via_llm(
 
     The main extraction prompt is structured and often returns "" when the
     article body doesn't mention HQ explicitly. This focused follow-up:
-      1. Asks ONLY for the HQ stated in the article body.
-      2. ARTICLE-EVIDENCE ONLY — explicitly forbids using general knowledge
-         or guessing from the company name (which previously caused
-         hallucinations like Magrathea → "New York City, NY, USA").
-      3. Filters investor / VC / journalist locations.
+      1. Reads the HQ city from the article body (must come from the article).
+      2. Allows inferring an obvious country/state from a known city
+         (e.g. article says "Berlin" → "Berlin, Germany"). The CITY itself
+         is never guessed from the company name — that's what previously
+         caused hallucinations like Magrathea → "New York City, NY, USA".
+      3. Filters investor / VC / publisher / journalist locations.
     Returns "" on any failure — best-effort.
     """
     if not company:
         return ""
     prompt = (
-        f'Find the headquarters of the company "{company}" using ONLY the '
-        f'article excerpt below.\n\n'
-        f'Look for phrases like "based in", "headquartered in", '
-        f'"{{city}}-based startup", or a dateline at the top of the article.\n\n'
-        f'STRICT RULES:\n'
-        f'  - Only use information stated in the article excerpt.\n'
-        f'  - Do NOT use general knowledge of the company.\n'
-        f'  - Do NOT guess based on the company name or domain.\n'
-        f'  - Do NOT return investor / VC / journalist locations '
-        f'(those are mentioned for context, not the company HQ).\n'
-        f'  - If the article does NOT explicitly state the company\'s HQ, '
-        f'reply with the single word: unknown\n\n'
-        f'Otherwise reply with the location ONLY in the format '
-        f'"City, Region, Country" (e.g. "San Francisco, CA, USA" or '
-        f'"Berlin, Germany"). No extra text, no quotes, no markdown.\n\n'
+        f'You\'re extracting "{company}"\'s headquarters from the article '
+        f'excerpt below.\n\n'
+        f'Format: Return ONLY "City, State/Region, Country" '
+        f'(e.g. "San Francisco, CA, USA").\n'
+        f'  - If the article gives only the city, infer the obvious '
+        f'country/state (e.g. "Berlin" → "Berlin, Germany"; '
+        f'"Bengaluru" → "Bengaluru, Karnataka, India").\n'
+        f'  - The CITY itself must come from the article — never guess '
+        f'from the company name.\n\n'
+        f'Precision — look for phrases like:\n'
+        f'  - "[City]-based"\n'
+        f'  - "headquartered in [City]"\n'
+        f'  - "based in [City]"  /  "based out of [City]"\n'
+        f'  - or a press-release dateline at the top '
+        f'(e.g. "SAN FRANCISCO -- Acme today announced...")\n\n'
+        f'Strict exclusion:\n'
+        f'  - Do NOT use the investor\'s / VC\'s location (mentioned for '
+        f'context, not HQ).\n'
+        f'  - Do NOT use the publisher\'s / journalist\'s location '
+        f'(article source != company HQ).\n'
+        f'  - Do NOT guess the city based on the company name, domain, '
+        f'or your general knowledge.\n'
+        f'  - If the article does not state the company\'s headquarters, '
+        f'return exactly: ""\n\n'
         f'Article excerpt:\n{(article_text or "")[:3500]}'
     )
     try:

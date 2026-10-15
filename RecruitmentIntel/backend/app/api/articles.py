@@ -72,10 +72,19 @@ async def list_articles(
         query = query.where(
             or_(func.lower(Article.title).like(needle), func.lower(Article.summary).like(needle))
         )
+    # Pin date-range comparisons to UTC. Article.created_at is stored as
+    # TIMESTAMP WITH TIME ZONE; without an explicit tzinfo here Postgres
+    # interprets the naive literal in the session TimeZone (which on this
+    # dev box is America/Los_Angeles), shifting the day-wide window by
+    # 7-8 hours and bleeding articles from the next UTC day into the result.
     if date_from:
-        query = query.where(Article.created_at >= datetime.combine(date_from, time.min))
+        query = query.where(
+            Article.created_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+        )
     if date_to:
-        query = query.where(Article.created_at <= datetime.combine(date_to, time.max))
+        query = query.where(
+            Article.created_at <= datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+        )
     query = query.order_by(Article.created_at.desc())
 
     needles = (
