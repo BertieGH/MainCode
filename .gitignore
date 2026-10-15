@@ -53,3 +53,15 @@ connect.lock
 libpeerconnection.log
 testem.log
 typings/
+# ==============================
+# Python / local state / backups
+# ==============================
+__pycache__/
+*.py[cod]
+*.db
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+*.zip
+*.bundle
