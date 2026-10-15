@@ -1,5 +1,15 @@
 import { Injectable, signal } from '@angular/core';
 
+/** One of several ways to do the thing being confirmed. */
+export interface ConfirmChoice {
+  value: string;
+  label: string;
+  /** What it costs, or how long it takes. Shown beside the label. */
+  cost?: string;
+  /** What it buys, in plain words. */
+  detail?: string;
+}
+
 /** What a confirmation asks, and how its buttons read. */
 export interface ConfirmRequest {
   title: string;
@@ -9,11 +19,31 @@ export interface ConfirmRequest {
   cancelLabel?: string;
   /** Styles the confirm button as destructive and focuses Cancel first. */
   danger?: boolean;
+  /**
+   * Offer a choice as part of confirming, rather than asking twice.
+   *
+   * **Here rather than in a menu** because this dialog already exists to say
+   * what something will cost before it is paid for, and research now has
+   * three prices. Three entries per action in an eleven-button selection bar
+   * would be the same question asked in the place least able to answer it —
+   * the menu cannot show what each one buys.
+   */
+  choices?: ConfirmChoice[];
+  /** Which choice starts selected. Defaults to the first. */
+  chosen?: string;
 }
 
 interface Pending extends ConfirmRequest {
-  resolve: (answer: boolean) => void;
+  resolve: (answer: ConfirmAnswer) => void;
 }
+
+/**
+ * `false` is always "no". A plain `true` is yes to a question with no choice
+ * in it; a string is the choice made. Callers that never pass `choices` can
+ * keep treating the result as a boolean, which is why this is a union rather
+ * than an object — every existing `if (ok)` still reads correctly.
+ */
+export type ConfirmAnswer = boolean | string;
 
 /**
  * Ask before doing something that cannot be taken back.
@@ -31,12 +61,14 @@ interface Pending extends ConfirmRequest {
 export class ConfirmService {
   readonly current = signal<Pending | null>(null);
 
-  ask(request: ConfirmRequest): Promise<boolean> {
+  ask(request: ConfirmRequest): Promise<ConfirmAnswer> {
     this.current()?.resolve(false);
-    return new Promise<boolean>((resolve) => this.current.set({ ...request, resolve }));
+    return new Promise<ConfirmAnswer>((resolve) =>
+      this.current.set({ ...request, resolve }),
+    );
   }
 
-  answer(yes: boolean): void {
+  answer(yes: ConfirmAnswer): void {
     const open = this.current();
     if (!open) return;
     this.current.set(null);

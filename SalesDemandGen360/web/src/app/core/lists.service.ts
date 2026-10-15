@@ -415,6 +415,17 @@ export interface VerifyReport {
   outcomes: VerifyOutcome[];
 }
 
+/**
+ * How much an account is worth spending on.
+ *
+ * Measured over the first week: light reaches 85% of every signal found for
+ * 29% of what a run costs, because the two dearest sources are fifteen times
+ * dearer per signal than the two cheapest paid ones. Contacts are deep-only —
+ * the whole per-person programme has produced five signals.
+ */
+export type ResearchTier = 'light' | 'standard' | 'deep';
+
+
 @Injectable({ providedIn: 'root' })
 export class ListsService {
   private http = inject(HttpClient);
@@ -677,12 +688,14 @@ export class ListsService {
     force = false,
     contactIds?: string[],
     opts: { scope?: 'both' | 'company' | 'contacts';
-            forceScope?: 'both' | 'company' | 'contacts' } = {},
+            forceScope?: 'both' | 'company' | 'contacts';
+            tier?: ResearchTier } = {},
   ): Observable<any> {
     const params: Record<string, string> = {};
     if (force) params['force'] = 'true';
     if (opts.scope) params['scope'] = opts.scope;
     if (opts.forceScope) params['force_scope'] = opts.forceScope;
+    if (opts.tier) params['tier'] = opts.tier;
     return this.http.post(
       `/api/lists/${listId}/run-research`,
       { account_ids: accountIds, contact_ids: contactIds ?? [] },

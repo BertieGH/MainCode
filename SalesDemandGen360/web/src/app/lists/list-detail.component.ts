@@ -25,6 +25,7 @@ import {
   FindReport,
   OpenConflicts,
   asUnsortableField,
+  ResearchTier,
 } from '../core/lists.service';
 import { PipelineService } from '../core/pipeline.service';
 import { ACCOUNT_ACTIONS, ACCOUNT_COLUMNS } from '../shared/account-columns';
@@ -789,7 +790,7 @@ export class ListDetailComponent implements OnInit {
         this.askEnrich(run.rows, 'find');
         return;
       case 'research':
-        void this.runResearch(run.rows);
+        void this.askThenResearch(run.rows);
         return;
       case 'qualify':
         void this.runQualify(run.rows);
@@ -820,13 +821,73 @@ export class ListDetailComponent implements OnInit {
   }
 
   /** Research again, ignoring the reuse window — after asking, since it pays twice. */
+  /**
+   * The three prices, and what each one buys.
+   *
+   * **Measured, not estimated.** Per account, from `llm_call` and `serp_call`
+   * over the first week of attributed runs. Shown because the whole reason a
+   * tier exists is the comparison, and a rep choosing between three numbers
+   * they cannot see is choosing blind.
+   */
+  private readonly TIER_COST: Record<ResearchTier, number> = {
+    light: 0.07,
+    standard: 0.105,
+    deep: 0.245,
+  };
+
+  /** Ask which tier, with what each costs for this many accounts. */
+  private async askTier(
+    rows: RunItem[],
+    opts: { title: string; body: string; confirmLabel: string; chosen?: ResearchTier },
+  ): Promise<ResearchTier | null> {
+    const n = rows.length;
+    const price = (tier: ResearchTier) => {
+      const total = this.TIER_COST[tier] * n;
+      // Two decimals below ten, whole pennies above: "$12.3450" reads as
+      // false precision about a figure derived from a published rate.
+      return total < 10 ? `~$${total.toFixed(2)}` : `~$${total.toFixed(1)}`;
+    };
+    const answer = await this.confirm.ask({
+      title: opts.title,
+      body: opts.body,
+      confirmLabel: opts.confirmLabel,
+      chosen: opts.chosen ?? 'standard',
+      choices: [
+        {
+          value: 'light',
+          label: 'Light',
+          cost: price('light'),
+          detail:
+            'Their site, job boards, the LinkedIn index and trade press. '
+            + 'Finds 85% of the signals the full run finds.',
+        },
+        {
+          value: 'standard',
+          label: 'Standard',
+          cost: price('standard'),
+          detail: 'Light, plus company data and funding providers.',
+        },
+        {
+          value: 'deep',
+          label: 'Deep',
+          cost: price('deep'),
+          detail:
+            'Everything: licence registers, the conference circuit, and the '
+            + 'people at the account.',
+        },
+      ],
+    });
+    // `false` is cancel; anything else is the value of the chosen radio.
+    return answer ? (answer as ResearchTier) : null;
+  }
+
   private async rerunResearch(
     rows: RunItem[],
     scope: 'both' | 'company' | 'contacts' = 'company',
   ): Promise<void> {
     const n = rows.length;
     const half = scope === 'company' ? "company's" : scope === 'contacts' ? "people's" : '';
-    const ok = await this.confirm.ask({
+    const tier = await this.askTier(rows, {
       title: `Rerun ${half} research for ${n} account${n === 1 ? '' : 's'}?`,
       body:
         `This ignores the reuse window and pays for every ${half || ''} family again — ` +
@@ -838,7 +899,23 @@ export class ListDetailComponent implements OnInit {
           : ''),
       confirmLabel: 'Rerun research',
     });
-    if (ok) await this.runResearch(rows, true, scope);
+    if (tier) await this.runResearch(rows, true, scope, tier);
+  }
+
+  /** Pick a tier, then research. The dialog is where the price is said. */
+  private async askThenResearch(
+    rows: RunItem[],
+    scope: 'both' | 'company' | 'contacts' = 'both',
+  ): Promise<void> {
+    const n = rows.length;
+    const tier = await this.askTier(rows, {
+      title: `Research ${n} account${n === 1 ? '' : 's'}?`,
+      body:
+        'Families answered inside the reuse window are skipped, so a second run '
+        + 'on the same account usually costs less than this.',
+      confirmLabel: 'Research',
+    });
+    if (tier) await this.runResearch(rows, false, scope, tier);
   }
 
   /**
@@ -851,6 +928,7 @@ export class ListDetailComponent implements OnInit {
     rows: RunItem[],
     force = false,
     scope: 'both' | 'company' | 'contacts' = 'both',
+    tier: ResearchTier = 'deep',
   ): Promise<void> {
     this.working.set(force ? 'rerun' : 'research');
     const t = {
@@ -884,6 +962,7 @@ export class ListDetailComponent implements OnInit {
       call: (id) =>
         this.api.researchAccounts(this.listId, [id], force, this.researchContacts()?.[id], {
           scope,
+          tier,
           // A rerun re-sweeps what was asked for. Defaulting this to `both`
           // is the behaviour that re-bought a contact pass on every one of
           // the seven reruns one account had in an afternoon.
@@ -1257,7 +1336,7 @@ export class ListDetailComponent implements OnInit {
       case 'research':
         // The company only. Buying its people as well was invisible on the
         // screen and 40% of the bill.
-        void this.runResearch(this.companiesOf(run.rows), false, 'company');
+        void this.askThenResearch(this.companiesOf(run.rows), 'company');
         return;
       case 'rerun_company':
         void this.rerunResearch(this.companiesOf(run.rows), 'company');

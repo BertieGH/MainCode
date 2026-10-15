@@ -62,6 +62,29 @@ def merged_instruction(members) -> str:
     return "\n".join(lines)
 
 
+#: Cheapest first. A tier buys everything at or below it, so the index of a
+#: name in this tuple is the whole comparison.
+#:
+#: Measured, not guessed. Over the first week the two light paid sources
+#: produced 125 signals between them and the two deep ones produced 8 —
+#: fifteen times dearer per signal — and light reaches 85% of every signal
+#: found for 29% of what a run costs.
+TIERS = ("light", "standard", "deep")
+
+
+def within(tier: str, ceiling: str) -> bool:
+    """Is a source at `tier` bought by a run at `ceiling`?
+
+    An unknown name is treated as light rather than refused. A tier is a
+    spending limit, and the failure that matters is the one that quietly
+    stops buying a source nobody has tiered — not the one that buys it.
+    """
+    try:
+        return TIERS.index(tier) <= TIERS.index(ceiling)
+    except ValueError:
+        return True
+
+
 @dataclass(frozen=True)
 class PlannedFamily:
     family: str
@@ -76,6 +99,8 @@ class PlannedFamily:
     instruction: str | None = None
     #: How the reading happens: `search`, `fetch`, `provider`, `manual`.
     kind: str = "search"
+    #: How much an account must be worth before this is bought for it.
+    tier: str = "light"
     label: str = ""
     #: True when the ICP asked for this source but no signal type named it.
     #: Its gap costs no named conclusion, and saying so stops a rep reading an
@@ -121,6 +146,10 @@ async def build_plan(
     type_keys: set[str] | frozenset[str] | None = None,
     source_keys: set[str] | frozenset[str] | None = None,
     exclude: set[str] | frozenset[str] = frozenset(),
+    #: The spending ceiling. `deep` is the default so that every existing
+    #: caller keeps the plan it had — a tier that narrowed a plan by default
+    #: would quietly stop buying sources nobody had asked it to drop.
+    tier: str = "deep",
 ) -> ResearchPlan:
     """Derive the plan from the active registry and the chosen signal types.
 
@@ -198,6 +227,13 @@ async def build_plan(
         allowed = tuple(known.scopes or ()) if known is not None else ("company",)
         if scope and scope not in allowed:
             continue
+        # **The ceiling.** Everything else in this loop decides whether a
+        # source *can* answer; this decides whether it is worth asking. The
+        # two are kept apart deliberately — a source dropped for its tier is
+        # still one that would have worked, and a later run at a higher tier
+        # must find it exactly where it left it.
+        if known is not None and not within(known.tier, tier):
+            continue
         if known is not None and known.kind not in ("search", "fetch"):
             # A provider waterfall or a rep's keyboard. Fanning research out
             # over these would spend Apollo credits as though they were tokens,
@@ -213,6 +249,7 @@ async def build_plan(
                 scopes=tuple(known.scopes) if known else (),
                 support_only=known.support_only if known else False,
                 kind=known.kind if known else "search",
+                tier=known.tier if known else "light",
                 label=known.label if known else fam,
                 extra=not feeds.get(fam),
             )
@@ -509,7 +546,9 @@ class ListPlan:
         )
 
 
-async def plan_for_list(session: AsyncSession, list_id: uuid.UUID) -> ListPlan:
+async def plan_for_list(
+    session: AsyncSession, list_id: uuid.UUID, *, tier: str = "deep"
+) -> ListPlan:
     """Plan research from the list's ICPs rather than the whole registry.
 
     Two things come from the ICP and they are not the same thing. Its
@@ -574,10 +613,13 @@ async def plan_for_list(session: AsyncSession, list_id: uuid.UUID) -> ListPlan:
     }
     keys = wanted or None
     company = await build_plan(
-        session, scope="company", type_keys=keys, exclude=excluded
+        session, scope="company", type_keys=keys, exclude=excluded, tier=tier
     )
+    # Contacts are deep-only. The whole per-person programme has produced
+    # five signals, so it is not something a light run should reach for; a
+    # rep who wants it asks for the tier that says so.
     contact = await build_plan(
-        session, scope="contact", type_keys=keys, exclude=excluded
+        session, scope="contact", type_keys=keys, exclude=excluded, tier=tier
     )
     return ListPlan(
         company=company,

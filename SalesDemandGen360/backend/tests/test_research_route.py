@@ -274,7 +274,10 @@ def _plan(api, *families: str, contact: tuple[str, ...] = (), targets: tuple[str
         company=fams(families, "company"), contact=fams(contact, "contact"), targets=targets
     )
 
-    async def fake_plan(session, list_id):
+    # `**_` absorbs `tier`, which the route now passes. The stub stands in for
+    # the planner, so the tier it would have applied is asserted where tiers
+    # are the subject — not by every test that needs a plan to exist.
+    async def fake_plan(session, list_id, **_):
         return plan
 
     api.monkeypatch.setattr(research, "plan_for_list", fake_plan)

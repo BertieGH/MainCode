@@ -321,3 +321,51 @@ class _NoHttp:
 
     async def aclose(self):  # pragma: no cover - never reached, never needed
         return None
+
+
+# ==========================================================================
+# the tier — the one thing that sets a maximum
+# ==========================================================================
+class TestTheCeiling:
+    """Everything else that decides what a run buys only ever subtracts: the
+    reuse window drops what is fresh, the scan drops what is not there, the
+    waterfall drops people who do not post. The tier is the only thing that
+    sets the maximum, and the two kinds must not be confused — a deep run on
+    a dead account still costs light money, because the scan gates it.
+    """
+
+    def test_a_tier_buys_everything_at_or_below_it(self):
+        from app.services.research import within
+
+        assert within("light", "light")
+        assert within("light", "deep")
+        assert within("standard", "deep")
+        assert not within("deep", "light")
+        assert not within("standard", "light")
+
+    def test_an_untiered_source_keeps_being_bought(self):
+        """The safe direction. A tier is a spending limit, and the failure
+        that matters is the one that quietly stops buying a source nobody has
+        tiered — not the one that buys it."""
+        from app.services.research import within
+
+        assert within("a-tier-nobody-defined", "light")
+        assert within("light", "a-ceiling-nobody-defined")
+
+    def test_the_order_is_cheapest_first(self):
+        """The whole comparison is an index into this tuple, so reordering it
+        silently inverts every ceiling in the system."""
+        from app.services.research import TIERS
+
+        assert TIERS == ("light", "standard", "deep")
+
+    def test_deep_is_the_default_everywhere(self):
+        """A caller that says nothing must get the plan it got before. A tier
+        that narrowed by default would stop buying sources nobody asked it to
+        drop, and the first sign would be a signal that stopped appearing."""
+        import inspect
+
+        from app.services.research import build_plan, plan_for_list
+
+        for fn in (build_plan, plan_for_list):
+            assert inspect.signature(fn).parameters["tier"].default == "deep"

@@ -862,11 +862,25 @@ class ResearchSource(Base):
     #: shrink, and `totalResults` on the restricted query says whether anything
     #: recent exists at all before a single result is read.
     max_age_days: Mapped[int | None] = mapped_column(Integer)
+    #: `light` | `standard` | `deep` — how much an account has to be worth
+    #: before this source is bought for it.
+    #:
+    #: **A ceiling, not another reducer.** The reuse window, the scan's
+    #: per-family plan and the LinkedIn waterfall all subtract from what a run
+    #: buys; this is the only thing that sets its maximum. A deep run on a
+    #: dead account still costs light money, because the scan gates it.
+    #:
+    #: Defaults to `light`, which is the safe direction: a source nobody has
+    #: tiered keeps being bought exactly as it was.
+    tier: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'light'")
+    )
 
     __table_args__ = (
         CheckConstraint(
             "kind IN ('search','fetch','provider','manual')", name="kind_valid"
         ),
+        CheckConstraint("tier IN ('light','standard','deep')", name="tier_valid"),
         CheckConstraint(
             "status IN ('active','paused','deprecated')", name="status_valid"
         ),

@@ -1221,6 +1221,20 @@ async def run_research_for_list(
     force_scope: str = Query("company", pattern="^(both|company|contacts)$"),
     #: Which halves run at all. `company` leaves the people alone entirely.
     scope: str = Query("both", pattern="^(both|company|contacts)$"),
+    #: How much this account is worth spending on.
+    #:
+    #: **A ceiling, and the only one.** The reuse window, the scan's
+    #: per-family plan and the LinkedIn waterfall all subtract from what a run
+    #: buys; this sets the maximum. A deep run on a dead account still costs
+    #: light money, because the scan gates it.
+    #:
+    #: Measured over the first week: light reaches 85% of every signal found
+    #: for 29% of what a run costs, because the two dearest sources are
+    #: fifteen times dearer per signal than the two cheapest paid ones.
+    #:
+    #: `deep` is the default so that a caller which says nothing gets what it
+    #: got before. The screens choose deliberately.
+    tier: str = Query("deep", pattern="^(light|standard|deep)$"),
     # One cheap sweep before the per-family passes; nothing found means the
     # families are not bought. On by default — it is the saving — and a query
     # param rather than buried config because the first thing anyone needs to
@@ -1314,9 +1328,14 @@ async def run_research_for_list(
     report.window_days = window
     # What to look for comes from the list's ICPs: their company signals for
     # the company; their contact signals, and buyer personas, for the people.
-    list_plan = await research_service.plan_for_list(session, list_id)
+    list_plan = await research_service.plan_for_list(session, list_id, tier=tier)
     planned = set(list_plan.company.keys)
     contact_families = set(list_plan.contact.keys)
+    # Contacts are deep-only. The whole per-person programme has produced
+    # five signals for its lifetime, so it is not something a cheaper run
+    # should reach for — a rep who wants it asks for the tier that says so.
+    if tier != "deep":
+        contact_families = set()
     # **Scope narrows the plan, not the runner.** Emptying a family set here
     # means the reuse arithmetic, the "nothing to do" check and the report all
     # agree with what was actually bought. Suppressing it at the call instead
@@ -1626,6 +1645,7 @@ async def run_research_for_account(
     force: bool = Query(False),
     force_scope: str = Query("company", pattern="^(both|company|contacts)$"),
     scope: str = Query("both", pattern="^(both|company|contacts)$"),
+    tier: str = Query("deep", pattern="^(light|standard|deep)$"),
     fast_sweep: bool = Query(True),
     profiles: bool = Query(True),
     session: AsyncSession = Depends(get_session),
@@ -1693,6 +1713,7 @@ async def run_research_for_account(
         force=force,
         force_scope=force_scope,
         scope=scope,
+        tier=tier,
         fast_sweep=fast_sweep,
         profiles=profiles,
         session=session,
