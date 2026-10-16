@@ -1,8 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { NavigationEnd, NavigationStart, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { ActivatedRouteSnapshot, NavigationEnd, NavigationStart, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
+import { AuthService, MODULE_LABELS, ROLE_LABELS } from './core/auth.service';
 import { ConfigService, Readiness } from './core/config.service';
 
 /** Where the browse-anyway choice is remembered. */
@@ -13,11 +14,22 @@ import { ToastHostComponent } from './shared/toast-host.component';
 import { ActivityBarComponent } from './shared/activity-bar.component';
 import { ActivityService } from './shared/activity.service';
 import { ResearchModeService } from './shared/research-mode.service';
+import { UserMenuComponent } from './shared/user-menu.component';
+
+/** A menu entry. `module` is its role-grid module; `admin` means admin only. */
+interface NavItem {
+  label: string;
+  path: string | null;
+  gated: boolean;
+  module?: string;
+  admin?: boolean;
+  children?: NavItem[];
+}
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, ConfirmHostComponent, ToastHostComponent, ActivityBarComponent],
+  imports: [CommonModule, UserMenuComponent, RouterOutlet, RouterLink, RouterLinkActive, ConfirmHostComponent, ToastHostComponent, ActivityBarComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
@@ -26,6 +38,18 @@ export class AppComponent implements OnInit {
   private router = inject(Router);
   private activity = inject(ActivityService);
   private mode = inject(ResearchModeService);
+  readonly auth = inject(AuthService);
+
+  /** The sign-in page draws without the sidebar. */
+  bare = signal(false);
+
+  /**
+   * The module the open screen belongs to, when this role can only read it.
+   * Said once above the screen, so a refusal on Save is never the first a
+   * person hears of it. The server refuses the write either way.
+   */
+  viewOnlyHere = signal<string | null>(null);
+  readonly roleLabels = ROLE_LABELS;
 
   /**
    * Three external connections are mandatory. Until each is stored *and*
@@ -57,12 +81,7 @@ export class AppComponent implements OnInit {
 
   /** Only Settings is built. The rest are shown disabled so the shape of the
    *  application is visible without pretending the screens exist. */
-  nav: {
-    label: string;
-    path: string | null;
-    gated: boolean;
-    children?: { label: string; path: string; gated: boolean }[];
-  }[] = [
+  nav: NavItem[] = [
     // No screen of its own yet, and already grouping one. The parent stays
     // inert and the child carries the link.
     {
@@ -72,13 +91,13 @@ export class AppComponent implements OnInit {
       children: [
         // Ungated: this is where somebody looks when the pipeline is refusing
         // to run, which is exactly when setup is unfinished.
-        { label: 'Cost & health', path: '/dashboard/cost-health', gated: false },
+        { label: 'Cost & health', path: '/dashboard/cost-health', gated: false, module: 'dashboard' },
       ],
     },
-    { label: 'Account Lists', path: '/lists', gated: true },
-    { label: 'Campaign Queues', path: '/queues', gated: true },
-    { label: 'Outreach', path: '/campaigns', gated: true },
-    { label: 'Sales Prep', path: '/prep', gated: true },
+    { label: 'Account Lists', path: '/lists', gated: true, module: 'lists' },
+    { label: 'Campaign Queues', path: '/queues', gated: true, module: 'queues' },
+    { label: 'Outreach', path: '/campaigns', gated: true, module: 'outreach' },
+    { label: 'Sales Prep', path: '/prep', gated: true, module: 'prep' },
     { label: 'Learning', path: null, gated: false },
   ];
 
@@ -120,24 +139,28 @@ export class AppComponent implements OnInit {
    * branch exists to handle, and the next person to add a menu item ahead of
    * its screen would find the type fighting them.
    */
-  settingsNav: { label: string; path: string | null; gated: boolean }[] = [
-    { label: 'API config', path: '/settings/setup', gated: false },
-    { label: 'Model config', path: '/settings/models', gated: true },
+  settingsNav: NavItem[] = [
+    { label: 'API config', path: '/settings/setup', gated: false, admin: true },
+    { label: 'Model config', path: '/settings/models', gated: true, module: 'models_prompts' },
     // Beside Model config on purpose: one says how hard a stage thinks, the
     // other says what it is asked to do, and people look for them together.
-    { label: 'Prompts config', path: '/settings/prompts', gated: true },
-    { label: 'Services & proof', path: '/settings/services', gated: true },
+    { label: 'Prompts config', path: '/settings/prompts', gated: true, module: 'models_prompts' },
+    { label: 'Services & proof', path: '/settings/services', gated: true, module: 'content' },
     // An ICP is written in terms of the services it buys, so it sits under
     // them rather than beside Scoring, which only consumes it.
-    { label: 'ICP profiles', path: '/settings/icp-profiles', gated: true },
+    { label: 'ICP profiles', path: '/settings/icp-profiles', gated: true, module: 'content' },
     // Sources and the types that claim them, on one screen: a type names
     // the sources its fact lives in, so they are edited together.
-    { label: 'Sources & signals', path: '/settings/signal-types', gated: true },
-    { label: 'Writing samples', path: '/settings/writing', gated: true },
+    { label: 'Sources & signals', path: '/settings/signal-types', gated: true, module: 'sources_signals' },
+    { label: 'Writing samples', path: '/settings/writing', gated: true, module: 'content' },
     // Absorbed the reuse window and the two multiplier tables: one screen
     // for what a thing is worth.
-    { label: 'Weights & scoring', path: '/settings/scoring', gated: true },
-    { label: 'Sales rules', path: '/settings/rules', gated: true },
+    { label: 'Weights & scoring', path: '/settings/scoring', gated: true, module: 'scoring' },
+    { label: 'Sales rules', path: '/settings/rules', gated: true, module: 'rules_cadences' },
+    // Who can sign in, and what each role may do. Ungated: managing people
+    // has nothing to do with whether the connections are set up.
+    { label: 'Users', path: '/settings/users', gated: false, admin: true },
+    { label: 'Roles', path: '/settings/roles', gated: false, admin: true },
     // Monitoring moved out: what a run costs is read beside the pipeline it
     // belongs to, not beside the knobs that configure it.
   ];
@@ -153,8 +176,12 @@ export class AppComponent implements OnInit {
     // readiness is a credential being saved or tested, and both end in a
     // route the user came back from.
     this.router.events
-      .pipe(filter((e) => e instanceof NavigationEnd))
-      .subscribe(() => this.refresh());
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe((e) => {
+        this.bare.set(e.urlAfterRedirects.startsWith('/login'));
+        this.viewOnlyHere.set(this.readOnlyModule());
+        this.refresh();
+      });
   }
 
   /**
@@ -244,7 +271,39 @@ export class AppComponent implements OnInit {
     }
   }
 
+  // --- who is signed in ----------------------------------------------------
+
+  /**
+   * Whether a menu item shows. Before anyone is known (`me` undefined —
+   * only ever true in a spec, because the guard loads it before any screen)
+   * everything shows: hiding on not-knowing would flash an empty menu.
+   */
+  visible(item: NavItem): boolean {
+    if (this.auth.me() === undefined) return true;
+    if (item.admin) return this.auth.isAdmin();
+    if (item.children?.length && !item.path) return item.children.some((c) => this.visible(c));
+    return !item.module || this.auth.canSee(item.module);
+  }
+
+  /** Opens read-only for this role — said in the menu so nobody is surprised. */
+  viewOnly(item: NavItem): boolean {
+    return !!item.module && this.auth.me() != null && this.auth.level(item.module) === 'view';
+  }
+
+  private readOnlyModule(): string | null {
+    let snap: ActivatedRouteSnapshot | null = this.router.routerState.snapshot.root;
+    let module: string | undefined;
+    while (snap) {
+      module = (snap.data['module'] as string | undefined) ?? module;
+      snap = snap.firstChild;
+    }
+    return module && this.auth.level(module) === 'view' ? MODULE_LABELS[module] ?? module : null;
+  }
+
   private refresh(): void {
+    // Nobody to ask on behalf of: the sign-in page, or a session that ended.
+    // These would only come back 401.
+    if (this.bare() || this.auth.me() === null) return;
     // The installation's research depth, loaded where every other app-wide
     // fact is. The service that holds it does not fetch: root-provided and
     // self-loading is how a shared service ends up in every parent's tests.

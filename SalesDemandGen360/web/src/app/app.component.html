@@ -1,4 +1,7 @@
-<div class="app">
+<!-- The sign-in page stands alone: no menu to show anybody who is not in. -->
+<router-outlet *ngIf="bare()"></router-outlet>
+
+<div class="app" *ngIf="!bare()">
   <aside class="side">
     <div class="brand">
       <div class="brand-title">Sales Demand Gen360</div>
@@ -38,8 +41,9 @@
 
     <nav class="nav">
       <ng-container *ngFor="let n of nav">
+       <ng-container *ngIf="visible(n)">
         <a class="nav-item" *ngIf="n.path && !disabled(n)" [routerLink]="n.path"
-           routerLinkActive="on">{{ n.label }}</a>
+           routerLinkActive="on">{{ n.label }}<span class="ro" *ngIf="viewOnly(n)"> · view</span></a>
         <span class="nav-item disabled" *ngIf="n.path && disabled(n)"
               [title]="lockReason()">{{ n.label }}</span>
         <span class="nav-item disabled" *ngIf="!n.path" title="Not built yet">{{ n.label }}</span>
@@ -49,19 +53,23 @@
              the child is the live link — which is why these are rendered
              whatever state the parent is in. -->
         <ng-container *ngFor="let c of n.children || []">
+         <ng-container *ngIf="visible(c)">
           <a class="nav-item child" *ngIf="!disabled(c)" [routerLink]="c.path"
-             routerLinkActive="on">{{ c.label }}</a>
+             routerLinkActive="on">{{ c.label }}<span class="ro" *ngIf="viewOnly(c)"> · view</span></a>
           <span class="nav-item child disabled" *ngIf="disabled(c)"
                 [title]="lockReason()">{{ c.label }}</span>
+         </ng-container>
         </ng-container>
+       </ng-container>
       </ng-container>
     </nav>
 
     <div class="nav-label">Settings</div>
     <nav class="nav">
       <ng-container *ngFor="let n of settingsNav">
+       <ng-container *ngIf="visible(n)">
         <a class="nav-item" *ngIf="n.path && !disabled(n)" [routerLink]="n.path"
-           routerLinkActive="on">{{ n.label }}</a>
+           routerLinkActive="on">{{ n.label }}<span class="ro" *ngIf="viewOnly(n)"> · view</span></a>
         <span class="nav-item disabled" *ngIf="n.path && disabled(n)"
               [title]="lockReason()">{{ n.label }}</span>
         <!-- Same as the main nav: a section with no path is unbuilt, and is
@@ -69,17 +77,21 @@
              null path rendered as a live link to nowhere. -->
         <span class="nav-item disabled" *ngIf="!n.path"
               title="Not built yet">{{ n.label }}</span>
+       </ng-container>
       </ng-container>
     </nav>
 
     <div class="side-foot">
-      <div class="phase">Phase 2 · accounts &amp; lists</div>
+      <app-user-menu />
     </div>
   </aside>
 
   <main class="main">
     <!-- Every outcome, kept: notices clear, this does not. -->
     <app-activity-bar />
+    <div class="view-only" *ngIf="viewOnlyHere() as m" role="note">
+      View only — your role ({{ roleLabels[auth.user()!.role] }}) can read {{ m }} but not change it.
+    </div>
     <router-outlet></router-outlet>
   </main>
 </div>

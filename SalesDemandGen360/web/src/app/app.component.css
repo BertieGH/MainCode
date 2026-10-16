@@ -120,3 +120,8 @@
 .demo-badge strong { display: block; margin-bottom: 2px; }
 .demo-badge span { opacity: 0.75; }
 .demo-badge:hover strong { text-decoration: underline; }
+
+
+/* A screen this role can only read, marked in the menu. */
+.ro { font-size: .7rem; color: var(--sidebar-dim); }
+.view-only { background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; margin-bottom: 16px; font-size: .82rem; color: var(--muted); }

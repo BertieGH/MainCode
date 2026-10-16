@@ -174,6 +174,8 @@ describe('AppComponent', () => {
       'Writing samples',
       'Weights & scoring',
       'Sales rules',
+      'Users',
+      'Roles',
     ]);
   });
 
@@ -265,8 +267,10 @@ describe('AppComponent', () => {
       settle(NOT_READY);
       // Locking the way out of an incomplete setup would be a trap: this is
       // where the missing credentials get entered.
+      // Users and Roles stay open too: who can sign in has nothing to do
+      // with whether the connections are set up (`docs/17`).
       const open = cmp.settingsNav.filter((n) => !cmp.disabled(n)).map((n) => n.label);
-      expect(open).toEqual(['API config']);
+      expect(open).toEqual(['API config', 'Users', 'Roles']);
     });
 
     it('unlocks everything once ready', () => {

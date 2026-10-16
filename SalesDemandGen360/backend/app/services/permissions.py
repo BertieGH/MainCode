@@ -251,7 +251,9 @@ def refusal(grid: dict, role: str, method: str, path: str) -> str | None:
         verb = "change" if need == EDIT else "see"
         return f"Your role can't {verb} {label}."
     if rule.action and rule.action not in can["actions"]:
-        return f"Your role can't {ACTIONS[rule.action].lower()}."
+        label = ACTIONS[rule.action]
+        # Lower the first letter only: "approve & send to LGM", not "lgm".
+        return f"Your role can't {label[0].lower()}{label[1:]}."
     return None
 
 

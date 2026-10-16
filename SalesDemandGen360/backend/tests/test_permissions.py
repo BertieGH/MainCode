@@ -94,7 +94,7 @@ def test_the_default_grid(role, method, path, allowed):
 
 def test_a_refusal_says_what_was_missing():
     assert refusal(DEFAULT_GRID, "marketing", "POST", "/api/campaigns/{campaign_id}/execute") == (
-        "Your role can't approve & send to lgm."
+        "Your role can't approve & send to LGM."
     )
     assert refusal(DEFAULT_GRID, "marketing", "PUT", "/api/config/llm/{scenario}") == (
         "Your role can't change Model & Prompts config."

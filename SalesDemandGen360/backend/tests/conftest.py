@@ -39,6 +39,9 @@ os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg://unused:unused@localhost:5432/unused"
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-at-least-16-chars")
+# Sign-in is enforced by default. Most of this suite predates it and tests a
+# route, not a session; the auth and permission tests switch it back on.
+os.environ.setdefault("AUTH_REQUIRED", "false")
 
 import app as _app_package  # noqa: E402,F401  — import sets the Windows event-loop policy
 from app.database import get_session  # noqa: E402

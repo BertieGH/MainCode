@@ -1,6 +1,6 @@
 # User access: login, admin-created accounts and role-based permissions
 
-**Status: phases 1–2 built (2026-10-15); phases 3–4 to come.** Agreed in chat 2026-10-15. Screens are in
+**Status: phases 1–3 built (2026-10-15); phase 4 to come.** Agreed in chat 2026-10-15. Screens are in
 `mockups/user-access.html`. This is the brief, so the build does not have to re-derive it.
 
 ## Why
@@ -99,6 +99,17 @@ The prompt-editor password retires: "Model & Prompts config: Edit" replaces it.
    `/auth/me` returns `{user, permissions}` for phase 3 to hide by.
 3. **Angular (1–1½ days).** A sign-in page and a change-password dialog. Guard, expired-session handling, user menu, Settings ›
    Users, Settings › Roles, and view-only screens with disabled inputs.
+   *Built.* `core/auth.service.ts` (who is signed in, what the role holds),
+   `core/auth.guard.ts` (route guard, signed-out guard, 401 interceptor),
+   `login/`, `settings/users.component.ts`, `settings/roles.component.ts`,
+   `shared/user-menu.component.ts`. Every screen sits under one guarded parent
+   route tagged with its module; a `none` module is hidden from the menu and
+   its URL sends the person home; a `view` module is marked "· view" in the
+   menu and opens under a one-line view-only notice. **`AUTH_REQUIRED` now
+   defaults on**; the test suite turns it off in `conftest.py`.
+   *Not yet:* inputs on view-only screens are not individually disabled, and
+   Approve/Execute are not hidden for roles without `approve_send` — the server
+   refuses both with a sentence naming what the role lacks.
 4. **Hardening (½–1 day).** CSRF protection, full test runs, a browser pass as
    each of the four roles, CLAUDE.md invariant 9 extended to sessions, and a
    `docs/13` entry.

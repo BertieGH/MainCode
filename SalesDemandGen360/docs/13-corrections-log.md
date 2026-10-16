@@ -5475,3 +5475,29 @@ named it, but the table never existed. Approvals carry the signed-in user's id.
 `models/identity.py`, `alembic/c3a9f17e5b24` (new), `api/auth.py`,
 `api/campaigns.py`, `api/config.py`, `api/prompts.py`, `main.py`,
 `tests/test_permissions.py` (new), `tests/test_auth.py`, `tests/conftest.py`.
+
+## §119 — A sign-in page, and the switch turned on (2026-10-15)
+
+**Phase 3 of `docs/17`.** A sign-in page with no sidebar. A guard on one
+parent route over every screen, so a screen added later is signed-in by
+default. Each route is tagged with its role-grid module: `none` hides the item
+and sends a typed URL home, and `view` marks the item and puts a one-line
+notice above the screen. A user menu at the foot of the sidebar offers change
+password and sign out. Settings › Users and Settings › Roles follow the mockup.
+`AUTH_REQUIRED` now defaults on.
+
+**Caught in the browser.** The first visit to `/campaigns` came back as
+`/login?next=/`. The shell asks for readiness the moment it starts, before
+the guard knows anybody; that 401 reached the interceptor, which redirected
+using the router's URL at the time, `/`. The interceptor now acts only on a
+session that was known to exist, and leaves first-load redirects to the guard,
+which knows the page being opened.
+
+**And one wording slip.** A refusal read "approve & send to lgm": the action
+label was lower-cased whole. Now only its first letter is.
+
+`web/.../core/auth.service.ts`, `core/auth.guard.ts`, `core/access.service.ts`,
+`login/login.component.ts`, `settings/users.component.ts`,
+`settings/roles.component.ts`, `shared/user-menu.component.ts` (new),
+`app.config.ts`, `app.routes.ts`, `app.component.*`;
+`backend/app/config.py`, `services/permissions.py`, `tests/conftest.py`.
