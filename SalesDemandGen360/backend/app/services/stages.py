@@ -89,6 +89,7 @@ async def load_prefix(
     tools: list[dict[str, Any]] | None = None,
     with_writing_samples: bool = False,
     instructions_key: str | None = None,
+    sample_channels: list[str] | None = None,
 ) -> PromptAssembly:
     """Build the cached prefix for a stage from active configuration.
 
@@ -139,7 +140,19 @@ async def load_prefix(
             ).scalars()
         )
         samples = [
-            f"[{s.channel}] {s.subject or ''}\n{s.body}".strip() for s in rows
+            (
+                f"[{s.channel}] {s.subject or ''}\n{s.body}".strip()
+                # The notes say *why* a sample works — the part a model can
+                # generalise from without copying the words. The screen said
+                # so; until now they never reached the prompt.
+                + (f"\nWhy it works: {s.notes.strip()}" if s.notes and s.notes.strip() else "")
+            )
+            for s in rows
+            # A `[demo]` sample is a placeholder, not a voice: drafting copied
+            # its structure and its ask. Ignored until real ones replace it.
+            if not s.body.lstrip().lower().startswith("[demo]")
+            # Only the channels this call writes for (`docs/18`).
+            and (sample_channels is None or s.channel in sample_channels)
         ]
 
     icp_rows = await _active_icps(session)
@@ -1184,7 +1197,9 @@ async def draft_arc(
     contact: Contact,
     thread: dict[str, Any],
     shape: dict[str, Any],
-    signals: list[Signal],
+    signals: list[dict[str, Any]],
+    targets: dict[str, Any] | None = None,
+    sample_channels: list[str] | None = None,
     client: Any | None = None,
 ) -> llm.CallResult[DraftSet]:
     """Write every touch in one call.
@@ -1199,7 +1214,9 @@ async def draft_arc(
     belong to LGM; this stage fills a registered shape's variables and never
     authors one.
     """
-    prefix = await load_prefix(session, "outreach_drafting", with_writing_samples=True)
+    prefix = await load_prefix(
+        session, "outreach_drafting", with_writing_samples=True, sample_channels=sample_channels,
+    )
     payload = {
         "account": _account_facts(account),
         # Who they are as well as their title — the same profile strategy
@@ -1209,24 +1226,19 @@ async def draft_arc(
         "thread": thread,
         # Fixed by LGM. Not a suggestion, and there is no step editor anywhere.
         "cadence": shape,
-        "signals": [
-            {
-                "signal_id": str(s.id),
-                "type": s.signal_type,
-                "summary": s.summary,
-                "business_implication": s.business_implication,
-                "observed_at": s.observed_at.isoformat(),
-                "expires_at": s.expires_at.isoformat() if s.expires_at else None,
-                "is_hypothesis": s.is_hypothesis,
-            }
-            for s in signals
-        ],
+        # Ranked as strategy ranked them; `is_trigger` marks what the pitch
+        # rests on, and those carry their evidence (`strategy_context`).
+        "signals": signals,
+        # The campaign's ICP and service — which buyer, which offer.
+        **(targets or {}),
     }
     return await _run(
         session,
         "outreach_drafting",
         prefix=prefix,
-        user_content=stable_json(payload),
+        # Profiles, signal summaries and evidence are retrieved text
+        # (invariant 10): the boundary lets the model tell them from instructions.
+        user_content=_untrusted("prospect_material", stable_json(payload)),
         output_model=DraftSet,
         client=client,
     )
@@ -1295,7 +1307,9 @@ async def evaluate(
         session,
         "evaluation",
         prefix=prefix,
-        user_content=stable_json(payload),
+        # The subject quotes drafts, profiles and signal text: retrieved
+        # material, not instructions (invariant 10).
+        user_content=_untrusted("subject_material", stable_json(payload)),
         output_model=EvaluationResult,
         client=client,
     )
@@ -1316,6 +1330,7 @@ async def generate_prep(
     qualification: dict[str, Any] | None = None,
     proof: list[dict[str, Any]] | None = None,
     mode: str = "pre_engagement",
+    targets: dict[str, Any] | None = None,
     client: Any | None = None,
 ) -> llm.CallResult[SalesPrepPayload]:
     """One brief, one contact, on demand.
@@ -1330,7 +1345,9 @@ async def generate_prep(
     conclusions it writes a confident brief; given the gaps it writes an
     honest one, and the gaps are what the rep most needs on a call.
     """
-    prefix = await load_prefix(session, "sales_prep", with_writing_samples=True)
+    # No writing samples: a call brief is not outreach, and samples pull a
+    # non-outreach stage toward an email's register (`docs/18`).
+    prefix = await load_prefix(session, "sales_prep")
     payload = {
         "mode": mode,
         "account": _account_facts(account),
@@ -1359,8 +1376,12 @@ async def generate_prep(
         "qualification": qualification or {},
         "approved_proof": proof or [],
         "already_sent": already_sent,
+        # The campaign's ICP and service — which buyer, which offer.
+        **(targets or {}),
     }
-    content = stable_json(payload)
+    # Profiles, evidence excerpts and signal text are retrieved, not ours
+    # (invariant 10): the boundary lets the model tell them from instructions.
+    content = _untrusted("prospect_material", stable_json(payload))
     if replies:
         # Their words, quoted. A reply is the most valuable text in the system
         # and the most obvious place for an injection to arrive.

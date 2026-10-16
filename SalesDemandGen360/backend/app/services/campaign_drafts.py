@@ -26,6 +26,7 @@ from app.models.content import Draft, Touch
 from app.models.governance import Approval
 from app.schemas.draft import DraftSet, TouchDraft
 from app.services import context as context_service
+from app.services import strategy_context
 from app.services import drafting
 from app.services.promotion import person_of
 
@@ -287,6 +288,24 @@ async def rows(session: AsyncSession, campaign: OutreachCampaign) -> list[dict]:
     return out
 
 
+async def _campaign_targets(session: AsyncSession, sequence: OutreachSequence):
+    """The campaign's ICP and service as a prompt block, and the ICP version.
+
+    Empty for a campaign promoted before it carried them — drafting still
+    works, from the catalogue, as it did before.
+    """
+    from app.services import campaign_strategy
+
+    campaign = await session.get(OutreachCampaign, sequence.campaign_id)
+    try:
+        t = await campaign_strategy.targets(session, campaign)
+    except campaign_strategy.NotReadyError:
+        return {}, None
+    return strategy_context.targets_brief(
+        service=t.service, icp_name=t.icp_name, icp_description=t.icp_description, icp_version=t.icp_version,
+    ), t.icp_version
+
+
 async def _thread_payload(session: AsyncSession, thread) -> dict:
     """The argument drafting writes from: the selected angle (`docs/18`).
 
@@ -358,7 +377,14 @@ async def write(session: AsyncSession, sequence: OutreachSequence, *, draft=None
     _refuse_if_enrolled(sequence, arc)
 
     account = await session.get(Account, contact.account_id)
-    signals = await context_service.live_signals(session, account.id)
+    targets, icp_version = await _campaign_targets(session, sequence)
+    # Ranked as strategy ranked them, with the pitch's trigger marked and its
+    # evidence attached (`docs/18`): drafting used to get every live signal
+    # unranked, with nothing to say which one the angle rests on.
+    signals = await strategy_context.signal_brief(
+        session, account_id=account.id, contact_id=contact.id, icp_version=icp_version,
+        cited={str(x) for x in (thread.trigger_signal_ids or [])},
+    )
     from app.services.lgm import ATTRIBUTE_BUDGET
 
     cadence = {
@@ -406,6 +432,15 @@ async def write(session: AsyncSession, sequence: OutreachSequence, *, draft=None
     if draft is None:
         async def draft(**kwargs):
             return await stages.draft_arc(session, **kwargs)
+    # Which channels this cadence writes for, so only those channels' writing
+    # samples ride along — a LinkedIn step shown an email sample borrowed its
+    # greeting and length (`docs/18`, writing samples test).
+    # A shape with no per-step channels recorded gets every sample: an empty
+    # list would filter them all out.
+    channels = sorted({
+        "linkedin" if "linkedin" in str(c).lower() else "email" if "mail" in str(c).lower() else str(c).lower()
+        for c in (shape.step_channels or {}).values()
+    }) or None
 
     # A draft is the one campaign call that is also about one person, so it
     # carries both — the campaign the bill belongs to and who it was for.
@@ -417,6 +452,7 @@ async def write(session: AsyncSession, sequence: OutreachSequence, *, draft=None
     ):
         result = await draft(
             account=account, contact=contact, thread=await _thread_payload(session, thread), shape=cadence, signals=signals,
+            targets=targets, sample_channels=channels,
         )
     draft_set: DraftSet = result.parsed
     model = getattr(result, "model", "") or None

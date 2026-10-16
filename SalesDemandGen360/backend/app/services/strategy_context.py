@@ -213,3 +213,90 @@ async def build(
         "people": people,
     }
     return payload, {str(s.id) for s in live}, {str(p.id) for p in proofs}
+
+
+# --------------------------------------------------------------------------
+# the same picture, for one person — drafting and sales prep
+# --------------------------------------------------------------------------
+def targets_brief(*, service: ServiceCatalog | None, icp_name: str | None, icp_description: str | None,
+                  icp_version: IcpProfileVersion | None) -> dict[str, Any]:
+    """The campaign's ICP and service, as strategy saw them.
+
+    Drafting and prep used to get only the catalogue of every service and
+    every ICP, and had to guess which this person was being approached about.
+    """
+    definition = (icp_version.definition or {}) if icp_version else {}
+    out: dict[str, Any] = {}
+    if icp_name:
+        out["icp"] = {
+            "name": icp_name,
+            "description": icp_description,
+            **{k: definition.get(k) for k in ("track", "industries", "personas") if definition.get(k)},
+        }
+    if service is not None:
+        out["service"] = {
+            "code": service.code,
+            "name": service.name,
+            "description": service.description,
+            "positioning_angles": service.positioning_angles or [],
+        }
+    return out
+
+
+async def signal_brief(
+    session: AsyncSession,
+    *,
+    account_id: uuid.UUID,
+    contact_id: uuid.UUID | None,
+    icp_version: IcpProfileVersion | None,
+    cited: set[str] | frozenset = frozenset(),
+    evidence_for_all: bool = False,
+    today: date | None = None,
+) -> list[dict[str, Any]]:
+    """Every live signal for one person's company and for them, ranked as
+    strategy ranks them, with `is_trigger` marking what the pitch rests on.
+
+    "Live" is `context.live_signals` — not expired by date, not superseded —
+    the one definition strategy, drafting and prep now share (prep used a
+    lifecycle flag and could disagree about what counted).
+
+    Evidence excerpts go with the cited signals (drafting) or all of them
+    (prep, which argues from the whole picture on a call). Never URLs: they
+    are for a rep checking a claim, and nothing downstream reasons with them.
+    """
+    from app.services import context as context_service
+
+    today = today or date.today()
+    matters = set(((icp_version.definition or {}) if icp_version else {}).get("signals_that_matter") or [])
+    live = await context_service.live_signals(session, account_id, today=today)
+    mine = [s for s in live if contact_id and s.contact_id == contact_id]
+    company = [s for s in live if not s.contact_id]
+    scored = [
+        (*rank_score(s, matters=matters, about_person=s in mine, today=today), s)
+        for s in company + mine
+    ]
+    scored.sort(key=lambda r: (-r[0], str(r[2].id)))
+    wanted_evidence = [s.id for _, _, s in scored if evidence_for_all or str(s.id) in cited]
+    behind = await excerpts(session, wanted_evidence)
+    out = []
+    for rank, (score, age, s) in enumerate(scored, start=1):
+        row: dict[str, Any] = {
+            "signal_id": str(s.id),
+            "signal_rank": rank,
+            "rank_score": round(score, 3),
+            "is_trigger": str(s.id) in cited,
+            "about_this_person": s in mine,
+            "type": s.signal_type,
+            "summary": s.summary,
+            "business_implication": s.business_implication,
+            "strength": s.strength,
+            "confidence": float(s.confidence) if s.confidence is not None else None,
+            "age_days": age,
+            "expires_in_days": max((s.expires_at - today).days, 0) if getattr(s, "expires_at", None) else None,
+            "is_hypothesis": s.is_hypothesis,
+            "icp_lists_this_type": s.signal_type in matters,
+        }
+        if s.id in behind:
+            row["evidence"] = behind[s.id]
+        out.append(row)
+    return out

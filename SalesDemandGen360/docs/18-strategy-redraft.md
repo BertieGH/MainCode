@@ -152,3 +152,33 @@ qualification and no live signal. "Old" is each contact's stored strategy.
   their own. The 2 CTOs (technical buyer, weight 40) are still below the
   threshold of 50 and need an override — a sales-rules decision, not a bug.
 
+## Drafting, sales prep and the check before approval (2026-10-16)
+
+The same trace for the two stages written from strategy, with the real
+payloads captured for one contact before and after.
+
+| | Before | After |
+|---|---|---|
+| Strategy prep used | Rank 1 among **every** thread ever built — a superseded one | The current thread, through the person's sequence; pitched angle, alternatives, account read |
+| Signals | Drafting: all live, unranked, no evidence, trigger unmarked. Prep: a different definition of "live" | Both: `strategy_context.signal_brief` — ranked as strategy ranks, `is_trigger` marked, evidence (cited for drafting, all for prep), no URLs, one definition of live |
+| ICP and service | Neither named; only the catalogue | The campaign's ICP (track, industries, personas) and service in both |
+| Prep proof | Every approved claim for every service | This service and general proof, the pitched angle's first |
+| Prep `already_sent` | Hard-coded `[]` | The sent touches' final words |
+| Retrieved text | Unwrapped | Both payloads, and the evaluation subject, wrapped as untrusted |
+| Draft evaluation | Defined, **never called**; a missing verdict read as `pass`, so drafts could be approved on a sample unchecked | `draft_evaluation` runs when drafts are saved: rules (live triggers, approved proof, no empty step) then the `evaluation` stage against the pitched angle, the signals, the cited proof, the company profile and the other openings at the company. Never evaluated is a flag, not a pass |
+| Writing samples | Every sample to every step and to prep; `[demo]` included; notes never sent | Voice only; each step sees its channel's samples; `[demo]` ignored; notes sent ("Why it works"); none in prep |
+
+**Writing samples, tested.** The same three people drafted with the demo
+samples and with two synthetic EIA samples: samples steer hard — the model
+copied structure, closing question, sign-off and even the ask, and a richer
+email sample lengthened LinkedIn openers. Hence voice-only and per-channel.
+The synthetic samples were deactivated; real ones replace them.
+
+**Live rerun, 3 contacts:** every payload carried what it should. Evaluation
+returned fail / pass / warn — discriminating, not rubber-stamping. The first
+fail was a false positive (the evaluator had not been shown the signals and
+called a live acquisition unsupported); with the evidence in the subject it
+became a real finding — step 2 had left the pitched angle for the
+alternative one. Gemini cannot fill the free-form per-criterion `scores`, so
+those stay empty; verdict and issues are what approval reads.
+

@@ -861,23 +861,16 @@ async def _cards(session: AsyncSession, campaign_id: uuid.UUID):
             )
         ) if touches else 0
 
-        verdict = (
-            await session.execute(
-                select(Evaluation.verdict)
-                .where(
-                    Evaluation.subject_type == "outreach_sequence",
-                    Evaluation.subject_id == sequence.id,
-                )
-                .order_by(Evaluation.created_at.desc())
-                .limit(1)
-            )
-        ).scalar() or "pass"
+        from app.services import draft_evaluation
+
+        verdict, issues = await draft_evaluation.latest_verdict(session, sequence.id)
 
         candidates.append(
             Candidate(
                 sequence_id=sequence.id,
                 contact_name=contact.full_name if contact else "?",
-                evaluation_verdict=verdict,
+                evaluation_verdict=verdict or "unevaluated",
+                evaluation_issue=(issues[0].get("detail") if issues else None),
                 contact_verified=bool(contact and contact.email_status == "verified"),
                 strategy_confidence=float(thread.confidence)
                 if thread and thread.confidence is not None

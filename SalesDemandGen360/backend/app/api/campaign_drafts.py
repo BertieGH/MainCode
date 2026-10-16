@@ -280,6 +280,17 @@ async def save_for_approval(sequence_id: uuid.UUID, session: AsyncSession = Depe
             "message": "this person already has a live sequence in another campaign — one person, "
             "one live sequence. Finish or stop that one first",
         }) from exc
+    # Checked now, against the words being approved (`docs/18`). A failure to
+    # evaluate never blocks the save — it leaves the thread unevaluated, and
+    # approval reads that as a reason to read it individually.
+    from app.services import draft_evaluation
+
+    try:
+        await draft_evaluation.evaluate(session, sequence)
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001
+        await session.rollback()
+        log.warning("save_for_approval.evaluation_failed sequence=%s err=%s", sequence_id, exc)
     return await get_arc(sequence_id, session)
 
 

@@ -5630,3 +5630,45 @@ covered.
 `api/campaign_strategy.py`, `api/prep.py`, `alembic/d7e2a9c4f1b8` (new),
 `scripts/classify_contacts.py` (new), tests; `web/.../campaign-person.component.ts`,
 `core/pipeline.service.ts`.
+
+## §125 — What drafting and prep are given, and a check that actually runs (2026-10-16)
+
+**Problem.** Capturing the real payloads for one contact (`docs/18`) found:
+- **Sales prep briefed from a superseded strategy.** It took rank 1 among
+  every thread ever built for the person; the prep index did the same.
+- **Prep never knew what had been sent.** `already_sent` was hard-coded
+  empty.
+- **Prep offered every approved claim** for every service, including another
+  service's demo case study.
+- **Drafting got signals unranked and without evidence**, with nothing
+  marking the trigger.
+- **Neither stage was told the campaign's ICP or service.**
+- **Retrieved text went in unwrapped.**
+- **The draft evaluation stage was never called.** Approval read a missing
+  verdict as `pass`, so drafts could be approved on a sample with no content
+  check, under a screen saying every thread had passed.
+- **Writing samples:** every sample went to every step and to prep, `[demo]`
+  ones included, and the notes the screen asked for never reached the model.
+
+**Fix.**
+- `strategy_context.signal_brief` and `targets_brief` are shared by both
+  stages: one ranking, one definition of live, the trigger marked, evidence,
+  no URLs.
+- Prep reads the current thread, the real sent copy and scoped proof.
+- Both payloads, and the evaluation subject, are wrapped as untrusted.
+- `draft_evaluation` runs when drafts are saved — rules, then the model —
+  and "never evaluated" is a flag, not a pass.
+- Samples are voice-only and per channel; `[demo]` is ignored, notes are
+  sent, and prep gets none.
+
+**Caught by the new tests:** a cadence with no recorded per-step channels
+yielded an empty channel list, which would have filtered out every writing
+sample.
+
+**Caught live:** the evaluator's first fail was a false positive — it had not
+been shown the signals — and with them it found a real problem instead.
+
+`services/strategy_context.py`, `services/draft_evaluation.py` (new),
+`services/campaign_drafts.py`, `services/stages.py`, `services/prompt.py`,
+`services/approval.py`, `api/prep.py`, `api/campaigns.py`,
+`api/campaign_drafts.py`, tests; `web/.../settings/writing-samples.component.ts`.

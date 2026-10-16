@@ -55,7 +55,7 @@ async def campaign(session):
 
 
 def clean(n: int) -> list[Candidate]:
-    return [Candidate(sequence_id=uuid.uuid4()) for _ in range(n)]
+    return [Candidate(sequence_id=uuid.uuid4(), evaluation_verdict="pass") for _ in range(n)]
 
 
 def flagged(n: int) -> list[Candidate]:
@@ -76,14 +76,25 @@ class TestStratifyingComesFirst:
             Candidate(uuid.uuid4(), strategy_confidence=CONFIDENCE_FLOOR - 0.01)
         )
         assert not flag_reasons(
-            Candidate(uuid.uuid4(), strategy_confidence=CONFIDENCE_FLOOR)
+            Candidate(uuid.uuid4(), evaluation_verdict="pass", strategy_confidence=CONFIDENCE_FLOOR)
         )
 
     def test_a_cadence_deviation_flags_a_thread(self):
         assert flag_reasons(Candidate(uuid.uuid4(), cadence_matches_template=False))
 
     def test_a_clean_thread_has_no_reasons(self):
-        assert flag_reasons(Candidate(uuid.uuid4())) == []
+        assert flag_reasons(Candidate(uuid.uuid4(), evaluation_verdict="pass")) == []
+
+    def test_drafts_never_evaluated_are_flagged_not_passed(self):
+        """A missing verdict used to read as `pass`, so drafts could be
+        approved on a sample with no content check at all (docs/18)."""
+        [reason] = flag_reasons(Candidate(uuid.uuid4()))
+        assert "not been evaluated" in reason
+
+    def test_a_warning_says_what_the_evaluation_found(self):
+        [reason] = flag_reasons(Candidate(uuid.uuid4(), evaluation_verdict="warn",
+                                          evaluation_issue="step 2 drifts from the pitched angle"))
+        assert reason.endswith("step 2 drifts from the pitched angle")
 
     def test_every_reason_is_reported_not_just_the_first(self):
         reasons = flag_reasons(

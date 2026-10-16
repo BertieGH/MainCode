@@ -35,10 +35,14 @@ import { apiError } from '../shared/api-error';
       </button>
     </div>
     <p id="ws-help" class="row-sub" *ngIf="help()" style="max-width:70ch;margin-bottom:18px;">
-      Voice is taught by example, not description. These messages are sent to the model verbatim in
-      a cached prompt block, so a handful of real messages that landed beats any amount of
-      "friendly but professional". The <strong>notes</strong> field is where you say
-      <em>why</em> a sample works — that is the part a model can generalise from.
+      Voice is taught by example, not description. Cadence drafting gets these as a
+      <strong>voice reference only</strong> — tone, length, rhythm — and is told never to reuse a
+      sample's phrases, greeting, sign-off or ask; the ask comes from the strategy. Each step sees
+      only its own channel's samples, so write LinkedIn samples the way a LinkedIn message reads.
+      The <strong>notes</strong> go with each sample: say <em>why</em> it works — that is the part a
+      model can generalise from. Samples starting <code>[demo]</code> are ignored, and sales prep
+      does not use samples at all. A handful of real messages that landed beats any amount of
+      "friendly but professional".
     </p>
     <div *ngIf="!help()" style="margin-bottom:14px;"></div>
 

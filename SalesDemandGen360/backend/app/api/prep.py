@@ -159,6 +159,97 @@ class ThreadOut(BaseModel):
     account_angle: str | None = None
 
 
+async def _current_thread(session: AsyncSession, contact_id: uuid.UUID) -> StrategyThread | None:
+    """The thread this person is being pitched on now.
+
+    Read through their sequence, which always points at the current strategy's
+    thread. This used to take rank 1 among every thread ever built for them —
+    superseded versions included — and a brief was written from a strategy two
+    rebuilds old (`docs/18`). The newest campaign wins if there are several.
+    """
+    thread_id = (
+        await session.execute(
+            select(OutreachSequence.thread_id)
+            .where(OutreachSequence.contact_id == contact_id, OutreachSequence.thread_id.is_not(None))
+            .order_by(OutreachSequence.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return await session.get(StrategyThread, thread_id) if thread_id else None
+
+
+async def _proof_for(session: AsyncSession, thread: StrategyThread | None) -> list[ProofPoint]:
+    """Approved proof for the service this person is pitched, plus general
+    proof — the pitched angle's own first. Every approved claim for every
+    service used to go in, and a brief could cite another service's demo."""
+    from app.models.strategy import StrategyAngle
+
+    query = select(ProofPoint).where(ProofPoint.is_approved.is_(True))
+    if thread is not None:
+        query = query.where((ProofPoint.service_id == thread.service_id) | (ProofPoint.service_id.is_(None)))
+    rows = list((await session.execute(query.order_by(ProofPoint.title, ProofPoint.id))).scalars())
+    if thread is None:
+        return rows
+    angle = (
+        await session.execute(
+            select(StrategyAngle).where(StrategyAngle.thread_id == thread.id, StrategyAngle.is_selected.is_(True))
+        )
+    ).scalar_one_or_none()
+    first = {str(x) for x in ((angle.proof_point_ids or []) if angle else [])}
+    return sorted(rows, key=lambda p: str(p.id) not in first)
+
+
+async def _already_sent(session: AsyncSession, contact_id: uuid.UUID) -> list[dict]:
+    """What this person has actually been sent: the words, in order.
+
+    Hardcoded empty until now, so a brief after a reply still did not know
+    what the prospect had been told (`docs/18`). Only touches that sent — a
+    draft the prospect never received must not appear as something they read.
+    """
+    from app.models.content import Draft
+
+    rows = (
+        await session.execute(
+            select(Touch, Draft)
+            .join(OutreachSequence, OutreachSequence.id == Touch.sequence_id)
+            .outerjoin(Draft, (Draft.touch_id == Touch.id) & Draft.is_current.is_(True))
+            .where(OutreachSequence.contact_id == contact_id, Touch.status == "sent")
+            .order_by(Touch.sent_at, Touch.step_no)
+        )
+    ).all()
+    return [
+        {
+            "step": t.step_no,
+            "channel": t.channel,
+            "sent_on": t.sent_at.date().isoformat() if t.sent_at else None,
+            "subject": d.subject if d else None,
+            "body": d.body if d else None,
+        }
+        for t, d in rows
+    ]
+
+
+async def _prep_targets(session: AsyncSession, thread: StrategyThread | None):
+    """The campaign's ICP and service as a prompt block, and the ICP version."""
+    from app.models.campaign import OutreachCampaign
+    from app.models.strategy import Strategy
+    from app.services import campaign_strategy, strategy_context
+
+    if thread is None:
+        return {}, None
+    strategy = await session.get(Strategy, thread.strategy_id)
+    campaign = await session.get(OutreachCampaign, strategy.campaign_id) if strategy and strategy.campaign_id else None
+    if campaign is None:
+        return {}, None
+    try:
+        t = await campaign_strategy.targets(session, campaign)
+    except campaign_strategy.NotReadyError:
+        return {}, None
+    return strategy_context.targets_brief(
+        service=t.service, icp_name=t.icp_name, icp_description=t.icp_description, icp_version=t.icp_version,
+    ), t.icp_version
+
+
 async def _angles_for_prep(session: AsyncSession, thread: StrategyThread) -> dict:
     """The pitched angle's name, the others as talk tracks, and the company read."""
     from app.models.strategy import Strategy
@@ -397,19 +488,12 @@ async def prep_for_contact(
     #
     # Expired and superseded are both excluded: `drafting` refuses to cite
     # either, so a brief must not argue from one.
-    signal_rows = list(
-        (
-            await session.execute(
-                select(Signal)
-                .where(
-                    Signal.account_id == account.id,
-                    Signal.lifecycle_state != "expired",
-                    Signal.superseded_by.is_(None),
-                )
-                .order_by(Signal.observed_at.desc().nullslast())
-            )
-        ).scalars()
-    )
+    # "Live" is `context.live_signals` — not expired by date, not superseded —
+    # the definition strategy and drafting use. This read a lifecycle flag,
+    # and the stages could disagree about what was live (`docs/18`).
+    from app.services import context as context_service
+
+    signal_rows = await context_service.live_signals(session, account.id)
     dated = [s.observed_at for s in signal_rows if s.observed_at]
     newest = max(dated) if dated else None
     oldest = min(dated) if dated else None
@@ -560,14 +644,7 @@ async def prep_for_contact(
             unassessed=unassessed,
         )
 
-    thread = (
-        await session.execute(
-            select(StrategyThread)
-            .where(StrategyThread.contact_id == contact.id)
-            .order_by(StrategyThread.rank)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    thread = await _current_thread(session, contact.id)
     trigger_ids = {str(x) for x in (thread.trigger_signal_ids or [])} if thread else set()
 
     # Which dimensions each evidence row helped score, so a signal that is not
@@ -662,13 +739,7 @@ async def prep_for_contact(
         for s in signal_rows
     ]
 
-    proof = list(
-        (
-            await session.execute(
-                select(ProofPoint).where(ProofPoint.is_approved.is_(True))
-            )
-        ).scalars()
-    )
+    proof = await _proof_for(session, thread)
 
     last = (
         await session.execute(
@@ -895,14 +966,20 @@ async def prep_index(
         ).scalars():
             newest.setdefault(s.account_id, s)
 
+    # The current thread per person, through their newest sequence — as
+    # `_current_thread` reads it. Taking the first thread found could pick a
+    # superseded strategy's (`docs/18`).
     threads: dict[uuid.UUID, StrategyThread] = {}
     if contact_ids:
-        for t in (
+        for seq_contact, t in (
             await session.execute(
-                select(StrategyThread).where(StrategyThread.contact_id.in_(contact_ids))
+                select(OutreachSequence.contact_id, StrategyThread)
+                .join(StrategyThread, StrategyThread.id == OutreachSequence.thread_id)
+                .where(OutreachSequence.contact_id.in_(contact_ids))
+                .order_by(OutreachSequence.created_at.desc())
             )
-        ).scalars():
-            threads.setdefault(t.contact_id, t)
+        ).all():
+            threads.setdefault(seq_contact, t)
 
     sent_by_contact: dict[uuid.UUID, int] = {}
     if contact_ids:
@@ -1033,6 +1110,19 @@ async def generate_prep_brief(
         ).scalars()
     )
 
+    from app.services import strategy_context
+
+    thread = await _current_thread(session, contact_id)
+    targets, icp_version = await _prep_targets(session, thread)
+    # Ranked as strategy ranks them, the pitch's trigger marked, evidence on
+    # every one (a call argues from the whole picture) and no URLs.
+    ranked_signals = await strategy_context.signal_brief(
+        session, account_id=account.id, contact_id=contact.id, icp_version=icp_version,
+        cited={str(x) for x in ((thread.trigger_signal_ids or []) if thread else [])},
+        evidence_for_all=True,
+    )
+    sent = await _already_sent(session, contact_id)
+
     try:
         # Prep is the stage a human waits on, and the only one aimed at one
         # person with no run behind it. Attributed so the cost screen can say
@@ -1048,13 +1138,13 @@ async def generate_prep_brief(
                 # Only touches that actually sent. A drafted message the
                 # prospect never received must not appear as something they
                 # have been told.
-                already_sent=[],
+                already_sent=sent,
                 replies=[r for r in replies if r],
                 # Each signal carries its age and confidence. Given only the
                 # conclusions the model writes a confident brief; given the
                 # gaps it writes an honest one, and the gaps are what a rep
                 # needs on a call.
-                signals=[s.model_dump(mode="json") for s in facts.signals],
+                signals=ranked_signals,
                 qualification=(
                     facts.qualification.model_dump(mode="json")
                     if facts.qualification
@@ -1062,6 +1152,7 @@ async def generate_prep_brief(
                 ),
                 proof=[p.model_dump(mode="json") for p in facts.proof],
                 mode=facts.mode,
+                targets=targets,
             )
     except ProviderError as exc:
         # A quota refusal is an answer, not an Internal Server Error.

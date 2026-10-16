@@ -39,7 +39,10 @@ class Candidate:
 
     sequence_id: uuid.UUID
     contact_name: str = ""
-    evaluation_verdict: str = "pass"
+    #: `pass`, `warn`, `fail`, or `unevaluated` — never assumed to have passed.
+    evaluation_verdict: str = "unevaluated"
+    #: What the evaluation said was wrong, for the flag's wording.
+    evaluation_issue: str | None = None
     contact_verified: bool = True
     strategy_confidence: float | None = None
     cadence_matches_template: bool = True
@@ -68,7 +71,14 @@ def flag_reasons(candidate: Candidate) -> list[str]:
     """Why this thread must be read individually. Empty means it is clean."""
     reasons: list[str] = []
     if candidate.evaluation_verdict in ("warn", "fail"):
-        reasons.append(f"evaluation returned {candidate.evaluation_verdict}")
+        reasons.append(
+            f"evaluation returned {candidate.evaluation_verdict}"
+            + (f": {candidate.evaluation_issue}" if candidate.evaluation_issue else "")
+        )
+    elif candidate.evaluation_verdict != "pass":
+        # Nothing checked these words. A missing verdict used to read as a
+        # pass, so drafts could be approved on a sample unchecked (`docs/18`).
+        reasons.append("drafts have not been evaluated — save them again to check them")
     if not candidate.contact_verified:
         reasons.append("contact is not verified for this channel")
     if (

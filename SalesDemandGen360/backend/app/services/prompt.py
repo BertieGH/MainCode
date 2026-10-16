@@ -155,7 +155,15 @@ def build_research_prefix(
             SystemBlock(
                 "stage",
                 stage_instructions.strip()
-                + "\n\n# Writing samples\n"
+                + (
+                    "\n\n# Writing samples\n"
+                    "Voice only: tone, length, rhythm and register. Never reuse a sample's "
+                    "phrases, structure, greeting, sign-off or ask — the ask comes from the "
+                    "strategy. Each is labelled with its channel; follow one only for steps "
+                    "on that channel.\n"
+                    if writing_samples
+                    else "\n\n# Writing samples\n"
+                )
                 + "\n---\n".join(writing_samples),
             ),
         ],

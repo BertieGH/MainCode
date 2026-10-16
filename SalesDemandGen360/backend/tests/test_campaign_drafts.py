@@ -23,6 +23,7 @@ from app.models.campaign import CadenceShape, CampaignQueue, OutreachSequence
 from app.models.config import (
     IcpProfile,
     IcpProfileVersion,
+    ProofPoint,
     ScoringConfig,
     ServiceCatalog,
     service_icp_link,
@@ -131,7 +132,7 @@ async def world(session):
 
 
 def drafter(prefix="body"):
-    async def draft(*, account, contact, thread, shape, signals):
+    async def draft(*, account, contact, thread, shape, signals, **_):
         assert shape["touch_count"] == 3 and thread["problem_hypothesis"] == "IT is stretched"
         return SimpleNamespace(model="fake", parsed=DraftSet(touches=[
             TouchDraft(step_no=i, day_offset=[0, 3, 8][i - 1], channel="email", purpose=f"step {i}",
@@ -144,7 +145,7 @@ def drafter(prefix="body"):
 def drafter_with_subject():
     """An arc whose first touch carries a subject line of ours."""
 
-    async def draft(*, account, contact, thread, shape, signals):
+    async def draft(*, account, contact, thread, shape, signals, **_):
         return SimpleNamespace(model="fake", parsed=DraftSet(touches=[
             TouchDraft(step_no=i, day_offset=[0, 3, 8][i - 1], channel="email",
                        purpose=f"step {i}", body=f"body {i}",
@@ -159,7 +160,7 @@ def drafter_with_subject():
 def drafter_for(count: int):
     """A drafter that fills whatever cadence it is handed."""
 
-    async def draft(*, account, contact, thread, shape, signals):
+    async def draft(*, account, contact, thread, shape, signals, **_):
         return SimpleNamespace(model="fake", parsed=DraftSet(touches=[
             TouchDraft(step_no=i, day_offset=(i - 1) * 3, channel="email", purpose=f"step {i}",
                        body=f"body {i}", signal_dependence="durable")
@@ -596,7 +597,7 @@ class TestTheArcSurvivesTheRoundTrip:
         async with api.maker() as s:
             w = await world(s)
 
-            async def undated(*, account, contact, thread, shape, signals):
+            async def undated(*, account, contact, thread, shape, signals, **_):
                 return SimpleNamespace(model="fake", parsed=DraftSet(touches=[
                     TouchDraft(step_no=i, channel="email", purpose=f"step {i}",
                                body=f"body {i}", signal_dependence="durable")
@@ -667,3 +668,146 @@ class TestWithdrawingSomebody:
         assert w.enrico.status == "draft" and w.enrico.withdraw_reason is None
         await campaign_drafts.save(session, w.enrico)
         assert w.enrico.status == "pending_approval"
+
+
+# ---------------------------------------------------------------------------
+# what drafting and prep are given, and the check before approval (docs/18)
+# ---------------------------------------------------------------------------
+class TestWhatDraftingIsGiven:
+    async def test_ranked_signals_with_the_trigger_marked_and_the_campaigns_targets(self, session):
+        w = await world(session)
+        seen = {}
+
+        async def draft(*, account, contact, thread, shape, signals, **kwargs):
+            seen.update(signals=signals, **kwargs)
+            return await drafter()(account=account, contact=contact, thread=thread, shape=shape, signals=signals)
+
+        await campaign_drafts.write(session, w.enrico, draft=draft)
+        [signal] = seen["signals"]
+        assert signal["signal_id"] == str(SIGNAL) and signal["signal_rank"] == 1
+        assert signal["is_trigger"] is True, "the pitch's trigger is marked"
+        assert "source_url" not in str(signal), "no URLs reach the prompt"
+        assert seen["targets"]["service"]["code"] == w.service.code
+        # This shape records no per-step channels, so no sample is filtered out.
+        assert seen["sample_channels"] is None
+
+
+class TestDraftEvaluation:
+    async def _written(self, session):
+        w = await world(session)
+        await campaign_drafts.write(session, w.enrico, draft=drafter())
+        return w
+
+    async def test_a_stale_trigger_fails_on_the_rules_even_without_the_model(self, session):
+        from app.services import draft_evaluation
+
+        w = await self._written(session)
+        arc = await campaign_drafts.arc_of(session, w.enrico.id)
+        arc[0][1].cited_signal_ids = [str(uuid.uuid4())]  # not live
+        await session.flush()
+
+        async def unavailable(_session, _subject):
+            raise RuntimeError("no model")
+
+        row = await draft_evaluation.evaluate(session, w.enrico, judge=unavailable)
+        assert row.verdict == "fail" and row.method == "rules"
+        assert [i["code"] for i in row.issues] == ["stale_trigger"]
+
+    async def test_with_the_model_down_clean_drafts_are_unevaluated_not_passed(self, session):
+        from app.services import draft_evaluation
+
+        w = await self._written(session)
+
+        async def unavailable(_session, _subject):
+            raise RuntimeError("no model")
+
+        assert await draft_evaluation.evaluate(session, w.enrico, judge=unavailable) is None
+        verdict, _ = await draft_evaluation.latest_verdict(session, w.enrico.id)
+        assert verdict is None
+
+    async def test_the_models_verdict_is_stored_with_what_it_found(self, session):
+        from app.schemas.evaluation import EvaluationIssue, EvaluationResult
+        from app.services import draft_evaluation
+
+        w = await self._written(session)
+        seen = {}
+
+        async def judge(_session, subject):
+            seen.update(subject)
+            return SimpleNamespace(model="fake-judge", parsed=EvaluationResult(
+                verdict="warn", scores={"faithful_to_angle": 0.4},
+                issues=[EvaluationIssue(code="drift", detail="step 2 argues a different problem", locus="step 2")],
+            ))
+
+        row = await draft_evaluation.evaluate(session, w.enrico, judge=judge)
+        assert (row.verdict, row.method, row.evaluator_version) == ("warn", "hybrid", "fake-judge")
+        assert row.issues[0]["detail"] == "step 2 argues a different problem"
+        assert seen["pitched_angle"]["problem_hypothesis"] == "IT is stretched"
+        assert len(seen["touches"]) == 3
+
+
+class TestWhatPrepIsGiven:
+    async def test_prep_reads_the_current_thread_not_a_superseded_one(self, session):
+        from app.api.prep import _current_thread
+        from app.models.strategy import Strategy, StrategyThread
+
+        w = await world(session)
+        current = await _current_thread(session, w.cto.id)
+        assert current is not None and current.id == w.enrico.thread_id
+
+        # An older strategy with a rank-1 thread for the same person — what
+        # "order by rank, limit 1" used to pick.
+        old = Strategy(account_id=w.account.id, version=99, status="superseded")
+        session.add(old)
+        await session.flush()
+        session.add(StrategyThread(
+            strategy_id=old.id, contact_id=w.cto.id, service_id=w.service.id, weight=60, rank=1,
+            thread_status="active_primary", problem_hypothesis="an old argument", trigger_summary="t",
+            trigger_signal_ids=[str(SIGNAL)], positioning="p", channel_sequence=[], cta="c",
+        ))
+        await session.flush()
+        assert (await _current_thread(session, w.cto.id)).id == w.enrico.thread_id
+
+    async def test_prep_proof_is_this_service_and_general_only(self, session):
+        from app.api.prep import _current_thread, _proof_for
+
+        w = await world(session)
+        other = ServiceCatalog(code=f"o{tag()}", name="Other", description="d")
+        session.add(other)
+        await session.flush()
+        mine = ProofPoint(service_id=w.service.id, kind="case_study", title="Ours", body="b", is_approved=True)
+        theirs = ProofPoint(service_id=other.id, kind="case_study", title="Another service's", body="b",
+                            is_approved=True)
+        general = ProofPoint(service_id=None, kind="case_study", title="General", body="b", is_approved=True)
+        session.add_all([mine, theirs, general])
+        await session.flush()
+        titles = {p.title for p in await _proof_for(session, await _current_thread(session, w.cto.id))}
+        assert {"Ours", "General"} <= titles and "Another service's" not in titles
+
+    async def test_already_sent_carries_the_words_that_actually_went(self, session):
+        from app.api.prep import _already_sent
+
+        w = await world(session)
+        await campaign_drafts.write(session, w.enrico, draft=drafter())
+        assert await _already_sent(session, w.cto.id) == [], "drafted is not sent"
+        arc = await campaign_drafts.arc_of(session, w.enrico.id)
+        arc[0][0].status, arc[0][0].sent_at = "sent", datetime.now(UTC)
+        await session.flush()
+        [sent] = await _already_sent(session, w.cto.id)
+        assert (sent["step"], sent["body"]) == (1, "body 1")
+
+
+class TestSamplesFollowTheCadencesChannels:
+    async def test_a_linkedin_only_cadence_gets_only_linkedin_samples(self, session):
+        w = await world(session)
+        w.shape.step_channels = {"1": "LINKEDIN", "2": "linkedin_message", "3": "LinkedIn"}
+        await session.flush()
+        seen = {}
+
+        async def draft(*, account, contact, thread, shape, signals, **kwargs):
+            seen.update(kwargs)
+            return await drafter()(account=account, contact=contact, thread=thread, shape=shape, signals=signals)
+
+        await campaign_drafts.write(session, w.enrico, draft=draft)
+        assert seen["sample_channels"] == ["linkedin"]
+
