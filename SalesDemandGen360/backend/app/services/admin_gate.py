@@ -42,23 +42,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.config import AdminSecret
+from app.services import passwords
 
 log = logging.getLogger(__name__)
 
-#: scrypt cost. n=2^15 lands around a tenth of a second on this class of
-#: machine — slow enough to make guessing expensive, fast enough that nobody
-#: notices unlocking a settings screen.
-SCRYPT_N = 1 << 15
-SCRYPT_R = 8
-SCRYPT_P = 1
-KEY_LEN = 32
-
-#: scrypt needs 128 * N * r bytes — 32 MiB at these parameters — and OpenSSL
-#: refuses anything over its own 32 MiB default, so the shipped settings fail
-#: by exactly the margin of the bookkeeping overhead. Raising the ceiling
-#: rather than weakening the cost: this is a deliberate memory-hardness budget,
-#: and lowering N to fit a default is the wrong half of the trade.
-SCRYPT_MAXMEM = 128 * SCRYPT_N * SCRYPT_R * 2
+# Hashing lives in `passwords`, shared with sign-in; the names stay here so
+# existing callers and tests read the same.
+SCRYPT_N, SCRYPT_R, SCRYPT_P, KEY_LEN = (
+    passwords.SCRYPT_N, passwords.SCRYPT_R, passwords.SCRYPT_P, passwords.KEY_LEN,
+)
 
 #: How long an unlock lasts. Short enough that a left-open browser tab stops
 #: being a way in; long enough to edit several prompts without re-typing.
@@ -70,16 +62,7 @@ TOKEN_HEADER = "X-Admin-Token"
 MIN_PASSWORD_LENGTH = 8
 
 
-def _derive(password: str, salt: bytes, *, n: int, r: int, p: int) -> bytes:
-    return hashlib.scrypt(
-        password.encode("utf-8"),
-        salt=salt,
-        n=n,
-        r=r,
-        p=p,
-        dklen=KEY_LEN,
-        maxmem=SCRYPT_MAXMEM,
-    )
+_derive = passwords.derive
 
 
 async def current(session: AsyncSession) -> AdminSecret | None:

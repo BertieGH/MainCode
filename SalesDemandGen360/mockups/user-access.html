@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User access</title>
+<!-- Proposal mockup: login and role-based access. Admins create every account
+     and set its password; there is no self-registration in this stage. Tokens are
+     lifted from web/src/styles.css so it reads as the same app. Per-user
+     overrides are deliberately absent — they are the next stage (docs/07). -->
+<style>
+  :root {
+    --bg:#eef1f2; --surface:#fff; --surface-2:#f5f7f7;
+    --sidebar:#161b20; --sidebar-text:#c7cdd1; --sidebar-dim:#7f8890; --sidebar-active:#20272d;
+    --text:#171b21; --muted:#5c6672; --faint:#8b949c;
+    --line:#d7dcdc; --line-strong:#c3caca;
+    --accent:#1f6f64; --accent-ink:#fff; --accent-soft:#e3efec;
+    --good:#2f7a54; --good-soft:#e5f1e9;
+    --warn:#b8801f; --warn-soft:#f7ecd9;
+    --critical:#b34a3f; --critical-soft:#f8e8e6;
+    --mono-bg:#e7ebea;
+    --shadow:0 1px 2px rgba(23,27,33,.06), 0 6px 20px rgba(23,27,33,.06);
+    --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+    --display:'Fraunces',Georgia,serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#12151a; --surface:#1a1f25; --surface-2:#20262d;
+      --sidebar:#0d1013; --sidebar-text:#aab2b8; --sidebar-dim:#5c656c; --sidebar-active:#181e23;
+      --text:#eef1f0; --muted:#9aa5a8; --faint:#6b7680;
+      --line:#2b3238; --line-strong:#3a434a;
+      --accent:#5fc0af; --accent-ink:#0b1613; --accent-soft:#193028;
+      --good:#5cae83; --good-soft:#1c2c22;
+      --warn:#e0a862; --warn-soft:#2e2416;
+      --critical:#e0897c; --critical-soft:#2f1e1c;
+      --mono-bg:#242b31;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; line-height:1.5; }
+  h1,h2,h3 { font-family:var(--display); font-weight:600; margin:0; letter-spacing:-.01em; }
+  code, .mono { font-family:var(--mono); font-size:.8rem; }
+  .row-sub { font-size:.78rem; color:var(--muted); margin:0; }
+
+  /* --- mockup switcher (not part of the app) --- */
+  .switcher { position:sticky; top:0; z-index:5; background:var(--surface); border-bottom:1px solid var(--line);
+              padding:10px 16px; display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .switcher .lbl { font-family:var(--mono); font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); margin-right:6px; }
+  .switcher button { font:inherit; font-size:.78rem; padding:5px 11px; border-radius:7px; cursor:pointer;
+                     border:1px solid var(--line); background:none; color:var(--muted); }
+  .switcher button.on { background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  .screen { display:none; } .screen.on { display:block; }
+
+  /* --- shared controls --- */
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:20px 22px; }
+  .btn { font:inherit; font-size:.82rem; padding:7px 14px; border-radius:7px; cursor:pointer;
+         border:1px solid var(--line-strong); background:var(--surface); color:var(--text); display:inline-flex; align-items:center; gap:6px; }
+  .btn.primary { background:var(--accent); border-color:transparent; color:var(--accent-ink); }
+  .btn.danger { color:var(--critical); border-color:var(--critical); }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .field { font:inherit; font-size:.85rem; padding:7px 10px; border-radius:7px; border:1px solid var(--line-strong);
+           background:var(--surface); color:var(--text); width:100%; }
+  .field:disabled { background:var(--surface-2); color:var(--muted); }
+  label.f { display:flex; flex-direction:column; gap:4px; font-size:.78rem; color:var(--muted); margin-bottom:12px; }
+  .badge { display:inline-flex; align-items:center; gap:6px; font-size:.7rem; padding:3px 9px; border-radius:20px;
+           background:var(--mono-bg); color:var(--muted); font-weight:500; white-space:nowrap; }
+  .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .badge-good { background:var(--good-soft); color:var(--good); }
+  .badge-warn { background:var(--warn-soft); color:var(--warn); }
+  .badge-accent { background:var(--accent-soft); color:var(--accent); }
+  .badge-crit { background:var(--critical-soft); color:var(--critical); }
+  .err { color:var(--critical); font-size:.8rem; }
+  .act-btn { border:1px solid var(--line); background:none; border-radius:6px; width:28px; height:26px; cursor:pointer; color:var(--muted); }
+
+  /* --- auth screens --- */
+  .auth-wrap { min-height:calc(100vh - 52px); display:flex; align-items:center; justify-content:center; padding:24px 16px; }
+  .auth { width:100%; max-width:380px; }
+  .brand { font-family:var(--display); font-size:1.25rem; font-weight:600; }
+  .brand-sub { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:22px; }
+  .auth h1 { font-size:1.15rem; margin-bottom:4px; }
+  .auth .alt { margin-top:14px; font-size:.8rem; color:var(--muted); text-align:center; }
+  .auth .alt a { color:var(--accent); }
+  .notice { border-radius:8px; padding:10px 12px; font-size:.8rem; margin-bottom:14px; }
+  .notice.warn { background:var(--warn-soft); color:var(--warn); }
+  .notice.good { background:var(--good-soft); color:var(--good); }
+  .notice.info { background:var(--accent-soft); color:var(--accent); }
+
+  /* --- app shell --- */
+  .shell { display:flex; min-height:calc(100vh - 52px); }
+  .side { width:220px; flex:none; background:var(--sidebar); color:var(--sidebar-text); padding:18px 0; display:flex; flex-direction:column; }
+  .side .brand { color:#fff; padding:0 18px; font-size:1.02rem; }
+  .side .brand-sub { padding:0 18px; margin-bottom:16px; color:var(--sidebar-dim); }
+  .side a { display:block; padding:6px 18px; font-size:.84rem; color:var(--sidebar-text); text-decoration:none; }
+  .side a.on { background:var(--sidebar-active); color:#fff; border-left:3px solid var(--accent); padding-left:15px; }
+  .side a.locked { color:var(--sidebar-dim); }
+  .side a.locked::after { content:" · view"; font-size:.7rem; }
+  .side .grp { font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; color:var(--sidebar-dim); padding:14px 18px 4px; }
+  .side .sub { padding-left:30px; font-size:.78rem; }
+  .side .grow { flex:1; }
+  .me { margin:10px 12px 0; padding:10px; border-radius:9px; background:var(--sidebar-active); cursor:pointer; position:relative; }
+  .me .nm { color:#fff; font-size:.84rem; font-weight:500; }
+  .me .rl { font-family:var(--mono); font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--sidebar-dim); }
+  .menu { position:absolute; bottom:calc(100% + 6px); left:0; right:0; background:var(--surface); color:var(--text);
+          border:1px solid var(--line); border-radius:9px; box-shadow:var(--shadow); padding:6px; display:none; }
+  .menu.open { display:block; }
+  .menu button { display:block; width:100%; text-align:left; font:inherit; font-size:.82rem; padding:7px 9px; border:0; background:none; color:var(--text); border-radius:6px; cursor:pointer; }
+  .menu button:hover { background:var(--surface-2); }
+  .menu hr { border:0; border-top:1px solid var(--line); margin:4px 0; }
+  .main { flex:1; min-width:0; padding:24px 28px 60px; }
+  .head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .head h2 { font-size:1.15rem; }
+  .lede { max-width:72ch; margin-bottom:18px; }
+
+  /* --- tables --- */
+  .tbl-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+  table { border-collapse:collapse; width:100%; font-size:.84rem; }
+  th { text-align:left; font-family:var(--mono); font-size:.62rem; letter-spacing:.08em; text-transform:uppercase;
+       color:var(--faint); font-weight:500; padding:10px 14px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td { padding:10px 14px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr:last-child td { border-bottom:0; }
+  td .row-sub { margin-top:1px; }
+  td:first-child { white-space:nowrap; }
+  td select.field { min-width:140px; }
+  .acts { white-space:nowrap; text-align:right; }
+  .rowmenu { position:relative; display:inline-block; }
+  .rowmenu .menu { bottom:auto; top:calc(100% + 4px); left:auto; right:0; width:190px; z-index:3; }
+  .bar { display:flex; gap:10px; align-items:center; margin:18px 0 10px; flex-wrap:wrap; }
+  .bar h3 { font-size:.98rem; }
+  .bar .grow { flex:1; }
+  .panel { border:1px dashed var(--line-strong); border-radius:10px; padding:16px; margin:0 0 14px; background:var(--surface); }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0 14px; }
+
+  /* --- roles grid --- */
+  .perm select { font:inherit; font-size:.78rem; padding:4px 6px; border-radius:6px; border:1px solid var(--line-strong); background:var(--surface); color:var(--text); }
+  .perm select.edit { border-color:var(--accent); color:var(--accent); }
+  .perm select.none { color:var(--faint); }
+  .perm td.locked { color:var(--faint); font-size:.78rem; }
+  .perm .sec td { background:var(--surface-2); font-family:var(--mono); font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); padding:7px 14px; }
+  .perm .risk { color:var(--warn); font-size:.7rem; margin-left:6px; }
+  .toggle { width:34px; height:19px; border-radius:20px; border:0; background:var(--line-strong); position:relative; cursor:pointer; }
+  .toggle::after { content:""; position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%; background:#fff; transition:left .12s; }
+  .toggle.on { background:var(--accent); } .toggle.on::after { left:17px; }
+  .toggle:disabled { opacity:.5; cursor:not-allowed; }
+  .savebar { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+
+  /* --- view-only --- */
+  .viewonly { display:flex; gap:10px; align-items:center; background:var(--surface-2); border:1px solid var(--line); border-radius:9px; padding:9px 12px; margin-bottom:16px; font-size:.82rem; color:var(--muted); }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin:10px 0 18px; align-items:center; }
+  .tab { font:inherit; font-size:.86rem; padding:8px 12px; border:0; background:none; color:var(--muted); border-bottom:2px solid transparent; }
+  .tab.on { color:var(--text); border-bottom-color:var(--accent); }
+  .tip { font-size:.74rem; color:var(--muted); }
+
+  .toast { position:fixed; bottom:18px; right:18px; background:var(--text); color:var(--surface); padding:9px 14px; border-radius:8px; font-size:.82rem; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.on { opacity:1; }
+  @media (max-width:760px) { .side { display:none; } .main { padding:18px 16px 60px; } }
+</style>
+</head>
+<body>
+
+<div class="switcher" role="tablist" aria-label="Mockup screens">
+  <span class="lbl">Mockup</span>
+  <button data-go="login" class="on">1 · Sign in</button>
+  <button data-go="users">2 · Settings › Users</button>
+  <button data-go="roles">3 · Settings › Roles</button>
+  <button data-go="viewonly">4 · What a Marketing user sees</button>
+</div>
+
+<!-- ================= 1 · SIGN IN ================= -->
+<section class="screen on" data-screen="login">
+  <div class="auth-wrap"><div class="auth">
+    <div class="brand">Sales Demand Gen360</div>
+    <div class="brand-sub">Prospect engine</div>
+    <div class="card">
+      <h1>Sign in</h1>
+      <p class="row-sub" style="margin-bottom:16px;">Use the email and password your admin gave you.</p>
+      <label class="f">Email<input class="field" type="email" value="priya@cgvak.com"></label>
+      <label class="f">Password<input class="field" type="password" value="••••••••••"></label>
+      <p class="err" style="margin:-4px 0 12px;">Wrong email or password. 4 attempts left before a 15-minute pause.</p>
+      <button class="btn primary" style="width:100%;justify-content:center;" data-go="viewonly">Sign in</button>
+    </div>
+    <p class="alt">No account, or forgot your password?<br>Ask an admin — they create accounts and reset passwords.</p>
+  </div></div>
+</section>
+
+<!-- ================= APP SHELL TEMPLATE (filled per screen) ================= -->
+<template id="sidebar-admin">
+  <aside class="side">
+    <div class="brand">Sales Demand Gen360</div>
+    <div class="brand-sub">Prospect engine</div>
+    <a href="#">Dashboard</a><a href="#" class="sub">Cost &amp; health</a>
+    <a href="#">Account Lists</a><a href="#">Campaign Queues</a><a href="#">Outreach</a><a href="#">Sales Prep</a><a href="#">Learning</a>
+    <div class="grp">SETTINGS</div>
+    <a href="#">API config</a><a href="#">Model config</a><a href="#">Prompts config</a><a href="#">Services &amp; proof</a>
+    <a href="#">ICP profiles</a><a href="#">Sources &amp; signals</a><a href="#">Writing samples</a><a href="#">Weights &amp; scoring</a>
+    <a href="#">Sales rules</a><a href="#">Cadences</a>
+    <a href="#" data-go="users" data-nav="users">Users</a><a href="#" data-go="roles" data-nav="roles">Roles</a>
+    <div class="grow"></div>
+    <div class="me" data-menu>
+      <div class="nm">Bert</div><div class="rl">Admin</div>
+      <div class="menu"><button>Change password</button><hr><button data-go="login">Sign out</button></div>
+    </div>
+  </aside>
+</template>
+
+<!-- ================= 5 · USERS ================= -->
+<section class="screen" data-screen="users">
+  <div class="shell" data-shell="admin" data-active="users">
+    <main class="main">
+      <div class="head"><h2>Users</h2></div>
+      <p class="row-sub lede">Who can sign in, and as which role. Users are deactivated, never deleted, so the record of who approved and sent what stays intact.</p>
+
+      <div class="bar"><h3>Users</h3><span class="row-sub">5 active · 1 deactivated</span><span class="grow"></span>
+        <button class="btn primary" data-toggle="newuser">+ Create user</button></div>
+
+      <div class="panel" id="newuser" style="display:none;">
+        <div class="grid2">
+          <label class="f">Full name<input class="field" placeholder="Name"></label>
+          <label class="f">Work email<input class="field" placeholder="name@cgvak.com"></label>
+          <label class="f">Role<select class="field"><option>DemandGen</option><option>Marketing</option><option>AIOps</option><option>Admin</option></select></label>
+          <label class="f">Password
+            <span style="display:flex;gap:6px;"><input class="field mono" value="k7-Rv2-pXq9-Lm"><button class="btn" type="button" data-toast="New password generated">Generate</button></span></label>
+        </div>
+        <p class="row-sub" style="margin:-4px 0 12px;">Tell them their email and password yourself — the app sends nothing. At least 10 characters.</p>
+        <button class="btn primary" data-toast="User created">Create user</button> <button class="btn" data-toggle="newuser">Cancel</button>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last sign-in</th><th class="acts">Actions</th></tr></thead>
+          <tbody>
+            <tr><td>Bert <span class="row-sub">(you)</span></td><td class="mono">bert@cgvak.com</td><td><span class="badge badge-accent">Admin</span></td><td><span class="badge badge-good">active</span></td><td>now</td>
+              <td class="acts"><span class="tip">You can't demote or deactivate yourself</span></td></tr>
+            <tr><td>Priya N.</td><td class="mono">priya@cgvak.com</td><td>DemandGen</td><td><span class="badge badge-good">active</span></td><td>today, 09:15</td>
+              <td class="acts"><span class="rowmenu"><button class="act-btn" data-menu-btn>⋯</button>
+                <span class="menu"><button data-toast="Role changed">Change role…</button><button data-toggle="resetpw">Set new password…</button><hr><button style="color:var(--critical);" data-toast="Priya N. deactivated — signed out everywhere">Deactivate</button></span></span></td></tr>
+            <tr><td>Arun K.</td><td class="mono">arun@cgvak.com</td><td>AIOps</td><td><span class="badge badge-good">active</span></td><td>yesterday</td>
+              <td class="acts"><span class="rowmenu"><button class="act-btn" data-menu-btn>⋯</button>
+                <span class="menu"><button>Change role…</button><button>Set new password…</button><hr><button style="color:var(--critical);">Deactivate</button></span></span></td></tr>
+            <tr><td>Divya M.</td><td class="mono">divya@cgvak.com</td><td>Marketing</td><td><span class="badge badge-good">active</span></td><td>never</td>
+              <td class="acts"><span class="rowmenu"><button class="act-btn" data-menu-btn>⋯</button>
+                <span class="menu"><button>Change role…</button><button>Set new password…</button><hr><button style="color:var(--critical);">Deactivate</button></span></span></td></tr>
+            <tr><td>Suresh P.</td><td class="mono">suresh@cgvak.com</td><td>Admin</td><td><span class="badge badge-good">active</span></td><td>3 days ago</td>
+              <td class="acts"><span class="rowmenu"><button class="act-btn" data-menu-btn>⋯</button>
+                <span class="menu"><button>Change role…</button><button>Set new password…</button><hr><button style="color:var(--critical);">Deactivate</button></span></span></td></tr>
+            <tr style="opacity:.6;"><td>Ravi T.</td><td class="mono">ravi@cgvak.com</td><td>DemandGen</td><td><span class="badge">deactivated</span></td><td>12 Sep</td>
+              <td class="acts"><button class="btn" data-toast="Ravi T. reactivated">Reactivate</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel" id="resetpw" style="display:none;margin-top:14px;">
+        <strong>Set a new password for Priya N.</strong>
+        <div style="display:flex;gap:6px;max-width:420px;margin:10px 0;"><input class="field mono" value="m4-Tz8-wQe2-Hx"><button class="btn" type="button" data-toast="New password generated">Generate</button></div>
+        <p class="row-sub" style="margin-bottom:12px;">Their old password stops working and they are signed out everywhere. Tell them the new one yourself.</p>
+        <button class="btn primary" data-toast="Password set — Priya N. signed out everywhere">Set password</button> <button class="btn" data-toggle="resetpw">Cancel</button>
+      </div>
+      <p class="row-sub" style="margin-top:10px;">At least one active Admin must always remain. Deactivating someone signs them out everywhere at once.</p>
+    </main>
+  </div>
+</section>
+
+<!-- ================= 6 · ROLES ================= -->
+<section class="screen" data-screen="roles">
+  <div class="shell" data-shell="admin" data-active="roles">
+    <main class="main">
+      <div class="head"><h2>Roles</h2></div>
+      <p class="row-sub lede">What each role can do. <strong>View</strong> opens a screen read-only, <strong>Edit</strong> also lets you
+        create and change things there, <strong>None</strong> hides it from the menu. Admin always has everything.
+        Saving writes a new version, so you can always see who could do what on a past date.</p>
+
+      <div class="tbl-wrap perm">
+        <table>
+          <thead><tr><th style="min-width:230px;">Module</th><th>Admin</th><th>AIOps</th><th>Marketing</th><th>DemandGen</th></tr></thead>
+          <tbody id="permBody"></tbody>
+        </table>
+      </div>
+      <div class="savebar">
+        <button class="btn primary" data-toast="Saved as version 4">Save as new version</button>
+        <button class="btn">Discard changes</button>
+        <span class="row-sub">Current: version 3 · saved by Bert on 15 Oct 2026 · <a href="#" style="color:var(--accent);">history</a></span>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- ================= 7 · VIEW-ONLY (Marketing user) ================= -->
+<section class="screen" data-screen="viewonly">
+  <div class="shell">
+    <aside class="side">
+      <div class="brand">Sales Demand Gen360</div>
+      <div class="brand-sub">Prospect engine</div>
+      <a href="#" class="locked">Dashboard</a><a href="#" class="sub locked">Cost &amp; health</a>
+      <a href="#">Account Lists</a><a href="#" class="locked">Campaign Queues</a><a href="#" class="on">Outreach</a><a href="#">Sales Prep</a><a href="#" class="locked">Learning</a>
+      <div class="grp">SETTINGS</div>
+      <a href="#" class="locked">Model config</a><a href="#" class="locked">Prompts config</a><a href="#">Services &amp; proof</a>
+      <a href="#">ICP profiles</a><a href="#" class="locked">Sources &amp; signals</a><a href="#">Writing samples</a><a href="#">Weights &amp; scoring</a>
+      <a href="#" class="locked">Sales rules</a><a href="#" class="locked">Cadences</a>
+      <div class="grow"></div>
+      <div class="me" data-menu>
+        <div class="nm">Divya M.</div><div class="rl">Marketing</div>
+        <div class="menu"><button>Change password</button><hr><button data-go="login">Sign out</button></div>
+      </div>
+    </aside>
+    <main class="main">
+      <p class="row-sub" style="margin-bottom:6px;">‹ All campaigns</p>
+      <div class="head"><h2>Outreach — Apollo · 501-1000 · GS Test Outreach</h2></div>
+      <div class="tabs">
+        <button class="tab">Strategy</button><button class="tab">Cadence drafts</button><button class="tab on">Approval</button>
+        <button class="tab">Threads</button><button class="tab">Execute</button><button class="tab">Replies</button>
+      </div>
+      <div class="viewonly">🔒 Your role (Marketing) can write and edit drafts here, but only Admin or DemandGen can approve and send.</div>
+      <div class="card">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;"><strong>Anderson Tan</strong> · Co-Founder, MIP<div class="row-sub">2-touch LinkedIn arc · saved for approval</div></div>
+          <button class="btn">Edit drafts</button>
+          <button class="btn primary" disabled title="Only Admin or DemandGen can approve">Approve</button>
+        </div>
+      </div>
+      <p class="row-sub" style="margin-top:14px;">Menu items marked <em>· view</em> open read-only, with the same 🔒 line and their inputs disabled.
+        API config, Users and Roles aren't shown to this role at all. The server enforces every rule too: hiding a button is only for clarity.</p>
+    </main>
+  </div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Default grid — the matrix agreed in chat. Values: E edit, V view, N none.
+  const MODULES = [
+    ['Pipeline'],
+    ['Dashboard, Cost & health', 'E', 'V', 'V'],
+    ['Account Lists & research', 'V', 'E', 'E'],
+    ['Campaign Queues', 'V', 'V', 'E'],
+    ['Outreach — strategy & drafts', 'V', 'E', 'E'],
+    ['Sales Prep', 'V', 'E', 'E'],
+    ['Learning', 'V', 'V', 'V'],
+    ['Settings'],
+    ['Model & Prompts config', 'E', 'V', 'V'],
+    ['Sources & signals', 'E', 'V', 'V'],
+    ['Services & proof, ICP, Writing samples', 'V', 'E', 'V'],
+    ['Weights & scoring', 'E', 'E', 'V'],
+    ['Sales rules & Cadences', 'V', 'V', 'E'],
+    ['API config (keys)', 'N', 'N', 'N', 'admin'],
+    ['Users & Roles', 'N', 'N', 'N', 'admin'],
+  ];
+  // Actions that cost money or reach a customer get their own switch.
+  const ACTIONS = [
+    ['Approve & send to LGM', false, false, true, 'reaches customers'],
+    ['Run paid research', true, true, true, 'spends budget'],
+    ['Delete a campaign', false, false, true, ''],
+  ];
+  const lab = { E: 'Edit', V: 'View', N: 'None' };
+  const sel = (v, locked) => locked
+    ? `<td class="locked">Admin only</td>`
+    : `<td><select class="${v === 'E' ? 'edit' : v === 'N' ? 'none' : ''}" onchange="this.className=this.value==='E'?'edit':this.value==='N'?'none':''">
+         ${['E','V','N'].map(k => `<option value="${k}"${k === v ? ' selected' : ''}>${lab[k]}</option>`).join('')}</select></td>`;
+  let rows = '';
+  for (const m of MODULES) {
+    if (m.length === 1) { rows += `<tr class="sec"><td colspan="5">${m[0]}</td></tr>`; continue; }
+    const adminOnly = m[4] === 'admin';
+    rows += `<tr><td>${m[0]}</td><td class="locked">Edit</td>` +
+      (adminOnly ? `<td class="locked">—</td><td class="locked">—</td><td class="locked">—</td>`
+                 : sel(m[1]) + sel(m[2]) + sel(m[3])) + `</tr>`;
+  }
+  rows += `<tr class="sec"><td colspan="5">Actions</td></tr>`;
+  for (const a of ACTIONS) {
+    rows += `<tr><td>${a[0]}${a[4] ? `<span class="risk">· ${a[4]}</span>` : ''}</td><td><button class="toggle on" disabled aria-label="Admin always"></button></td>` +
+      [a[1], a[2], a[3]].map(on => `<td><button class="toggle${on ? ' on' : ''}" onclick="this.classList.toggle('on')" aria-pressed="${on}"></button></td>`).join('') + `</tr>`;
+  }
+  document.getElementById('permBody').innerHTML = rows;
+
+  // Admin shell: inject the sidebar into each admin screen.
+  document.querySelectorAll('[data-shell="admin"]').forEach(sh => {
+    sh.prepend(document.getElementById('sidebar-admin').content.cloneNode(true));
+    const on = sh.querySelector(`[data-nav="${sh.dataset.active}"]`); if (on) on.classList.add('on');
+  });
+
+  // Mockup behaviour.
+  function go(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.dataset.screen === name));
+    document.querySelectorAll('.switcher button').forEach(b => b.classList.toggle('on', b.dataset.go === name));
+    window.scrollTo(0, 0);
+  }
+  let toastT;
+  function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600); }
+  document.addEventListener('click', e => {
+    const g = e.target.closest('[data-go]'); if (g) { e.preventDefault(); go(g.dataset.go); return; }
+    const tg = e.target.closest('[data-toast]'); if (tg) toast(tg.dataset.toast);
+    const tgl = e.target.closest('[data-toggle]'); if (tgl) { const p = document.getElementById(tgl.dataset.toggle); p.style.display = p.style.display === 'none' ? 'block' : 'none'; }
+    const mb = e.target.closest('[data-menu-btn]'), me = e.target.closest('[data-menu]');
+    document.querySelectorAll('.menu.open').forEach(m => { if (!(mb && mb.nextElementSibling === m) && !(me && me.contains(m))) m.classList.remove('open'); });
+    if (mb) mb.nextElementSibling.classList.toggle('open');
+    else if (me && !e.target.closest('.menu')) me.querySelector('.menu').classList.toggle('open');
+  });
+</script>
+</body>
+</html>

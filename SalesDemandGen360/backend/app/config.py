@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # step rather than a redeploy.
     secret_key: str = Field(..., alias="SECRET_KEY", min_length=16)
 
+    #: Whether every route needs a signed-in user. Off until the Angular app
+    #: has a sign-in page (`docs/17`, phase 3) — switching it on before then
+    #: locks the running UI out of its own API. Sign-in itself works either
+    #: way, and a request that carries a session is attributed either way.
+    auth_required: bool = Field(default=False, alias="AUTH_REQUIRED")
+
     # --- Claude ---
     # Optional at this phase; required from Phase 3 onward.
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")

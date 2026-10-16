@@ -5412,3 +5412,35 @@ Backend 1,965 pass; frontend 388.
 `api/monitoring.py` (new), `models/cost.py` (new), `alembic/a3e91f7b60d4` (new),
 `services/linkedin_serp.py`, `services/pipeline.py`,
 `web/.../settings/monitoring.component.ts` (new), `web/.../core/config.service.ts`.
+
+## §117 — A front door: accounts and sessions (2026-10-15)
+
+**Problem.** No route asked who was calling. The prompt editor's password was
+the only lock, and its own docstring named real sign-in as the prerequisite
+before the app is shared (`docs/14`).
+
+**Fix, phase 1 of `docs/17`.** `organization` (one row, CGVAK) and `app_user`
+tables; sign in, sign out, who am I, change my password. A session is a cookie
+signed with `SECRET_KEY` under its own domain prefix, carrying the user's
+`session_version`. A password change, reset or deactivation bumps it, which
+ends every session that person holds with no session table to sweep. Five
+wrong passwords lock an account for fifteen minutes, counted on the row so a
+restart does not reset the count. An unknown email takes as long to refuse
+as a wrong password, and reads the same. The first admin comes from
+`scripts/create_admin.py`, never a seed, so no password sits in git.
+
+Every router but health, auth and the LGM inbox now carries `require_user`,
+applied where the router is mounted so a future route is covered without
+anyone remembering. It refuses only when `AUTH_REQUIRED` is on — **off until
+phase 3**, or the running UI would be locked out of its own API.
+
+**Caught on the way.** The LGM inbox webhook is called by LGM, not a person,
+and authenticates with the token in its path. Left on its router it would have
+started answering 401 the day sign-in was switched on, so LGM would retry
+forever and replies would stop arriving with no error on any screen. It has
+its own public router now, and a test holds it there.
+
+`models/identity.py`, `services/auth.py`, `services/passwords.py` (new),
+`services/admin_gate.py`, `api/auth.py` (new), `api/outreach_events.py`,
+`main.py`, `config.py`, `alembic/b6d2e8f41a07` (new),
+`scripts/create_admin.py` (new), `tests/test_auth.py` (new).

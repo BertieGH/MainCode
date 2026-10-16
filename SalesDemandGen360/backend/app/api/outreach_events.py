@@ -33,6 +33,10 @@ from app.services import lgm_events
 
 router = APIRouter(tags=["outreach events"])
 
+#: Mounted without the sign-in requirement. LGM is the caller, not a person,
+#: and the token in the path is its credential — checked below.
+public_router = APIRouter(tags=["outreach events"])
+
 #: Where the token lives. `webhook_secret` already exists as a credential type.
 WEBHOOK_PROVIDER = "lgm"
 WEBHOOK_KIND = "webhook_secret"
@@ -58,7 +62,7 @@ async def _stored_token(session: AsyncSession) -> str | None:
         return None
 
 
-@router.post("/lgm/inbox/{token}", status_code=202)
+@public_router.post("/lgm/inbox/{token}", status_code=202)
 async def lgm_inbox(
     token: str,
     request: Request,

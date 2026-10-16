@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict B20z7PrMIXfAnemlMLSPzrHqtDS6gqdxBts82a4xxeldmwt79tvrajGIeALsiUG
+\restrict h2BbOZdplr7N2pMDbrQflR4STJMHGKSb01wFOK9a3XHl8F9xR2yMnnqZh1fNFXJ
 
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
@@ -161,7 +161,9 @@ CREATE TABLE public.account_list (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone,
-    CONSTRAINT ck_account_list_source_valid CHECK ((source = ANY (ARRAY['csv'::text, 'manual'::text, 'crm'::text])))
+    research_tier text,
+    CONSTRAINT ck_account_list_ck_account_list_research_tier_valid CHECK ((research_tier = ANY (ARRAY['light'::text, 'standard'::text, 'deep'::text]))),
+    CONSTRAINT ck_account_list_source_valid CHECK ((source = ANY (ARRAY['csv'::text, 'manual'::text, 'crm'::text, 'apollo'::text])))
 );
 
 
@@ -224,6 +226,34 @@ CREATE TABLE public.admin_secret (
 
 CREATE TABLE public.alembic_version (
     version_num character varying(32) NOT NULL
+);
+
+
+--
+-- Name: app_user; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_user (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    organization_id uuid NOT NULL,
+    email text NOT NULL,
+    full_name text NOT NULL,
+    role text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    password_hash bytea NOT NULL,
+    salt bytea NOT NULL,
+    n integer NOT NULL,
+    r integer NOT NULL,
+    p integer NOT NULL,
+    session_version integer DEFAULT 1 NOT NULL,
+    failed_login_count integer DEFAULT 0 NOT NULL,
+    locked_until timestamp with time zone,
+    last_login_at timestamp with time zone,
+    created_by_id uuid,
+    CONSTRAINT ck_app_user_ck_app_user_role_valid CHECK ((role = ANY (ARRAY['admin'::text, 'aiops'::text, 'marketing'::text, 'demandgen'::text]))),
+    CONSTRAINT ck_app_user_ck_app_user_status_valid CHECK ((status = ANY (ARRAY['active'::text, 'deactivated'::text])))
 );
 
 
@@ -528,7 +558,7 @@ CREATE TABLE public.evaluation (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone,
     CONSTRAINT ck_evaluation_a_warning_or_failure_says_what_is_wrong CHECK (((verdict = 'pass'::text) OR ((issues IS NOT NULL) AND (jsonb_array_length(issues) > 0)))),
-    CONSTRAINT ck_evaluation_method_valid CHECK ((method = ANY (ARRAY['rules'::text, 'llm'::text, 'hybrid'::text]))),
+    CONSTRAINT ck_evaluation_method_valid CHECK ((method = ANY (ARRAY['rules'::text, 'llm'::text, 'hybrid'::text, 'rep'::text]))),
     CONSTRAINT ck_evaluation_subject_type_valid CHECK ((subject_type = ANY (ARRAY['research'::text, 'signal'::text, 'qualification'::text, 'strategy'::text, 'outreach_sequence'::text, 'draft'::text, 'sales_prep'::text, 'execution'::text]))),
     CONSTRAINT ck_evaluation_verdict_valid CHECK ((verdict = ANY (ARRAY['pass'::text, 'warn'::text, 'fail'::text])))
 );
@@ -702,6 +732,13 @@ CREATE TABLE public.llm_call (
     error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone,
+    grounded boolean DEFAULT false NOT NULL,
+    run_id uuid,
+    account_id uuid,
+    contact_id uuid,
+    campaign_id uuid,
+    scope text,
+    CONSTRAINT ck_llm_call_llm_call_scope_known CHECK (((scope IS NULL) OR (scope = ANY (ARRAY['company'::text, 'contact'::text, 'campaign'::text])))),
     CONSTRAINT ck_llm_call_tokens_non_negative CHECK (((input_tokens >= 0) AND (output_tokens >= 0)))
 );
 
@@ -744,6 +781,22 @@ CREATE TABLE public.model_availability (
 
 
 --
+-- Name: model_price; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.model_price (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    version integer NOT NULL,
+    is_active boolean DEFAULT false NOT NULL,
+    prices jsonb NOT NULL,
+    currency text DEFAULT 'USD'::text NOT NULL,
+    note text
+);
+
+
+--
 -- Name: org_profile; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -755,6 +808,18 @@ CREATE TABLE public.org_profile (
     description text,
     version integer NOT NULL,
     is_active boolean DEFAULT false NOT NULL
+);
+
+
+--
+-- Name: organization; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organization (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    name text NOT NULL
 );
 
 
@@ -946,6 +1011,8 @@ CREATE TABLE public.research_config (
     version integer NOT NULL,
     is_active boolean DEFAULT false NOT NULL,
     freshness_days integer DEFAULT 30 NOT NULL,
+    default_tier text DEFAULT 'standard'::text NOT NULL,
+    CONSTRAINT ck_research_config_ck_research_config_default_tier_valid CHECK ((default_tier = ANY (ARRAY['light'::text, 'standard'::text, 'deep'::text]))),
     CONSTRAINT ck_research_config_freshness_is_a_day_to_a_year CHECK (((freshness_days >= 1) AND (freshness_days <= 365)))
 );
 
@@ -993,7 +1060,9 @@ CREATE TABLE public.research_source (
     status text DEFAULT 'active'::text NOT NULL,
     status_reason text,
     max_age_days integer,
+    tier text DEFAULT 'light'::text NOT NULL,
     CONSTRAINT ck_research_source_ck_research_source_max_age_positive CHECK (((max_age_days IS NULL) OR (max_age_days > 0))),
+    CONSTRAINT ck_research_source_ck_research_source_tier_valid CHECK ((tier = ANY (ARRAY['light'::text, 'standard'::text, 'deep'::text]))),
     CONSTRAINT ck_research_source_kind_valid CHECK ((kind = ANY (ARRAY['search'::text, 'fetch'::text, 'provider'::text, 'manual'::text]))),
     CONSTRAINT ck_research_source_reuse_days_positive CHECK (((reuse_days IS NULL) OR (reuse_days > 0))),
     CONSTRAINT ck_research_source_scopes_not_empty CHECK ((jsonb_array_length(scopes) > 0)),
@@ -1026,6 +1095,32 @@ CREATE TABLE public.run (
     CONSTRAINT ck_run_failed_needs_an_error CHECK (((status <> 'failed'::text) OR (error IS NOT NULL))),
     CONSTRAINT ck_run_stage_valid CHECK ((stage = ANY (ARRAY['resolution'::text, 'research'::text, 'signals'::text, 'context'::text, 'qualification'::text, 'strategy'::text, 'content'::text, 'evaluation'::text, 'awaiting_approval'::text, 'done'::text]))),
     CONSTRAINT ck_run_status_valid CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'succeeded'::text, 'failed'::text, 'cancelled'::text])))
+);
+
+
+--
+-- Name: sales_prep; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sales_prep (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    contact_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    mode text NOT NULL,
+    payload jsonb NOT NULL,
+    research_completed_at timestamp with time zone,
+    newest_signal_on date,
+    signal_count integer DEFAULT 0 NOT NULL,
+    touches_sent integer DEFAULT 0 NOT NULL,
+    replies_seen integer DEFAULT 0 NOT NULL,
+    hypothesis_verdict text,
+    outcome text,
+    rep_note text,
+    CONSTRAINT ck_sales_prep_ck_sales_prep_mode_valid CHECK ((mode = ANY (ARRAY['pre_engagement'::text, 'engagement_aware'::text]))),
+    CONSTRAINT ck_sales_prep_ck_sales_prep_outcome_valid CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['meeting_booked'::text, 'follow_up'::text, 'no_need_now'::text, 'not_interested'::text])))),
+    CONSTRAINT ck_sales_prep_ck_sales_prep_verdict_valid CHECK (((hypothesis_verdict IS NULL) OR (hypothesis_verdict = ANY (ARRAY['confirmed'::text, 'rejected'::text, 'partly'::text, 'not_discussed'::text]))))
 );
 
 
@@ -1070,6 +1165,25 @@ CREATE TABLE public.scoring_config (
     size_multipliers jsonb DEFAULT '{}'::jsonb NOT NULL,
     min_queue_band text DEFAULT 'low'::text NOT NULL,
     CONSTRAINT ck_scoring_config_min_queue_band_valid CHECK ((min_queue_band = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
+);
+
+
+--
+-- Name: serp_call; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.serp_call (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    provider text NOT NULL,
+    run_id uuid,
+    account_id uuid,
+    family text,
+    queries integer DEFAULT 0 NOT NULL,
+    credits integer DEFAULT 0 NOT NULL,
+    ok boolean DEFAULT true NOT NULL,
+    error text
 );
 
 
@@ -1494,6 +1608,14 @@ ALTER TABLE ONLY public.admin_secret
 
 
 --
+-- Name: app_user pk_app_user; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT pk_app_user PRIMARY KEY (id);
+
+
+--
 -- Name: approval pk_approval; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1670,11 +1792,27 @@ ALTER TABLE ONLY public.model_availability
 
 
 --
+-- Name: model_price pk_model_price; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_price
+    ADD CONSTRAINT pk_model_price PRIMARY KEY (id);
+
+
+--
 -- Name: org_profile pk_org_profile; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.org_profile
     ADD CONSTRAINT pk_org_profile PRIMARY KEY (id);
+
+
+--
+-- Name: organization pk_organization; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization
+    ADD CONSTRAINT pk_organization PRIMARY KEY (id);
 
 
 --
@@ -1774,6 +1912,14 @@ ALTER TABLE ONLY public.run
 
 
 --
+-- Name: sales_prep pk_sales_prep; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_prep
+    ADD CONSTRAINT pk_sales_prep PRIMARY KEY (id);
+
+
+--
 -- Name: sales_rules pk_sales_rules; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1787,6 +1933,14 @@ ALTER TABLE ONLY public.sales_rules
 
 ALTER TABLE ONLY public.scoring_config
     ADD CONSTRAINT pk_scoring_config PRIMARY KEY (id);
+
+
+--
+-- Name: serp_call pk_serp_call; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.serp_call
+    ADD CONSTRAINT pk_serp_call PRIMARY KEY (id);
 
 
 --
@@ -2200,10 +2354,31 @@ CREATE INDEX ix_list_member_list ON public.account_list_member USING btree (list
 
 
 --
+-- Name: ix_llm_call_campaign; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_llm_call_campaign ON public.llm_call USING btree (campaign_id) WHERE (campaign_id IS NOT NULL);
+
+
+--
 -- Name: ix_llm_call_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_llm_call_created_at ON public.llm_call USING btree (created_at);
+
+
+--
+-- Name: ix_llm_call_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_llm_call_run ON public.llm_call USING btree (run_id) WHERE (run_id IS NOT NULL);
+
+
+--
+-- Name: ix_llm_call_run_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_llm_call_run_scope ON public.llm_call USING btree (run_id, scope) WHERE (run_id IS NOT NULL);
 
 
 --
@@ -2288,6 +2463,27 @@ CREATE INDEX ix_research_coverage_account ON public.research_coverage USING btre
 --
 
 CREATE INDEX ix_run_account ON public.run USING btree (account_id);
+
+
+--
+-- Name: ix_sales_prep_contact_newest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sales_prep_contact_newest ON public.sales_prep USING btree (contact_id, created_at DESC);
+
+
+--
+-- Name: ix_serp_call_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_serp_call_created ON public.serp_call USING btree (created_at DESC);
+
+
+--
+-- Name: ix_serp_call_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_serp_call_run ON public.serp_call USING btree (run_id);
 
 
 --
@@ -2403,6 +2599,13 @@ CREATE UNIQUE INDEX uq_admin_secret_active ON public.admin_secret USING btree ((
 
 
 --
+-- Name: uq_app_user_email_lower; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_app_user_email_lower ON public.app_user USING btree (lower(email));
+
+
+--
 -- Name: uq_contact_email_per_account; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2442,6 +2645,13 @@ CREATE UNIQUE INDEX uq_llm_config_active_per_scenario ON public.llm_config USING
 --
 
 CREATE UNIQUE INDEX uq_model_availability_single_active ON public.model_availability USING btree ((true)) WHERE is_active;
+
+
+--
+-- Name: uq_model_price_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_model_price_active ON public.model_price USING btree (is_active) WHERE is_active;
 
 
 --
@@ -2570,6 +2780,22 @@ ALTER TABLE ONLY public.account_list_service
 
 ALTER TABLE ONLY public.account_list_service
     ADD CONSTRAINT fk_account_list_service_service_id_service_catalog FOREIGN KEY (service_id) REFERENCES public.service_catalog(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_user fk_app_user_created_by_id_app_user; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT fk_app_user_created_by_id_app_user FOREIGN KEY (created_by_id) REFERENCES public.app_user(id);
+
+
+--
+-- Name: app_user fk_app_user_organization_id_organization; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT fk_app_user_organization_id_organization FOREIGN KEY (organization_id) REFERENCES public.organization(id);
 
 
 --
@@ -3005,6 +3231,38 @@ ALTER TABLE ONLY public.run
 
 
 --
+-- Name: sales_prep fk_sales_prep_account_id_account; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_prep
+    ADD CONSTRAINT fk_sales_prep_account_id_account FOREIGN KEY (account_id) REFERENCES public.account(id) ON DELETE CASCADE;
+
+
+--
+-- Name: sales_prep fk_sales_prep_contact_id_contact; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_prep
+    ADD CONSTRAINT fk_sales_prep_contact_id_contact FOREIGN KEY (contact_id) REFERENCES public.contact(id) ON DELETE CASCADE;
+
+
+--
+-- Name: serp_call fk_serp_call_account_id_account; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.serp_call
+    ADD CONSTRAINT fk_serp_call_account_id_account FOREIGN KEY (account_id) REFERENCES public.account(id) ON DELETE SET NULL;
+
+
+--
+-- Name: serp_call fk_serp_call_run_id_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.serp_call
+    ADD CONSTRAINT fk_serp_call_run_id_run FOREIGN KEY (run_id) REFERENCES public.run(id) ON DELETE SET NULL;
+
+
+--
 -- Name: service_icp_link fk_service_icp_link_icp_profile_id_icp_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3160,5 +3418,5 @@ ALTER TABLE ONLY public.signal
 -- PostgreSQL database dump complete
 --
 
-\unrestrict B20z7PrMIXfAnemlMLSPzrHqtDS6gqdxBts82a4xxeldmwt79tvrajGIeALsiUG
+\unrestrict h2BbOZdplr7N2pMDbrQflR4STJMHGKSb01wFOK9a3XHl8F9xR2yMnnqZh1fNFXJ
 
