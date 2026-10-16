@@ -51,10 +51,18 @@ class PasswordSetIn(BaseModel):
 
 class AdminUserOut(UserOut):
     created_at: datetime
+    #: What this user has done that a record points at, by kind. Empty means
+    #: they can be deleted; anything here means deactivate instead.
+    history: dict[str, int] = {}
+    #: The super admin (`SUPERADMIN_EMAIL`): nobody else can change this account.
+    protected: bool = False
 
     @classmethod
-    def of(cls, user: User) -> AdminUserOut:  # type: ignore[override]
-        return cls(**UserOut.of(user).model_dump(), created_at=user.created_at)
+    def of(cls, user: User, history: dict[str, int] | None = None) -> AdminUserOut:  # type: ignore[override]
+        return cls(
+            **UserOut.of(user).model_dump(), created_at=user.created_at,
+            history=history or {}, protected=access.is_super(user),
+        )
 
 
 async def _target(session: AsyncSession, user_id: uuid.UUID) -> User:
@@ -77,7 +85,22 @@ async def list_users(session: AsyncSession = Depends(get_session)):
     who approved and sent things before they left."""
     rows = (await session.execute(select(User))).scalars().all()
     rows = sorted(rows, key=lambda u: (u.status != "active", u.full_name.lower()))
-    return [AdminUserOut.of(u) for u in rows]
+    done = await access.history(session, [u.id for u in rows])
+    return [AdminUserOut.of(u, done[u.id]) for u in rows]
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: uuid.UUID, session: AsyncSession = Depends(get_session), me: User = Depends(admin_only)
+):
+    """Only for an account with no history — one created by mistake. Anyone
+    who has done something is deactivated instead, and the refusal says what."""
+    target = await _target(session, user_id)
+    try:
+        await access.delete_user(session, target, by=me)
+    except ValueError as e:
+        raise _refused(e) from None
+    await session.commit()
 
 
 @router.post("/users", response_model=AdminUserOut, status_code=201)

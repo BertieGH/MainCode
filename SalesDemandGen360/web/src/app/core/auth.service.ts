@@ -40,8 +40,8 @@ export const MODULE_LABELS: Record<string, string> = {
 export const ROLE_LABELS: Record<SessionUser['role'], string> = {
   admin: 'Admin',
   aiops: 'AIOps',
-  marketing: 'Marketing',
   demandgen: 'DemandGen',
+  marketing: 'Marketing',
 };
 
 /**

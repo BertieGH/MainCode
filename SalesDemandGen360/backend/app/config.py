@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     #: it back on.
     auth_required: bool = Field(default=True, alias="AUTH_REQUIRED")
 
+    #: The protected super admin: always an admin, and no other admin can
+    #: deactivate, delete, demote or reset the password of this account. Set in
+    #: `.env` rather than in code because the repository is public — an address
+    #: here is harmless, a password would not be. Unset means no super admin.
+    superadmin_email: str | None = Field(default=None, alias="SUPERADMIN_EMAIL")
+
     # --- Claude ---
     # Optional at this phase; required from Phase 3 onward.
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")

@@ -480,7 +480,7 @@ async def monitoring(
     for row in campaign_rows:
         bucket = by_campaign.setdefault(
             row.campaign_id,
-            {"name": row.name, "models": [], "calls": 0, "failed": 0, "contacts": 0},
+            {"name": row.label, "models": [], "calls": 0, "failed": 0, "contacts": 0},
         )
         bucket["models"].append((row.model, row.tin, row.tout, row.grounded))
         bucket["calls"] += row.calls

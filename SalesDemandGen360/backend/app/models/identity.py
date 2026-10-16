@@ -44,9 +44,10 @@ class User(Base):
     """A person who can sign in.
 
     Created only by an admin, who sets the password and tells them it — there
-    is no self-registration and no email (`docs/17`). Never deleted: approvals
-    and sends will point here, and "who did this" must stay answerable after
-    someone leaves. Deactivation is the way out.
+    is no self-registration and no email (`docs/17`). Deactivated, not deleted,
+    once they have history — approvals and sends point here, and "who did this"
+    must stay answerable after someone leaves. An account with no history (made
+    by mistake) can be deleted: `access.history` decides which.
 
     `app_user` because `user` is reserved in Postgres and quoting it everywhere
     is a bug waiting for the one query that forgets.

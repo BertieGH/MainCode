@@ -306,3 +306,90 @@ async def test_saving_the_grid_makes_a_new_version_that_takes_effect(api):
         assert (await bert.put("/api/roles", json={"grid": bad})).status_code == 422
 
     assert len(await _audit(api.maker, "roles.saved")) == 2
+
+
+@pytest.mark.db
+@needs_db
+async def test_an_account_with_no_history_can_be_deleted_and_one_with_history_cannot(api):
+    """Delete is for an account made by mistake. Anyone who has done something a
+    record points at is deactivated instead, and the refusal says what."""
+    from app.models.governance import Approval
+    from app.models.identity import AuditLog, User
+
+    await _user(api.maker, "bert@cgvak.com", "admin")
+    async with _as(api, "bert@cgvak.com") as bert:
+        typo = (await bert.post("/api/users", json={
+            "email": "priay@cgvak.com", "full_name": "Priya (typo)", "role": "marketing", "password": PW,
+        })).json()
+        used = (await bert.post("/api/users", json={
+            "email": "priya@cgvak.com", "full_name": "Priya N.", "role": "demandgen", "password": PW,
+        })).json()
+
+        # Signing in is not history.
+        async with _as(api, "priay@cgvak.com"):
+            pass
+
+        # An approval is.
+        async with api.maker() as s:
+            s.add(Approval(subject_type="outreach_sequence", subject_id=uuid.uuid4(),
+                           decision="approve", reviewer_id=used["id"], review_depth="individual"))
+            await s.commit()
+
+        listed = {u["email"]: u["history"] for u in (await bert.get("/api/users")).json()}
+        assert listed["priay@cgvak.com"] == {}
+        assert listed["priya@cgvak.com"] == {"approvals": 1}
+        # The admin made both accounts: that is history too.
+        assert listed["bert@cgvak.com"] == {"audited actions": 2, "users created": 2}
+
+        refused = await bert.delete(f"/api/users/{used['id']}")
+        assert refused.status_code == 409
+        assert "approvals: 1" in refused.json()["detail"] and "deactivate" in refused.json()["detail"]
+
+        assert (await bert.delete(f"/api/users/{typo['id']}")).status_code == 204
+        me = (await bert.get("/api/auth/me")).json()["user"]["id"]
+        assert (await bert.delete(f"/api/users/{me}")).status_code == 409
+
+    async with api.maker() as s:
+        assert await s.get(User, uuid.UUID(typo["id"])) is None
+        (row,) = (await s.execute(select(AuditLog).where(AuditLog.action == "user.deleted"))).scalars().all()
+        assert row.subject_id == typo["id"]
+        assert row.detail == {"email": "priay@cgvak.com"}
+
+
+@pytest.mark.db
+@needs_db
+async def test_nobody_else_can_change_the_super_admin(api, monkeypatch):
+    """Not another admin, not in any of the four ways: role, deactivate,
+    password, delete. The owner can still change their own password."""
+    monkeypatch.setattr(get_settings(), "superadmin_email", "Owner@cgvak.com")
+    owner_id = str(await _user(api.maker, "owner@cgvak.com", "admin"))
+    await _user(api.maker, "suresh@cgvak.com", "admin")
+
+    async with _as(api, "suresh@cgvak.com") as suresh:
+        listed = {u["email"]: u["protected"] for u in (await suresh.get("/api/users")).json()}
+        assert listed == {"owner@cgvak.com": True, "suresh@cgvak.com": False}
+
+        for call in (
+            suresh.patch(f"/api/users/{owner_id}", json={"role": "marketing"}),
+            suresh.post(f"/api/users/{owner_id}/deactivate"),
+            suresh.post(f"/api/users/{owner_id}/password", json={"password": "taken over now"}),
+            suresh.delete(f"/api/users/{owner_id}"),
+        ):
+            r = await call
+            assert r.status_code == 409, r.text
+            assert "protected super admin" in r.json()["detail"]
+
+    async with _as(api, "owner@cgvak.com") as owner:
+        # Theirs to change; and they stay an admin whoever asks.
+        assert (await owner.post("/api/auth/password", json={"current_password": PW, "new_password": "the owner's own"})).status_code == 200
+        assert (await owner.patch(f"/api/users/{owner_id}", json={"role": "aiops"})).status_code == 409
+
+
+@pytest.mark.db
+@needs_db
+async def test_without_a_super_admin_configured_nobody_is_protected(api, monkeypatch):
+    monkeypatch.setattr(get_settings(), "superadmin_email", None)
+    await _user(api.maker, "owner@cgvak.com", "admin")
+    await _user(api.maker, "suresh@cgvak.com", "admin")
+    async with _as(api, "suresh@cgvak.com") as suresh:
+        assert all(not u["protected"] for u in (await suresh.get("/api/users")).json())

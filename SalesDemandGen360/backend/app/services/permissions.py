@@ -55,7 +55,9 @@ ACTIONS: dict[str, str] = {
 #: (is the installation set up, which providers exist, which cadences exist).
 SHARED = "shared"
 
-ROLES_IN_GRID = ("aiops", "marketing", "demandgen")
+#: Column order on Settings › Roles: the operators, then the two business roles,
+#: DemandGen before Marketing.
+ROLES_IN_GRID = ("aiops", "demandgen", "marketing")
 
 #: The grid agreed in chat on 2026-10-15 and drawn in `mockups/user-access.html`.
 #: Seeded as version 1; edited afterwards on Settings › Roles.

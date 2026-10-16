@@ -5525,3 +5525,56 @@ label was lower-cased whole. Now only its first letter is.
 `main.py`, `services/auth.py`, `tests/test_auth.py`, `tests/test_permissions.py`;
 `web/.../core/auth.guard.ts`, `campaigns/campaign-detail.component.ts`,
 `campaigns/campaigns.component.ts`, `app.component.*`, `styles.css`; `CLAUDE.md`.
+
+## §121 — Delete a user created by mistake (2026-10-15)
+
+**Problem.** "Deactivate, never delete" left a mistyped account on the Users
+list forever, beside the real person it was meant to be.
+
+**Fix.** The same rule as a signal type: delete only what nothing points at.
+`access.history` counts what a user has done that a record relies on: audited
+actions, approvals, role versions saved, accounts created. Signing in does
+not count. Empty history means `DELETE /users/{id}` removes the account and
+records `user.deleted` with the address. Otherwise it is a 409 naming what
+they did, e.g. "approvals: 1", and deactivation is the way out. The Users
+screen shows a History column and offers Delete only where it is empty. You
+still can't delete yourself or the last admin.
+
+`services/access.py`, `api/users.py`, `models/identity.py`,
+`tests/test_permissions.py`; `web/.../settings/users.component.ts`,
+`core/access.service.ts`; `CLAUDE.md`.
+
+## §122 — A super admin no other admin can lock out (2026-10-15)
+
+**Asked for:** a hard-coded super admin with a fixed password. **Built
+instead:** the same protection with nothing secret in code, because this
+repository is public on GitHub. A password in source would be readable by
+anyone, and would let them in to any copy of the app.
+
+`SUPERADMIN_EMAIL` in `.env` names the account. `access.is_super` checks it,
+and `_guard_super` refuses any other admin who tries to change its role,
+deactivate it, set its password or delete it, with a 409 that says why. The
+owner can still change their own password. The Users screen shows the account
+as "Super admin" with those actions greyed out. A lost password is recovered
+on the server with `scripts/reset_password.py`. That change goes into the
+audit log as "command line", since it never touched the app.
+
+`config.py`, `services/access.py`, `api/users.py`, `scripts/reset_password.py`
+(new), `tests/test_permissions.py`; `web/.../settings/users.component.ts`,
+`core/access.service.ts`; `CLAUDE.md`.
+
+## §123 — Cost & health answered 500 once a campaign had spent anything (2026-10-15)
+
+**Problem.** The Cost & health screen showed only "Internal Server Error".
+
+**Cause.** The per-campaign cost query selects `OutreachCampaign.label`, and
+the loop read `row.name`. A row has no `name`, so it raised `AttributeError`,
+but only when some LLM call in the window belonged to a campaign. Every
+monitoring test used research runs and no campaigns, so the branch had never
+run. It surfaced as soon as a campaign's strategy and drafts were written.
+
+**Fix.** `row.label`. A regression test puts three campaign calls in the
+window and checks the campaign is listed under its name. It fails on the old
+line and passes on the new one.
+
+`api/monitoring.py`, `tests/test_cost_attribution.py`.

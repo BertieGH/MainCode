@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Observable } from 'rxjs';
 
 import { AccessService, AdminUser, generatePassword } from '../core/access.service';
 import { AuthService, ROLE_LABELS } from '../core/auth.service';
@@ -16,9 +17,10 @@ import { ColumnDef, RowAction } from '../shared/table-view';
  * Who can sign in, and as which role (`docs/17`).
  *
  * An admin creates every account and sets its password, then tells the person
- * — the app sends nothing. People are deactivated, never deleted: they are
- * who approved and sent things, and that has to stay answerable after they
- * leave. The server refuses the two moves that would strand the installation
+ * — the app sends nothing. Someone with history (an approval, an audited
+ * action, a role version, an account they created) is deactivated, never
+ * deleted: what they did has to stay answerable after they leave. An account
+ * with no history — created by mistake — can be deleted outright. The server refuses the two moves that would strand the installation
  * (removing the last admin, changing your own role) with the reason.
  */
 @Component({
@@ -28,8 +30,8 @@ import { ColumnDef, RowAction } from '../shared/table-view';
   template: `
     <h2 style="font-size:1.15rem;margin-bottom:4px;">Users</h2>
     <p class="row-sub" style="max-width:72ch;margin-bottom:18px;">
-      Who can sign in, and as which role. Users are deactivated, never deleted, so the record of
-      who approved and sent what stays intact.
+      Who can sign in, and as which role. An account that has never done anything can be deleted;
+      anyone with history is deactivated instead, so the record of who approved and sent what stays intact.
     </p>
 
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
@@ -111,7 +113,9 @@ import { ColumnDef, RowAction } from '../shared/table-view';
           {{ row.full_name }}<span class="row-sub" *ngIf="row.id === auth.user()?.id"> (you)</span>
         </ng-container>
         <code *ngSwitchCase="'email'">{{ row.email }}</code>
-        <span *ngSwitchCase="'role'" class="badge" [class.badge-accent]="row.role === 'admin'">{{ value }}</span>
+        <ng-container *ngSwitchCase="'role'">
+          <span class="badge" [class.badge-accent]="row.role === 'admin'">{{ row.protected ? 'Super admin' : value }}</span>
+        </ng-container>
         <span *ngSwitchCase="'status'" class="badge" [class.badge-good]="row.status === 'active'">{{ value }}</span>
         <ng-container *ngSwitchDefault>{{ value }}</ng-container>
       </ng-container>
@@ -162,6 +166,8 @@ export class UsersComponent implements OnInit {
     { key: 'email', label: 'Email', width: 220 },
     { key: 'role', label: 'Role', width: 130, filter: 'enum', value: (u) => ROLE_LABELS[u.role as keyof typeof ROLE_LABELS] },
     { key: 'status', label: 'Status', width: 130, filter: 'enum', value: (u) => u.status },
+    { key: 'history', label: 'History', width: 240, filter: 'none',
+      value: (u) => Object.entries(u.history ?? {}).map(([k, n]) => `${k}: ${n}`).join(', ') || 'none — can be deleted' },
     { key: 'last_login_at', label: 'Last sign-in', width: 170, filter: 'none',
       value: (u) => (u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'never') },
   ];
@@ -169,12 +175,24 @@ export class UsersComponent implements OnInit {
   /** Yourself excluded from the moves the server refuses for yourself. */
   private notMe = (u: AdminUser) => u.id !== this.auth.user()?.id;
 
+  /** The super admin's account is theirs alone — the server refuses the rest. */
+  private open = (u: AdminUser) => !u.protected;
+
   readonly actions: RowAction[] = [
-    { key: 'role', label: 'Change role…', row: true, can: (u) => this.notMe(u) && u.status === 'active', why: 'not for yourself, or a deactivated user' },
-    { key: 'password', label: 'Set new password…', row: true, can: (u) => u.status === 'active', why: 'reactivate first' },
-    { key: 'deactivate', label: 'Deactivate', row: true, danger: true, can: (u) => this.notMe(u) && u.status === 'active', why: 'not yourself' },
+    { key: 'role', label: 'Change role…', row: true, can: (u) => this.open(u) && this.notMe(u) && u.status === 'active', why: 'not yourself, a deactivated user, or the super admin' },
+    { key: 'password', label: 'Set new password…', row: true, can: (u) => (this.open(u) || !this.notMe(u)) && u.status === 'active', why: 'the super admin sets their own' },
+    { key: 'deactivate', label: 'Deactivate', row: true, danger: true, can: (u) => this.open(u) && this.notMe(u) && u.status === 'active', why: 'not yourself or the super admin' },
     { key: 'reactivate', label: 'Reactivate', row: true, can: (u) => u.status !== 'active', why: 'already active' },
+    {
+      key: 'delete', label: 'Delete user', row: true, danger: true,
+      can: (u) => this.open(u) && this.notMe(u) && !this.hasHistory(u),
+      why: 'has history, or is the super admin',
+    },
   ];
+
+  hasHistory(u: AdminUser): boolean {
+    return Object.keys(u.history ?? {}).length > 0;
+  }
 
   ngOnInit(): void {
     this.load();
@@ -228,6 +246,14 @@ export class UsersComponent implements OnInit {
       if (ok) this.run(this.api.deactivate(u.id), `${u.full_name} deactivated.`);
     } else if (key === 'reactivate') {
       this.run(this.api.reactivate(u.id), `${u.full_name} can sign in again.`);
+    } else if (key === 'delete') {
+      const ok = await this.confirm.ask({
+        title: `Delete ${u.full_name}?`,
+        body: `${u.email} has never done anything the app keeps a record of, so the account is removed outright. This cannot be undone — create it again if you need it.`,
+        confirmLabel: 'Delete user',
+        danger: true,
+      });
+      if (ok) this.run(this.api.deleteUser(u.id), `${u.full_name} deleted.`);
     }
   }
 
@@ -239,7 +265,7 @@ export class UsersComponent implements OnInit {
     this.run(this.api.setPassword(u.id, this.nextPassword), `New password set for ${u.full_name}.`, () => this.passwordFor.set(null), 'Tell them the new one yourself. They have been signed out.');
   }
 
-  private run(call: ReturnType<AccessService['reactivate']>, done: string, after?: () => void, detail?: string): void {
+  private run(call: Observable<unknown>, done: string, after?: () => void, detail?: string): void {
     this.saving.set(true);
     call.subscribe({
       next: () => {

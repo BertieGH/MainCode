@@ -22,8 +22,18 @@ installation before considering it.
   signs that person out everywhere.
 - **The first admin** is created from the command line, so there is no open
   bootstrap route.
-- **Users are deactivated, never deleted.** Approvals, sends and the audit log
-  point at them. Deactivating someone ends every session at once.
+- **One protected super admin**, named by `SUPERADMIN_EMAIL` in `.env`. It is
+  always an admin, and no other admin can change its role, deactivate it,
+  delete it or set its password. It is shown on Settings › Users as "Super
+  admin", with those actions greyed out. The address lives in `.env`, not in
+  code, and the password never does: the repository is public. If the password
+  is lost, run `scripts/reset_password.py` on the server.
+- **Users with history are deactivated, never deleted.** Approvals, sends and
+  the audit log point at them. Deactivating someone ends every session at once.
+  An account with **no** history (no audited action, approval, role version or
+  account created; signing in does not count) can be deleted, for one created
+  by mistake. Settings › Users shows each user's history and offers Delete only
+  where it is empty. The deletion itself is audited.
 - **At least one active Admin must always remain.** No admin can demote or
   deactivate themselves.
 - One `organization` row is created now, with users belonging to it, so a

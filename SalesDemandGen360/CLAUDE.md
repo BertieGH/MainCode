@@ -57,6 +57,12 @@ authenticates with the token in its path.
 - The UI hides what a role cannot do for clarity only. The server is the check.
 - No self-registration and no email: an admin creates each account and sets its password. The
   first admin comes from `scripts/create_admin.py`.
+- A user with **history** (an audited action, an approval, a role version saved, an account they
+  created) is deactivated, never deleted. One with none can be deleted (`DELETE /users/{id}`, 409
+  otherwise) — the same rule as a signal type with no signals.
+- `SUPERADMIN_EMAIL` (in `.env`, never in code — the repo is public) names the protected super
+  admin: always admin, and no other admin can deactivate, delete, demote or reset that account.
+  Lost password: `scripts/reset_password.py` on the server.
 
 ## The setup gate
 

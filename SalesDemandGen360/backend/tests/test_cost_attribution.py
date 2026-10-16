@@ -403,3 +403,31 @@ class TestTheRankings:
         )
         assert row is not None, "an unpriced run must still be visible"
         assert row["cost"] is None, "unpriced is not free"
+
+
+class TestCampaignCosts:
+    async def test_a_campaigns_calls_are_listed_under_its_name(self, api):
+        """The campaign branch read `row.name` off a query that selects
+        `label`, so the whole screen answered 500 the first time any call in
+        the window belonged to a campaign — every earlier test had none."""
+        from app.models.campaign import OutreachCampaign
+
+        label = f"Campaign {uuid.uuid4().hex[:6]}"
+        async with api.maker() as s:
+            campaign = OutreachCampaign(label=label)
+            s.add(campaign)
+            await s.flush()
+            for _ in range(3):
+                s.add(LlmCall(
+                    scenario="drafting", provider="gemini", model="gemini-3.1-pro-preview",
+                    effort="high", input_tokens=500, output_tokens=200, duration_ms=1200,
+                    campaign_id=campaign.id,
+                ))
+            await s.commit()
+            campaign_id = str(campaign.id)
+
+        r = await api.get("/api/monitoring?days=1")
+        assert r.status_code == 200, r.text
+        row = next(c for c in r.json()["campaigns"] if c["campaign_id"] == campaign_id)
+        assert row["name"] == label
+        assert row["calls"] == 3

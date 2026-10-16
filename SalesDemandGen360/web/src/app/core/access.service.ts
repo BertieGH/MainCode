@@ -6,6 +6,10 @@ import { Level, SessionUser } from './auth.service';
 
 export interface AdminUser extends SessionUser {
   created_at: string;
+  /** What they have done that a record points at. Empty means deletable. */
+  history: Record<string, number>;
+  /** The super admin: nobody else can change this account. */
+  protected: boolean;
 }
 
 /** `{modules: {role: {module: level}}, actions: {role: [action]}}` — admin is never in it. */
@@ -45,6 +49,11 @@ export class AccessService {
 
   deactivate(id: string): Observable<AdminUser> {
     return this.http.post<AdminUser>(`/api/users/${id}/deactivate`, {});
+  }
+
+  /** Only an account with no history; the server refuses anyone else. */
+  deleteUser(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/users/${id}`);
   }
 
   reactivate(id: string): Observable<AdminUser> {
