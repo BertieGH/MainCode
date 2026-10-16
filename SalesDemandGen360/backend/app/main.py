@@ -24,6 +24,7 @@ from app.api import (
     pasted,
     prep,
     prompts,
+    users,
 )
 from app.api.auth import require_user
 from app.config import get_settings
@@ -112,6 +113,9 @@ def create_app() -> FastAPI:
     app.include_router(monitoring.router, prefix="/api", dependencies=signed_in)
     app.include_router(prep.router, prefix="/api", dependencies=signed_in)
     app.include_router(prompts.router, prefix="/api", dependencies=signed_in)
+    # Settings › Users and Roles also demand a signed-in admin of their own,
+    # even while AUTH_REQUIRED is off — see `api/users`.
+    app.include_router(users.router, prefix="/api", dependencies=signed_in)
     return app
 
 

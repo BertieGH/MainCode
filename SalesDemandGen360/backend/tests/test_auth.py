@@ -174,8 +174,12 @@ async def test_sign_in_sets_a_cookie_and_me_answers(api):
 
     me = await api.get("/api/auth/me")
     assert me.status_code == 200
-    assert me.json()["email"] == "priya@cgvak.com"
-    assert me.json()["last_login_at"] is not None
+    assert me.json()["user"]["email"] == "priya@cgvak.com"
+    assert me.json()["user"]["last_login_at"] is not None
+    # What the UI hides by: DemandGen sends, and has no API config.
+    perms = me.json()["permissions"]
+    assert "approve_send" in perms["actions"]
+    assert perms["modules"]["api_config"] == "none"
 
 
 @pytest.mark.db

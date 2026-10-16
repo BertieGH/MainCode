@@ -95,6 +95,9 @@ from app.schemas.config import (
     WritingSampleIn,
     WritingSampleOut,
 )
+from app.api.auth import current_user
+from app.models.identity import User
+from app.services import access
 from app.services import (
     availability,
     crypto,
@@ -1207,7 +1210,9 @@ async def list_credentials(session: AsyncSession = Depends(get_session)):
 
 @router.put("/credentials", response_model=CredentialOut, status_code=201)
 async def put_credential(
-    payload: CredentialIn, session: AsyncSession = Depends(get_session)
+    payload: CredentialIn,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
 ):
     """Upsert. Re-sending a provider/type replaces the stored value.
 
@@ -1253,13 +1258,21 @@ async def put_credential(
         if console_url:
             existing.console_url = console_url
 
+    # Which slot changed and who changed it — never the value, nor its last
+    # four. Invariant 9.
+    await access.record(
+        session, user, "credential.saved", "integration_credential",
+        f"{payload.provider}/{payload.credential_type}",
+    )
     await session.commit()
     return existing
 
 
 @router.delete("/credentials/{cred_id}", status_code=204)
 async def delete_credential(
-    cred_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    cred_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
 ):
     """Remove a stored credential.
 
@@ -1276,6 +1289,10 @@ async def delete_credential(
     row = await session.get(IntegrationCredential, cred_id)
     if row is None:
         raise HTTPException(404, "credential not found")
+    await access.record(
+        session, user, "credential.deleted", "integration_credential",
+        f"{row.provider}/{row.credential_type}",
+    )
     await session.delete(row)
     await session.commit()
 

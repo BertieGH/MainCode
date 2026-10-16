@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict h2BbOZdplr7N2pMDbrQflR4STJMHGKSb01wFOK9a3XHl8F9xR2yMnnqZh1fNFXJ
+\restrict dKzHsfDUHbLdRsEJOQr2W8Xpt8eFpOz8Ipmofxh0tSFJIC68v6znej8lhU8Nar3
 
 -- Dumped from database version 17.9
 -- Dumped by pg_dump version 17.9
@@ -311,6 +311,23 @@ CREATE TABLE public.approval_sample (
     CONSTRAINT ck_approval_sample_sample_size_non_negative CHECK ((sample_size >= 0)),
     CONSTRAINT ck_approval_sample_stratum_size_non_negative CHECK ((stratum_size >= 0)),
     CONSTRAINT ck_approval_sample_the_drawn_ids_match_the_stated_size CHECK ((jsonb_array_length(sequence_ids) = sample_size))
+);
+
+
+--
+-- Name: audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    actor_id uuid,
+    actor_label text NOT NULL,
+    action text NOT NULL,
+    subject_type text,
+    subject_id text,
+    detail jsonb
 );
 
 
@@ -1071,6 +1088,21 @@ CREATE TABLE public.research_source (
 
 
 --
+-- Name: role_grid; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.role_grid (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone,
+    version integer NOT NULL,
+    grid jsonb NOT NULL,
+    is_active boolean DEFAULT false NOT NULL,
+    created_by_id uuid
+);
+
+
+--
 -- Name: run; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1632,6 +1664,14 @@ ALTER TABLE ONLY public.approval_sample
 
 
 --
+-- Name: audit_log pk_audit_log; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_log
+    ADD CONSTRAINT pk_audit_log PRIMARY KEY (id);
+
+
+--
 -- Name: cadence_shape pk_cadence_shape; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1904,6 +1944,14 @@ ALTER TABLE ONLY public.research_source
 
 
 --
+-- Name: role_grid pk_role_grid; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_grid
+    ADD CONSTRAINT pk_role_grid PRIMARY KEY (id);
+
+
+--
 -- Name: run pk_run; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2168,6 +2216,14 @@ ALTER TABLE ONLY public.research_source
 
 
 --
+-- Name: role_grid uq_role_grid_version; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_grid
+    ADD CONSTRAINT uq_role_grid_version UNIQUE (version);
+
+
+--
 -- Name: sales_rules uq_sales_rules_version; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2281,6 +2337,13 @@ CREATE INDEX ix_approval_sample ON public.approval USING btree (sample_id);
 --
 
 CREATE INDEX ix_approval_subject ON public.approval USING btree (subject_type, subject_id);
+
+
+--
+-- Name: ix_audit_log_subject; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_audit_log_subject ON public.audit_log USING btree (subject_type, subject_id);
 
 
 --
@@ -2683,6 +2746,13 @@ CREATE UNIQUE INDEX uq_research_config_single_active ON public.research_config U
 
 
 --
+-- Name: uq_role_grid_single_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_role_grid_single_active ON public.role_grid USING btree ((true)) WHERE is_active;
+
+
+--
 -- Name: uq_sales_rules_single_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2812,6 +2882,14 @@ ALTER TABLE ONLY public.approval_sample
 
 ALTER TABLE ONLY public.approval
     ADD CONSTRAINT fk_approval_sample_id_approval_sample FOREIGN KEY (sample_id) REFERENCES public.approval_sample(id);
+
+
+--
+-- Name: audit_log fk_audit_log_actor_id_app_user; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_log
+    ADD CONSTRAINT fk_audit_log_actor_id_app_user FOREIGN KEY (actor_id) REFERENCES public.app_user(id);
 
 
 --
@@ -3215,6 +3293,14 @@ ALTER TABLE ONLY public.research_coverage
 
 
 --
+-- Name: role_grid fk_role_grid_created_by_id_app_user; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_grid
+    ADD CONSTRAINT fk_role_grid_created_by_id_app_user FOREIGN KEY (created_by_id) REFERENCES public.app_user(id);
+
+
+--
 -- Name: run fk_run_account_id_account; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3418,5 +3504,5 @@ ALTER TABLE ONLY public.signal
 -- PostgreSQL database dump complete
 --
 
-\unrestrict h2BbOZdplr7N2pMDbrQflR4STJMHGKSb01wFOK9a3XHl8F9xR2yMnnqZh1fNFXJ
+\unrestrict dKzHsfDUHbLdRsEJOQr2W8Xpt8eFpOz8Ipmofxh0tSFJIC68v6znej8lhU8Nar3
 

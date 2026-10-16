@@ -121,6 +121,11 @@ TEST_DB = os.getenv("TEST_DATABASE_URL")
 @pytest.fixture(autouse=True)
 async def _clean_database(request):
     """Empty every table before any test marked ``db``."""
+    # The role grid is cached for a few seconds; a grid saved by one test
+    # must not outlive the truncate that removes it.
+    from app.services.access import forget_cached_grid
+
+    forget_cached_grid()
     if "db" not in request.keywords or not TEST_DB:
         yield
         return

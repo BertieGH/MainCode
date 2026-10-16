@@ -5444,3 +5444,34 @@ its own public router now, and a test holds it there.
 `services/admin_gate.py`, `api/auth.py` (new), `api/outreach_events.py`,
 `main.py`, `config.py`, `alembic/b6d2e8f41a07` (new),
 `scripts/create_admin.py` (new), `tests/test_auth.py` (new).
+
+## §118 — Roles, and a record of who did what (2026-10-15)
+
+**Problem.** Phase 1 could say *who* was calling, but not what they were
+allowed to do. And every approval recorded `reviewer_id = "bertie"` whoever
+clicked: the "a human approved this" rule had no way to say *which* human.
+
+**Fix, phase 2 of `docs/17`.** `permissions.RULES` maps every route template
+to one of ten modules (none / view / edit) or to a risky action: approve &
+send, paid research, delete campaign. The active `role_grid` row says what
+AIOps, Marketing and DemandGen hold. It is versioned and edited on
+Settings › Roles; version 1 is the grid agreed in chat. Admin is computed, not
+stored, so no grid edit can lock admins out. `audit_log` is created. CLAUDE.md
+named it, but the table never existed. Approvals carry the signed-in user's id.
+
+**Three decisions worth keeping.**
+- *A route not in the map is admin-only.* Closed by default, and
+  `test_every_route_belongs_to_a_module_or_is_deliberately_public` names it.
+- *Matched on the route template, not the URL.* A route inside an included
+  router reports its path without the `/api` prefix (this FastAPI mounts
+  routers lazily), so the prefix is restored before matching. Without that,
+  every rule silently missed and everything fell through to admin-only.
+- *Users and Roles always need a signed-in admin*, even while `AUTH_REQUIRED`
+  is off. Every other route stays open to anonymous callers so today's UI
+  works, but an anonymous caller able to create an admin account here would
+  have kept it after phase 3.
+
+`services/permissions.py`, `services/access.py`, `api/users.py` (new),
+`models/identity.py`, `alembic/c3a9f17e5b24` (new), `api/auth.py`,
+`api/campaigns.py`, `api/config.py`, `api/prompts.py`, `main.py`,
+`tests/test_permissions.py` (new), `tests/test_auth.py`, `tests/conftest.py`.

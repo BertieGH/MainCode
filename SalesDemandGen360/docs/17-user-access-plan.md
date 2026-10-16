@@ -1,6 +1,6 @@
 # User access: login, admin-created accounts and role-based permissions
 
-**Status: phase 1 built (2026-10-15); phases 2–4 to come.** Agreed in chat 2026-10-15. Screens are in
+**Status: phases 1–2 built (2026-10-15); phases 3–4 to come.** Agreed in chat 2026-10-15. Screens are in
 `mockups/user-access.html`. This is the brief, so the build does not have to re-derive it.
 
 ## Why
@@ -81,8 +81,22 @@ The prompt-editor password retires: "Model & Prompts config: Edit" replaces it.
 2. **Roles and user management (about 1½ days).** The versioned role grid and
    a permission dependency per group of routes. Admin endpoints: create
    (with password), change role, deactivate or reactivate, set new password.
-   Approvals and sends record the user instead of `"api"`. **There is no
-   `audit_log` table yet**, although CLAUDE.md names one: phase 2 creates it.
+   Approvals and sends record the user instead of `"api"`.
+
+   *Built.* `services/permissions.py` maps every route template to a module
+   or a risky action (first match wins; an unmapped route is admin-only, and
+   `test_permissions` lists any). `require_user` checks a signed-in caller
+   against the active `role_grid` on every request; anonymous callers still
+   pass while `AUTH_REQUIRED` is off. `/users` and `/roles` are the exception:
+   they always need a signed-in admin, or an anonymous caller could create an
+   admin that outlives phase 3. `audit_log` exists now and records user
+   changes, grid saves, approvals, sample acceptance, execute, stop, campaign
+   delete and credential saves and deletes (slot only, never the value).
+   `approval.reviewer_id` is the user's id once someone is signed in, and
+   stays `"bertie"` for anonymous approvals so the column keeps one meaning
+   per era. The prompt password now guards anonymous callers only; a signed-in
+   caller already passed the grid's Model & Prompts edit check.
+   `/auth/me` returns `{user, permissions}` for phase 3 to hide by.
 3. **Angular (1–1½ days).** A sign-in page and a change-password dialog. Guard, expired-session handling, user menu, Settings ›
    Users, Settings › Roles, and view-only screens with disabled inputs.
 4. **Hardening (½–1 day).** CSRF protection, full test runs, a browser pass as

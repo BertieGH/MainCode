@@ -72,7 +72,7 @@ from app.models.governance import (  # noqa: F401
     Evaluation,
 )
 from app.models.cost import ModelPrice, SerpCall  # noqa: F401
-from app.models.identity import Organization, User  # noqa: F401
+from app.models.identity import AuditLog, Organization, RoleGrid, User  # noqa: F401
 from app.models.prep import SalesPrep  # noqa: F401
 from app.models.research import ResearchCoverage  # noqa: F401
 from app.models.signal import (  # noqa: F401

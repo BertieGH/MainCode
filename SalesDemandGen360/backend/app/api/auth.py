@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_session
 from app.models.identity import User
-from app.services import auth
+from app.services import access, auth, permissions
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -29,6 +29,13 @@ class LoginIn(BaseModel):
 class PasswordIn(BaseModel):
     current_password: str
     new_password: str
+
+
+class MeOut(BaseModel):
+    user: "UserOut"
+    #: What this person can do, for the UI to hide what they cannot. The
+    #: server re-checks every request; this is for clarity, not safety.
+    permissions: dict
 
 
 class UserOut(BaseModel):
@@ -61,14 +68,39 @@ async def current_user(
     return await auth.user_for_session(session, request.cookies.get(auth.COOKIE_NAME))
 
 
-async def require_user(user: User | None = Depends(current_user)) -> User | None:
-    """Put on every router but sign-in and health.
+def _route_template(request: Request) -> str:
+    """The template FastAPI matched — `/api/campaigns/{campaign_id}/execute` —
+    rather than the raw URL, which a crafted path could bend around a rule.
 
-    With `AUTH_REQUIRED` off it only resolves the user, so the running UI keeps
-    working until it has a sign-in page; on, an anonymous request is a 401.
+    Routes inside an included router report their path without the mount
+    prefix, and every guarded router is mounted at `/api`, so it is put back.
     """
-    if user is None and get_settings().auth_required:
-        raise HTTPException(status_code=401, detail="Sign in to continue.")
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or request.url.path
+    return path if path.startswith("/api/") else "/api" + path
+
+
+async def require_user(
+    request: Request,
+    user: User | None = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> User | None:
+    """Put on every router but sign-in, health and the LGM inbox.
+
+    Anonymous: a 401 with `AUTH_REQUIRED` on; allowed with it off, so the
+    running UI keeps working until it has a sign-in page (phase 3).
+    Signed in: always checked against the role grid — a 403 that says which
+    module or action the role lacks.
+    """
+    if user is None:
+        if get_settings().auth_required:
+            raise HTTPException(status_code=401, detail="Sign in to continue.")
+        return None
+    reason = permissions.refusal(
+        await access.active_grid(session), user.role, request.method, _route_template(request)
+    )
+    if reason:
+        raise HTTPException(status_code=403, detail=reason)
     return user
 
 
@@ -109,11 +141,14 @@ async def logout(response: Response) -> Response:
     return response
 
 
-@router.get("/me", response_model=UserOut)
-async def me(user: User | None = Depends(current_user)):
+@router.get("/me", response_model=MeOut)
+async def me(user: User | None = Depends(current_user), session: AsyncSession = Depends(get_session)):
     if user is None:
         raise HTTPException(status_code=401, detail="Not signed in.")
-    return UserOut.of(user)
+    return MeOut(
+        user=UserOut.of(user),
+        permissions=permissions.effective(await access.active_grid(session), user.role),
+    )
 
 
 @router.post("/password", response_model=UserOut)
@@ -135,3 +170,6 @@ async def change_password(
     await session.commit()
     _set_cookie(response, auth.issue_session(user))
     return UserOut.of(user)
+
+
+MeOut.model_rebuild()

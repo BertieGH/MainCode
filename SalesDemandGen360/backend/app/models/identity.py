@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -22,7 +23,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -89,3 +90,49 @@ class User(Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("app_user.id")
     )
+
+
+class RoleGrid(Base):
+    """What each role may do — one version active, every old one kept.
+
+    Versioned like every config table here, so "who could send on 3 Oct?"
+    is answered by the row active then rather than reconstructed. Admin is not
+    in it: admin's rights are computed (`permissions.effective`), so no edit to
+    this table can lock the last admin out of editing it.
+    """
+
+    __tablename__ = "role_grid"
+    __table_args__ = (
+        Index("uq_role_grid_single_active", text("(true)"), unique=True,
+              postgresql_where=text("is_active")),
+    )
+
+    version: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    #: {"modules": {role: {module: none|view|edit}}, "actions": {role: [action]}}
+    grid: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("app_user.id")
+    )
+
+
+class AuditLog(Base):
+    """Who did what that matters: access changes, approvals, sends.
+
+    Append-only. `actor_label` is kept beside `actor_id` so the row still
+    reads after the user is renamed, and so actions taken before sign-in was
+    enforced ("anonymous") are honest rather than missing. `detail` never
+    holds a credential, a password or a token — invariant 9.
+    """
+
+    __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_log_subject", "subject_type", "subject_id"),)
+
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("app_user.id")
+    )
+    actor_label: Mapped[str] = mapped_column(Text, nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_type: Mapped[str | None] = mapped_column(Text)
+    subject_id: Mapped[str | None] = mapped_column(Text)
+    detail: Mapped[dict | None] = mapped_column(JSONB)

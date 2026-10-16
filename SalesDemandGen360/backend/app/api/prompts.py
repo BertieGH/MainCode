@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.api.auth import current_user
+from app.models.identity import User
 from app.services import admin_gate, instructions, prompt_export, prompts
 
 router = APIRouter(prefix="/config", tags=["prompts"])
@@ -85,13 +87,20 @@ class PromptDetailOut(BaseModel):
 # --------------------------------------------------------------------------
 # the gate
 # --------------------------------------------------------------------------
-async def _require_gate(session: AsyncSession, token: str | None) -> None:
-    """Refuse a write unless the caller unlocked recently.
+async def _require_gate(session: AsyncSession, token: str | None, user: User | None = None) -> None:
+    """Refuse a write unless the caller unlocked recently — or is signed in.
+
+    A signed-in caller reached here only because the role grid gave them edit
+    on Model & Prompts (`require_user`), which is the decision this password
+    stood in for before there were people. The password still guards anonymous
+    callers, until phase 3 makes there be none (`docs/17`).
 
     A 409 when no password is set rather than a 401: "you got it wrong" and
     "there is nothing to get right yet" need different words, because they need
     different actions from whoever reads them.
     """
+    if user is not None:
+        return
     if not await admin_gate.is_configured(session):
         raise HTTPException(
             409, "no admin password is set — set one before editing prompts"
@@ -254,9 +263,10 @@ async def save_prompt(
     payload: PromptIn,
     session: AsyncSession = Depends(get_session),
     x_admin_token: str | None = Header(default=None, alias=admin_gate.TOKEN_HEADER),
+    user: User | None = Depends(current_user),
 ):
     """Supersede the live text with a new version."""
-    await _require_gate(session, x_admin_token)
+    await _require_gate(session, x_admin_token, user)
     try:
         await prompts.save_version(
             session, scenario=scenario, body=payload.body, note=payload.note
@@ -274,9 +284,10 @@ async def reset_prompt(
     scenario: str,
     session: AsyncSession = Depends(get_session),
     x_admin_token: str | None = Header(default=None, alias=admin_gate.TOKEN_HEADER),
+    user: User | None = Depends(current_user),
 ):
     """Restore the shipped text — as a new version, not by deleting the edits."""
-    await _require_gate(session, x_admin_token)
+    await _require_gate(session, x_admin_token, user)
     try:
         await prompts.reset_to_default(session, scenario=scenario)
     except KeyError as exc:
@@ -291,9 +302,10 @@ async def restore_prompt(
     version: int,
     session: AsyncSession = Depends(get_session),
     x_admin_token: str | None = Header(default=None, alias=admin_gate.TOKEN_HEADER),
+    user: User | None = Depends(current_user),
 ):
     """Bring an old version back, copied forward as a new one."""
-    await _require_gate(session, x_admin_token)
+    await _require_gate(session, x_admin_token, user)
     try:
         await prompts.restore_version(session, scenario=scenario, version=version)
     except KeyError as exc:

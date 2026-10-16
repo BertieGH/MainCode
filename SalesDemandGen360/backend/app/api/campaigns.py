@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import current_user
 from app.api.deps import requires
 from app.database import get_session
 from app.models.account import Contact
@@ -35,8 +36,9 @@ from app.models.content import Draft, Touch
 from app.models.context import Qualification
 from app.models.execution import ExecutionRecord
 from app.models.governance import Approval, ApprovalSample, Evaluation
+from app.models.identity import User
 from app.models.strategy import StrategyThread
-from app.services import anchoring, demo
+from app.services import access, anchoring, demo
 from app.services import preflight as preflight_service
 from app.services.approval import (
     Candidate,
@@ -524,7 +526,9 @@ class PromoteIn(BaseModel):
 
 @router.delete("/campaigns/{campaign_id}", status_code=204)
 async def delete_campaign(
-    campaign_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    campaign_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
 ):
     """Delete a campaign that has never reached LGM.
 
@@ -557,6 +561,8 @@ async def delete_campaign(
     campaign = await session.get(OutreachCampaign, campaign_id)
     if campaign is None:
         raise HTTPException(404, "campaign not found")
+    # Read now: the row is gone by the time the audit entry is written.
+    deleted_label = campaign.label
 
     if campaign.status in ("executing", "paused", "completed"):
         raise HTTPException(
@@ -697,6 +703,10 @@ async def delete_campaign(
             )
         )
 
+    await access.record(
+        session, user, "campaign.deleted", "outreach_campaign", str(campaign_id),
+        {"label": deleted_label},
+    )
     await session.commit()
 
 
@@ -994,7 +1004,10 @@ class DecisionIn(BaseModel):
 
 @router.post("/sequences/{sequence_id}/decision")
 async def decide(
-    sequence_id: uuid.UUID, payload: DecisionIn, session: AsyncSession = Depends(get_session)
+    sequence_id: uuid.UUID,
+    payload: DecisionIn,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
 ):
     """Approve or reject one thread, read individually."""
     if payload.decision == "reject" and not payload.reject_reason:
@@ -1015,12 +1028,16 @@ async def decide(
             decision=payload.decision,
             reject_reason=payload.reject_reason,
             comment=payload.comment,
-            reviewer_id="bertie",
+            reviewer_id=access.reviewer_id(user),
             review_depth="individual",
         )
     )
     # A rejection sends the person back to their drafts.
     sequence.status = "approved" if payload.decision == "approve" else "draft"
+    await access.record(
+        session, user, f"sequence.{payload.decision}", "outreach_sequence", str(sequence_id),
+        {"reject_reason": payload.reject_reason} if payload.reject_reason else None,
+    )
     await session.commit()
     return {"ok": True}
 
@@ -1035,6 +1052,7 @@ async def accept(
     campaign_id: uuid.UUID,
     payload: SampleDecisionsIn,
     session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
 ):
     """Approve the sample and inherit the rest of the stratum.
 
@@ -1054,7 +1072,7 @@ async def accept(
 
     try:
         written = await accept_sample(
-            session, sample=sample, reviewed=payload.decisions, reviewer_id="bertie"
+            session, sample=sample, reviewed=payload.decisions, reviewer_id=access.reviewer_id(user)
         )
     except SampleTamperedError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1066,7 +1084,7 @@ async def accept(
     stratum = stratify(candidates)
     drawn = {uuid.UUID(s) for s in sample.sequence_ids}
     remainder = [c.sequence_id for c in stratum.clean if c.sequence_id not in drawn]
-    for row in inherit(sample=sample, unsampled=remainder, reviewer_id="bertie"):
+    for row in inherit(sample=sample, unsampled=remainder, reviewer_id=access.reviewer_id(user)):
         session.add(row)
 
     for sequence_id in drawn | set(remainder):
@@ -1074,6 +1092,10 @@ async def accept(
         if sequence is not None:
             sequence.status = "approved"
 
+    await access.record(
+        session, user, "campaign.sample_accepted", "outreach_campaign", str(campaign_id),
+        {"sampled": len(written), "inherited": len(remainder)},
+    )
     await session.commit()
     return {"sampled": len(written), "inherited": len(remainder)}
 
@@ -1155,7 +1177,11 @@ async def change_campaign_cadence(
     # place a missing LGM credential should stop anybody.
     dependencies=[Depends(requires("outreach"))],
 )
-async def run_execute(campaign_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def run_execute(
+    campaign_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
+):
     """The irreversible one. After this the copy is frozen on the LGM lead."""
     try:
         outcome = await execute(session, campaign_id=campaign_id, lgm=await _lgm(session))
@@ -1169,6 +1195,10 @@ async def run_execute(campaign_id: uuid.UUID, session: AsyncSession = Depends(ge
             },
         ) from exc
 
+    await access.record(
+        session, user, "campaign.executed", "outreach_campaign", str(campaign_id),
+        {"enrolled": len(outcome.enrolled), "failed": len(outcome.failed), "skipped": len(outcome.skipped)},
+    )
     await session.commit()
     return {
         "enrolled": [str(s) for s in outcome.enrolled],
@@ -1181,7 +1211,10 @@ async def run_execute(campaign_id: uuid.UUID, session: AsyncSession = Depends(ge
 
 @router.post("/sequences/{sequence_id}/stop")
 async def stop_one(
-    sequence_id: uuid.UUID, reason: str = "manual", session: AsyncSession = Depends(get_session)
+    sequence_id: uuid.UUID,
+    reason: str = "manual",
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
 ):
     try:
         sequence = await stop_sequence(
@@ -1189,13 +1222,17 @@ async def stop_one(
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+    await access.record(session, user, "sequence.stopped", "outreach_sequence", str(sequence_id), {"reason": reason})
     await session.commit()
     return {"status": sequence.status}
 
 
 @router.post("/campaigns/{campaign_id}/stop")
 async def stop_all(
-    campaign_id: uuid.UUID, reason: str = "manual", session: AsyncSession = Depends(get_session)
+    campaign_id: uuid.UUID,
+    reason: str = "manual",
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
 ):
     try:
         count = await stop_campaign(
@@ -1203,6 +1240,10 @@ async def stop_all(
         )
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+    await access.record(
+        session, user, "campaign.stopped", "outreach_campaign", str(campaign_id),
+        {"reason": reason, "stopped": count},
+    )
     await session.commit()
     return {"stopped": count}
 
