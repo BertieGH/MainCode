@@ -34,6 +34,7 @@ import {
 import { ConfirmService } from '../shared/confirm.service';
 import { NotifyService } from '../shared/notify.service';
 import { ReadinessService } from '../shared/readiness.service';
+import { AuthService } from '../core/auth.service';
 import { CampaignDraftsComponent } from './campaign-drafts.component';
 import { CampaignPersonComponent, PersonSection } from './campaign-person.component';
 import { CampaignStrategyComponent } from './campaign-strategy.component';
@@ -164,13 +165,14 @@ interface ThreadRow {
             <button class="btn" (click)="openArc(c)">
               <app-icon name="eye" [size]="13" />Review arc
             </button>
-            <button class="btn btn-primary" (click)="decide(c, 'approve')"
+            <button class="btn btn-primary" *ngIf="canSend()" (click)="decide(c, 'approve')"
                     [class.busy]="deciding() === c.sequence_id && decidingKind() === 'approve'"
                     [disabled]="c.approved || !!deciding()">
               <app-icon *ngIf="deciding() !== c.sequence_id" name="check" [size]="13" />
               {{ deciding() === c.sequence_id && decidingKind() === 'approve' ? 'Approving…' : 'Approve' }}
             </button>
-            <button class="btn" (click)="rejecting.set(c.sequence_id)" [disabled]="!!deciding()">Reject</button>
+            <button class="btn" *ngIf="canSend()" (click)="rejecting.set(c.sequence_id)" [disabled]="!!deciding()">Reject</button>
+            <span class="row-sub" *ngIf="!canSend()">Approving and sending need the <em>Approve &amp; send</em> right — ask an admin.</span>
           </div>
           <div *ngIf="rejecting() === c.sequence_id" class="reject">
             <select class="field" [(ngModel)]="rejectReason">
@@ -217,7 +219,7 @@ interface ThreadRow {
             <app-icon *ngIf="working() !== 'redraw'" name="refresh" [size]="13" />
             {{ working() === 'redraw' ? 'Redrawing…' : 'Redraw sample' }}
           </button>
-          <button class="btn btn-primary" (click)="accept()" [class.busy]="working() === 'accept'"
+          <button class="btn btn-primary" *ngIf="canSend()" (click)="accept()" [class.busy]="working() === 'accept'"
                   [disabled]="!!working() || !a.sample_size || a.escalated || allCleanApproved()">
             <app-icon *ngIf="working() !== 'accept'" name="check" [size]="13" />
             {{ working() === 'accept'
@@ -471,7 +473,8 @@ interface ThreadRow {
         </div>
 
         <div style="display:flex;gap:10px;align-items:center;">
-          <button class="btn btn-primary" (click)="execute()" [class.busy]="working() === 'execute'"
+          <span class="row-sub" *ngIf="!canSend()">Approving and sending need the <em>Approve &amp; send</em> right — ask an admin.</span>
+          <button class="btn btn-primary" *ngIf="canSend()" (click)="execute()" [class.busy]="working() === 'execute'"
                   [disabled]="!p.passed || !!working()">
             <app-icon *ngIf="working() !== 'execute'" name="check" [size]="13" />
             {{ working() === 'execute' ? 'Executing…' : 'Execute campaign' }}
@@ -1389,6 +1392,11 @@ export class CampaignDetailComponent implements OnInit {
   readonly disagrees = channelDisagrees;
 
   swapShapeId = '';
+
+  /** Approve, reject, accept a sample, execute: one right (`docs/17`). The
+   *  server refuses without it; hiding the buttons only spares the refusal. */
+  private auth = inject(AuthService);
+  readonly canSend = computed(() => this.auth.can('approve_send'));
   shapes = signal<CadenceShapeView[]>([]);
 
   cadenceBlocked(p: PreflightView): boolean {

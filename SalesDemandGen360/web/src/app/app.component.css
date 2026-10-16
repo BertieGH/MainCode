@@ -77,9 +77,9 @@
   font-size: 0.78rem;
   line-height: 1.35;
 }
-.lock a { color: inherit; text-decoration: none; display: block; }
+.lock a, .lock-msg { color: inherit; text-decoration: none; display: block; }
 .lock strong { display: block; margin-bottom: 2px; }
-.lock a span { opacity: 0.8; }
+.lock a span, .lock-msg span { opacity: 0.8; }
 .lock a:hover strong { text-decoration: underline; }
 
 /* Browsing: still incomplete, but no longer restricting. Muted rather than

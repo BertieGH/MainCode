@@ -29,6 +29,7 @@ from app.api import (
 from app.api.auth import require_user
 from app.config import get_settings
 from app.database import engine
+from app.services import auth as auth_service
 from app.services.llm import LlmUnavailableError, NoAdapterError
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,24 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Forged requests. The session cookie is SameSite=Lax, which already keeps
+    # it off cross-site POSTs; this is the second lock, for an older browser or
+    # a same-site page that is not ours. A write that carries a session must
+    # also carry a header no other site can add without passing CORS.
+    @app.middleware("http")
+    async def _csrf(request: Request, call_next):
+        if (
+            request.method not in ("GET", "HEAD", "OPTIONS")
+            and request.url.path.startswith("/api/")
+            and request.cookies.get(auth_service.COOKIE_NAME)
+            and request.headers.get(auth_service.CSRF_HEADER) is None
+        ):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Refused: this request did not come from the app."},
+            )
+        return await call_next(request)
 
     # A stage that cannot run is not a bug in the request, and it has
     # something useful to say: no key, a provider unreachable, or an output

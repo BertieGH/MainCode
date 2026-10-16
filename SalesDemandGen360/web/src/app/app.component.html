@@ -24,10 +24,16 @@
          Stays visible while browsing, because the pipeline is still refused —
          hiding it would make an unlocked menu read as a working system. -->
     <div class="lock" *ngIf="setupIncomplete" [class.browsing]="browseAnyway()">
-      <a routerLink="/settings/setup" [title]="lockReason()">
+      <!-- Only an admin can finish setup (API keys are admin-only), so only
+           an admin is sent to the screen that does it. -->
+      <a routerLink="/settings/setup" [title]="lockReason()" *ngIf="auth.isAdmin() || auth.me() === undefined">
         <strong>Setup incomplete</strong>
         <span>{{ blockedCount() }} connection{{ blockedCount() === 1 ? '' : 's' }} to finish</span>
       </a>
+      <span class="lock-msg" [title]="lockReason()" *ngIf="!auth.isAdmin() && auth.me() !== undefined">
+        <strong>Setup incomplete</strong>
+        <span>Ask an admin to finish {{ blockedCount() }} connection{{ blockedCount() === 1 ? '' : 's' }}</span>
+      </span>
       <button type="button" (click)="toggleBrowse()"
               [title]="browseAnyway()
                 ? 'Re-lock the menu until setup is finished'
@@ -86,7 +92,7 @@
     </div>
   </aside>
 
-  <main class="main">
+  <main class="main" [class.read-only]="!!viewOnlyHere()">
     <!-- Every outcome, kept: notices clear, this does not. -->
     <app-activity-bar />
     <div class="view-only" *ngIf="viewOnlyHere() as m" role="note">

@@ -1,6 +1,6 @@
 # User access: login, admin-created accounts and role-based permissions
 
-**Status: phases 1–3 built (2026-10-15); phase 4 to come.** Agreed in chat 2026-10-15. Screens are in
+**Status: built, phases 1–4 (2026-10-15).** Per-user overrides are the next stage. Agreed in chat 2026-10-15. Screens are in
 `mockups/user-access.html`. This is the brief, so the build does not have to re-derive it.
 
 ## Why
@@ -107,14 +107,21 @@ The prompt-editor password retires: "Model & Prompts config: Edit" replaces it.
    its URL sends the person home; a `view` module is marked "· view" in the
    menu and opens under a one-line view-only notice. **`AUTH_REQUIRED` now
    defaults on**; the test suite turns it off in `conftest.py`.
-   *Not yet:* inputs on view-only screens are not individually disabled, and
-   Approve/Execute are not hidden for roles without `approve_send` — the server
-   refuses both with a sentence naming what the role lacks.
+   Phase 4 closed the two gaps phase 3 left (below).
 4. **Hardening (½–1 day).** CSRF protection, full test runs, a browser pass as
    each of the four roles, CLAUDE.md invariant 9 extended to sessions, and a
    `docs/13` entry.
 
 About 4–5 working days in all.
+
+   *Built.* A write carrying the session cookie must also carry `X-Gen360`
+   (`main.py`), which the UI's interceptor adds and a cross-site page cannot.
+   Approve, Reject, accept-sample and Execute are hidden from roles without
+   `approve_send`, with a line saying who can; Delete campaign likewise for
+   `delete_campaign`. On a view-only screen the shell marks `<main>`
+   read-only, which greys out primary and danger buttons (filters, tabs and
+   links stay live). The "Setup incomplete" notice links only admins to API
+   config. CLAUDE.md carries the rules a future route must follow.
 
 ## Deferred: self-registration
 

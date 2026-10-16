@@ -49,6 +49,10 @@ export const signedOutGuard: CanActivateFn = () => {
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
+  // The server refuses a write that carries a session without this header:
+  // another site can make a browser send our cookie, but cannot add a custom
+  // header without a CORS preflight it would fail (`main.py`).
+  if (req.url.startsWith('/api/')) req = req.clone({ setHeaders: { 'X-Gen360': '1' } });
   return next(req).pipe(
     catchError((err: unknown) => {
       const asking = req.url.startsWith('/api/auth/');

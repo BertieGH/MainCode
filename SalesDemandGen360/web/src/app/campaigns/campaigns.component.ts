@@ -19,6 +19,7 @@ import { catchError, forkJoin, map, of } from 'rxjs';
 import { DataTableComponent } from '../shared/data-table.component';
 import { ColumnDef, RowAction } from '../shared/table-view';
 
+import { AuthService } from '../core/auth.service';
 import { ConfirmService } from '../shared/confirm.service';
 import { NotifyService } from '../shared/notify.service';
 
@@ -305,6 +306,7 @@ export class CampaignsComponent implements OnInit {
 
   private router = inject(Router);
   private confirm = inject(ConfirmService);
+  private auth = inject(AuthService);
   private notify = inject(NotifyService);
   deleting = signal(false);
 
@@ -566,8 +568,10 @@ export class CampaignsComponent implements OnInit {
       key: 'delete',
       label: 'Delete campaign',
       danger: true,
-      can: (c) => this.deletable(c),
-      why: 'something may already have been sent — stop it instead',
+      can: (c) => this.deletable(c) && this.auth.can('delete_campaign'),
+      why: this.auth.can('delete_campaign')
+        ? 'something may already have been sent — stop it instead'
+        : 'your role cannot delete campaigns',
     },
   ];
 

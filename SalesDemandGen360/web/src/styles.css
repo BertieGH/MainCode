@@ -510,3 +510,10 @@ blockquote { margin: 9px 0; padding: 10px 14px; background: var(--surface-2);
   font-family: 'IBM Plex Mono', monospace; font-size: .6rem;
   letter-spacing: .07em; text-transform: uppercase; color: var(--faint);
 }
+
+/* A screen this role can only read (docs/17). The server refuses the write
+   regardless; this greys out the buttons that would make one, so the
+   refusal is not the first anybody hears of it. Filters, tabs and links —
+   plain buttons — stay live, because reading is what the screen is for. */
+.main.read-only .btn-primary,
+.main.read-only .btn.danger { opacity: .45; pointer-events: none; }

@@ -38,6 +38,12 @@ log = logging.getLogger(__name__)
 
 COOKIE_NAME = "sdg_session"
 
+#: Sent by the UI on every API call. A state-changing request that carries a
+#: session cookie must also carry this header (`main.py`): a page on another
+#: site can make a browser send the cookie, but it cannot add a custom header
+#: without a CORS preflight, which only this app's own origin passes.
+CSRF_HEADER = "X-Gen360"
+
 #: A working day and then some. Long enough not to interrupt anyone; short
 #: enough that a laptop left signed in overnight is signed out by morning.
 SESSION_TTL_SECONDS = 60 * 60 * 12

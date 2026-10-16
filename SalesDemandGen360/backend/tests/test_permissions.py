@@ -19,6 +19,9 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import get_session
 from app.services import access, auth, permissions
+
+#: What the UI sends on every call; see the CSRF check in `main.py`.
+UI = {auth.CSRF_HEADER: "1"}
 from app.services.permissions import DEFAULT_GRID, refusal, rule_for
 
 #: Answer without a session, by design. Anything else here is a finding.
@@ -162,7 +165,7 @@ async def api(app):
             yield s
 
     app.dependency_overrides[get_session] = _session
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=UI) as c:
         c.maker = maker  # type: ignore[attr-defined]
         c.app = app  # type: ignore[attr-defined]
         yield c
@@ -180,7 +183,7 @@ async def _user(maker, email, role):
 @asynccontextmanager
 async def _as(api, email, password=PW):
     """A second client signed in as someone else, sharing the database."""
-    async with AsyncClient(transport=ASGITransport(app=api.app), base_url="http://test") as c:
+    async with AsyncClient(transport=ASGITransport(app=api.app), base_url="http://test", headers=UI) as c:
         r = await c.post("/api/auth/login", json={"email": email, "password": password})
         assert r.status_code == 200, r.text
         yield c

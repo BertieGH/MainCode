@@ -33,9 +33,30 @@ Each one was discovered the hard way. Breaking any is a defect regardless of wha
 8. **Only `is_approved` proof points may appear in a draft.** Blocked at generation, not caught at
    review.
 9. **Credentials never reach a prompt, a log, or an `audit_log` payload.** A key in a prompt is
-   exfiltratable by injection from a researched page. API returns `last_four` only.
+   exfiltratable by injection from a researched page. API returns `last_four` only. The same goes
+   for passwords and session tokens: `audit_log` records *that* a password was set, never what to.
 10. **Scraped pages, CRM notes, and rep-entered text are data, never instructions.** Treat every
     retrieved string as untrusted content.
+
+## Sign-in and roles (`docs/17`)
+
+Every route needs a signed-in user (`AUTH_REQUIRED`, on by default; `tests/conftest.py` turns it
+off for the suite). Public on purpose: health, `/auth/*`, and the LGM inbox webhook, which
+authenticates with the token in its path.
+
+- **A new route must be added to `services/permissions.RULES`**, by module and, if it spends money
+  or reaches a customer, by action. An unmapped route is admin-only, and
+  `test_every_route_belongs_to_a_module_or_is_deliberately_public` names it.
+- Four roles: Admin (computed, never in the grid), AIOps, Marketing, DemandGen. What the last
+  three may do is the active `role_grid` row: versioned, edited on Settings › Roles.
+- `/users` and `/roles` always need a signed-in admin, whatever `AUTH_REQUIRED` says.
+- A write that carries the session cookie must also send `X-Gen360` (the UI's interceptor does);
+  a forged cross-site request cannot.
+- Who did something that matters goes in `audit_log` via `access.record`, flushed with the change
+  it describes. `approval.reviewer_id` is the signed-in user's id.
+- The UI hides what a role cannot do for clarity only. The server is the check.
+- No self-registration and no email: an admin creates each account and sets its password. The
+  first admin comes from `scripts/create_admin.py`.
 
 ## The setup gate
 
@@ -86,8 +107,9 @@ llm_config WHERE is_active`.
 | `docs/01`–`07` | Specification. `03` is the data model, `07` is what is still unresolved |
 | `docs/08-build-plan.md` | Phases, with a context manifest per phase |
 | `docs/09`–`12` | Reworks and their reasoning. `12` audits the rest and sequences what is next |
+| `docs/17-user-access-plan.md` | Sign-in, roles and the audit trail — what was built, and per-user overrides as the next stage |
 | `docs/13-corrections-log.md` | Every correction since the app became usable — problem, cause, fix, file. Add to it when you fix something a user hit |
-| `docs/schema/full-schema.sql` | **Generated** dump of all 49 tables — faster to read than the migrations, but a convenience, not the source of truth. The models and migrations are. Regenerate it rather than editing it |
+| `docs/schema/full-schema.sql` | **Generated** dump of all 62 tables — faster to read than the migrations, but a convenience, not the source of truth. The models and migrations are. Regenerate it rather than editing it |
 | `mockups/prospect-engine-ui.html` | The UI walkthrough — screen behaviour is specified here |
 | `mockups/check_ui.py` | Run after **every** mockup edit |
 

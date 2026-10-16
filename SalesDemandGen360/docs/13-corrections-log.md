@@ -5501,3 +5501,27 @@ label was lower-cased whole. Now only its first letter is.
 `settings/roles.component.ts`, `shared/user-menu.component.ts` (new),
 `app.config.ts`, `app.routes.ts`, `app.component.*`;
 `backend/app/config.py`, `services/permissions.py`, `tests/conftest.py`.
+
+## §120 — Hardening the front door (2026-10-15)
+
+**Phase 4 of `docs/17`.**
+
+- **Forged requests.** The session cookie was already `SameSite=Lax`. Now a
+  write that carries it must also send `X-Gen360`, which the UI's interceptor
+  adds and another site cannot add without a CORS preflight it would fail.
+  Checked in a real browser: a write carrying the cookie but not the header
+  was refused with 403.
+- **No button that only earns a refusal.** Approve, Reject, accept-sample and
+  Execute are hidden from roles without `approve_send`, with a line saying
+  who can. Delete campaign is hidden without `delete_campaign`. A view-only
+  screen greys out its primary and danger buttons. The server still refuses
+  all of them on its own.
+- **The setup notice** linked every role to API config, which is admin-only,
+  so for everyone else it was a link that bounced them home. Non-admins now
+  see "ask an admin" instead.
+- **CLAUDE.md** now says what a new route needs: an entry in
+  `permissions.RULES`, or it is admin-only.
+
+`main.py`, `services/auth.py`, `tests/test_auth.py`, `tests/test_permissions.py`;
+`web/.../core/auth.guard.ts`, `campaigns/campaign-detail.component.ts`,
+`campaigns/campaigns.component.ts`, `app.component.*`, `styles.css`; `CLAUDE.md`.

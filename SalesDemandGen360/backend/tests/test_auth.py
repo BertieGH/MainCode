@@ -24,6 +24,9 @@ from app.config import get_settings
 from app.database import get_session
 from app.services import auth
 
+#: What the UI sends on every call; see the CSRF check in `main.py`.
+UI = {auth.CSRF_HEADER: "1"}
+
 
 class _FakeUser:
     def __init__(self, version: int = 1) -> None:
@@ -136,7 +139,7 @@ async def api(app):
             yield s
 
     app.dependency_overrides[get_session] = _session
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=UI) as c:
         c.maker = maker  # type: ignore[attr-defined]
         yield c
     app.dependency_overrides.clear()
@@ -249,7 +252,7 @@ async def test_changing_your_password_ends_your_other_sessions(api, app):
     assert (await api.get("/api/auth/me")).status_code == 200
 
     # The cookie from before the change — another browser, say — is dead.
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as other:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=UI) as other:
         other.cookies.set(auth.COOKIE_NAME, old_cookie)
         assert (await other.get("/api/auth/me")).status_code == 401
 
@@ -310,3 +313,35 @@ async def test_the_database_refuses_a_second_account_for_the_same_address_in_any
         ))
         with pytest.raises(IntegrityError):
             await s.commit()
+
+
+@pytest.mark.db
+@needs_db
+async def test_a_signed_in_write_without_the_app_header_is_refused(api, app):
+    """The forged-request case: the browser sends the cookie, but a page on
+    another site cannot add the header without passing CORS."""
+    await _make_user(api.maker)
+    await api.post("/api/auth/login", json={"email": "priya@cgvak.com", "password": PASSWORD})
+    cookie = api.cookies.get(auth.COOKIE_NAME)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as forged:
+        forged.cookies.set(auth.COOKIE_NAME, cookie)
+        r = await forged.post("/api/auth/password", json={"current_password": PASSWORD, "new_password": "taken over now"})
+        assert r.status_code == 403
+        # Reading is not what a forged request is after, and stays open.
+        assert (await forged.get("/api/auth/me")).status_code == 200
+
+    # The same write from the app goes through.
+    ok = await api.post("/api/auth/password", json={"current_password": PASSWORD, "new_password": "changed by me"})
+    assert ok.status_code == 200
+
+
+async def test_a_caller_without_a_session_is_not_asked_for_the_header(client, monkeypatch):
+    """LGM's webhook carries no cookie and cannot send our header."""
+    from app.api import outreach_events
+
+    async def _no_token(_session):
+        return None
+
+    monkeypatch.setattr(outreach_events, "_stored_token", _no_token)
+    assert (await client.post("/api/lgm/inbox/whatever", json={})).status_code == 404
