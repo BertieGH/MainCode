@@ -388,74 +388,34 @@ evidence anyway: your view is used only where the facts are not available.
 """,
     # ------------------------------------------------------------------ strategy
     "strategy_synthesis": """
-# Task: the argument for each thread already selected
+# Task: ranked ways in, for people already chosen
 
-You are given the contacts and services this account will be approached on. \
-Those choices were made by weighted arithmetic over configured sales rules and \
-are not yours to revisit — do not add a contact, drop one, or swap a service.
+Who is approached was decided before you were asked — by rules, by a rep's override, or both. That decision is final and is not shown to you on purpose: an overridden person deserves the same quality of argument as anyone else. Do not add, drop or rank people.
 
-For each thread, write the case: what we think hurts (a hypothesis, and it will \
-be labelled as one everywhere it is shown), the trigger that makes now the \
-moment, how the service is positioned against that problem FOR THIS PERSON, and \
-the ask.
+You are given the whole picture for one company: its profile and live signals (**ranked**, with evidence excerpts), the campaign's **ICP** (including its `track`), the **service** we are selling, the **approved proof points** for it, and for each person their role, the ICP persona they match, their profile and their own signals.
 
-The hard requirement is DIFFERENTIATION. Two people at one company receiving \
-materially the same argument is how an account learns it is being automated at, \
-and it invalidates the entire premise of approaching more than one of them. A \
-CTO and a VP Finance do not feel the same problem, so do not hand them the same \
-sentence with the nouns changed. Identical hypotheses are rejected outright.
+For each person write **2 or 3 angles** — genuinely different ways to pitch this service to *this* person. An angle is a complete argument:
 
-The ICP carries a `track`, and it decides what counts as a good argument:
+- `angle`: a short name for the way in, in plain words (e.g. "audit-ready AI on the claims backlog").
+- `problem_hypothesis`: what we think hurts for THIS person, in their terms. Do not begin it with "Hypothesis:" — the app labels it.
+- `why_now`: the moment. Lead with the **highest-ranked signal that fits the angle** and name its ids in `trigger_signal_ids`. A lower-ranked signal may lead only if it fits this person better — say so in `why_this_order`.
+- `positioning`: the service framed against that problem, in your own words. Draw on the service's description and positioning angles but **do not quote them word for word**, and do not invent capabilities the service does not claim.
+- `proof_point_ids`: only ids from `proof_points`. Cite none rather than a weak fit.
+- `cta`: one small, concrete ask.
+- `avoid`: claims or angles to stay off for this person.
+- `confidence`: 0–1, honest. Thin evidence means low confidence.
 
-- `enterprise` — a non-technology business running internal IT. The buyer is a \
-CIO, an IT director or a head of operations, and they are measured on nothing \
-going wrong. Argue risk and continuity: what is fragile, what it costs to keep \
-carrying, what a change does to the people already doing the work. Velocity \
-language reads as naive to someone whose job is that the renewals process does \
-not break.
-- `tech_company` — software is the product. The buyer is a CTO or VP \
-Engineering, measured on what ships. Argue bandwidth and time to market: the \
-roadmap that slips because hiring lagged.
+The ICP `track` decides what a good argument is: `enterprise` buyers are measured on nothing breaking — argue risk, continuity and the cost of carrying what is fragile; `tech_company` buyers on what ships — argue bandwidth and time to market. An ICP with no track means neither is established: argue from the evidence and the person's role.
 
-An ICP that states no track means neither is established. Make the case from \
-the evidence and the person's role, rather than guessing which buyer this is.
+Then rank each person's angles in `recommended_order` (indexes into `angles`, best first) with one sentence in `why_this_order`. The app pitches the first one unless a rep picks another.
 
-`trigger_signal_ids` must name live signals. A thread pitching on an expired \
-trigger reads as automation that did not check, which is worse than silence.
+**Differentiation:** the top-ranked angle of each person at one company must be materially different — a CTO and a CEO do not feel the same problem. Identical arguments are rejected outright.
 
-`account_angle` is **one sentence** — the single read the threads hang off, in \
-your own words. It is not a summary of what you were given, and nothing should \
-be copied into it from the context or the profiles. A long `account_angle` is \
-the failure mode this stage actually has: the field is a plain string with no \
-length the schema can enforce, and filling it instead of writing threads has \
-produced thousands of tokens of restated context, an empty `threads` list, and \
-answers refused outright for reciting their own input.
+A person marked `may_cite_no_live_signal` has nothing live to cite: leave `trigger_signal_ids` empty, argue from the company profile, the ICP's pains and the person's profile, keep `confidence` low, and do not deliberate at length — there is no hidden trigger to recover. Do not invent one.
 
-Return **exactly `thread_count` threads — no more and no fewer** — one for \
-every entry in `threads_to_argue`, carrying that entry's `contact_id` \
-unchanged. Write those, then stop.
+`account_angle` is **one sentence**: the read of this company the angles hang off, in your own words. It is not a summary of the input, and nothing should be copied into it — filling it instead of writing angles is this stage's known failure.
 
-Both directions are failures and both have happened. Returning fewer is an \
-incomplete answer, not a judgement about merit, and the people it silently \
-drops are the ones a rep chose deliberately. Returning more does not add \
-anyone — a thread for a `contact_id` that was not given is discarded — it just \
-writes until the output budget runs out and the whole answer is lost, \
-including the threads that were right.
-
-Every thread is about the one service given, for the ICP given. A thread marked \
-`may_cite_no_live_signal` is one a rep chose to approach with nothing live to \
-cite: leave its `trigger_signal_ids` empty rather than inventing a trigger, and \
-make the case from the company's situation and the person's role instead.
-
-For those threads the material is already in front of you and you are not \
-expected to find more. `account.profile` says what the company sells, who it \
-sells to and what it is currently pushing; `contact.profile` says what this \
-person owns and writes about. Argue from those. **Do not deliberate at length \
-over a thread with no trigger** — there is no hidden trigger to recover, and a \
-long search for one produces the same answer as a short one. If the two \
-profiles are empty as well, say so in `problem_hypothesis` in a sentence and \
-give the thread low `confidence`. An honest thin argument a rep can see through \
-is worth more than a confident invented one.
+Return exactly `person_count` entries in `people`, one per person given, carrying their `contact_id` unchanged. Write those, then stop.
 """,
     # ------------------------------------------------------------------ drafting
     "outreach_drafting": """

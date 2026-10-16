@@ -488,3 +488,55 @@ class Run(Base):
             "status <> 'failed' OR error IS NOT NULL", name="failed_needs_an_error"
         ),
     )
+
+
+# --------------------------------------------------------------------------
+# a contact's role, from their title
+# --------------------------------------------------------------------------
+from sqlalchemy import event  # noqa: E402
+
+
+def fill_role_from_title(contact: Contact, *, previous_title: str | None = None) -> None:
+    """Seniority and buying role, read off the title where blank.
+
+    Every path that creates a contact goes through here — CSV and Apollo
+    imports did not classify, and 216 of 218 contacts arrived as seniority
+    `unknown` with no buying role. The selector then weighed every founder,
+    CEO and CTO identically, so every thread in the book was a "pursue anyway"
+    override (`docs/18`).
+
+    Fills only what is empty: a role a rep or research set is never
+    overwritten. When the title changes, a value that is exactly what the
+    *old* title would have produced is taken to be derived and is re-read from
+    the new one — otherwise a role read off a title would outlive the title.
+
+    `persona_role` is left alone: it means "recorded on the contact" to sales
+    prep, which infers from the title itself when it is empty.
+    """
+    from app.services import persona
+
+    if previous_title is not None and previous_title != contact.title:
+        if contact.seniority == persona.classify_seniority(previous_title):
+            contact.seniority = "unknown"
+        if contact.buying_role and contact.buying_role == persona.classify_buying_role(previous_title):
+            contact.buying_role = None
+    if not contact.title:
+        return
+    if not contact.seniority or contact.seniority == "unknown":
+        contact.seniority = persona.classify_seniority(contact.title)
+    if not contact.buying_role:
+        contact.buying_role = persona.classify_buying_role(contact.title)
+
+
+@event.listens_for(Contact, "before_insert")
+def _classify_on_insert(_mapper, _connection, contact: Contact) -> None:
+    fill_role_from_title(contact)
+
+
+@event.listens_for(Contact, "before_update")
+def _classify_on_update(_mapper, _connection, contact: Contact) -> None:
+    from sqlalchemy import inspect
+
+    changed = inspect(contact).attrs.title.history
+    previous = changed.deleted[0] if changed.deleted else None
+    fill_role_from_title(contact, previous_title=previous)

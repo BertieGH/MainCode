@@ -38,12 +38,12 @@ from app.models.config import (
     ScoringConfig,
     ServiceCatalog,
 )
-from app.models.context import AccountContext
 from app.models.signal import Signal
-from app.models.strategy import PersonaServiceScore, Strategy, StrategyThread
+from app.models.strategy import PersonaServiceScore, Strategy, StrategyAngle, StrategyThread
 from app.services import context as context_service
 from app.services import campaign_drafts
 from app.services import icp_scores
+from app.services import strategy_context
 from app.services import strategy as rules_service
 from app.services.dimensions import personas_of
 from app.services.promotion import reachable
@@ -122,6 +122,7 @@ class Targets:
     service: ServiceCatalog
     icp_name: str
     icp_version: IcpProfileVersion
+    icp_description: str | None = None
 
 
 async def targets(session: AsyncSession, campaign: OutreachCampaign) -> Targets:
@@ -143,7 +144,8 @@ async def targets(session: AsyncSession, campaign: OutreachCampaign) -> Targets:
     version = (await session.execute(stmt.limit(1))).scalar_one_or_none()
     if version is None:
         raise NotReadyError(f"ICP {profile.name} has no version {campaign.icp_version or '(active)'}")
-    return Targets(service=service, icp_name=profile.name, icp_version=version)
+    return Targets(service=service, icp_name=profile.name, icp_version=version,
+                   icp_description=profile.description)
 
 
 @dataclass
@@ -413,101 +415,94 @@ async def build(
         out.note = "nobody to build a strategy for"
         return out
 
-    context = (
-        await session.execute(
-            select(AccountContext)
-            .where(AccountContext.account_id == account.id)
-            .order_by(AccountContext.version.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none() or await context_service.build_context(session, account_id=account.id)
-
     ordered = sorted(chosen, key=lambda c: decisions[c.id].rank)
-    plan = []
-    for i, contact in enumerate(ordered):
-        plan.append({
-            "contact_id": contact.id,
-            "service_id": t.service.id,
-            "service": t.service.code,
-            "weight": decisions[contact.id].weight,
+    plan = {
+        contact.id: {
             "rank": i + 1,
             "thread_status": "active_primary" if i == 0 else "active_secondary",
             "start_offset_days": i * rules.offset,
             "chosen_by_rep": decisions[contact.id].default != "pursue",
-            "may_cite_no_live_signal": contact.id in allow_without_signal,
-        })
+        }
+        for i, contact in enumerate(ordered)
+    }
+
+    # The whole picture, and none of the gates: weight, rank, the ICP score
+    # and "pursue anyway" decided who proceeds and stop there (`docs/18`). An
+    # overridden person is argued for exactly as well as anyone else. (Telling
+    # the model about `chosen_by_rep` once made it drop that person and argue
+    # nobody — the corrections log has it.)
+    payload, live_ids, proof_ids = await strategy_context.build(
+        session,
+        account=account,
+        contacts=ordered,
+        service=t.service,
+        icp_name=t.icp_name,
+        icp_description=t.icp_description,
+        icp_version=t.icp_version,
+        no_signal_allowed=set(allow_without_signal),
+    )
 
     if synthesise is None:
-        async def synthesise(**kwargs):
-            # Attributed at the call rather than around `build`, which also
-            # reads and writes: only what the model does costs anything.
+        async def synthesise(*, account, payload, people):
+            # `people` is for injected synthesisers (tests read it); the model
+            # gets it inside `payload`. Attributed at the call rather than
+            # around `build`, which also reads and writes: only what the model
+            # does costs anything.
             with stages.attributed(campaign_id=campaign.id, scope="campaign"):
-                return await stages.synthesise_strategy(session, **kwargs)
-
-    # `chosen_by_rep` is governance, not an instruction: told that the weights
-    # had left somebody out, the model dropped them and argued nobody — which
-    # is how a rep's override turned into "no case was argued for them". It is
-    # recorded on the thread and read in approval; the model is not told.
-    #
-    # `weight` was withheld here too for a while, on the theory that a 40 said
-    # the same thing in a number. Tested against the live model: it makes no
-    # difference, so it stays — the experiment is in the corrections log.
-    asked = [{k: v for k, v in item.items() if k != "chosen_by_rep"} for item in plan]
+                return await stages.synthesise_strategy(session, account=account, payload=payload)
 
     # One retry, because this call is measurably unreliable rather than
-    # opinionated. The same request for the same person, minutes apart, has
-    # returned one sound thread on 411 output tokens and an empty list on 790
-    # — and, at a lower budget, burned the whole allowance thinking and
-    # truncated. Returning nothing is a contract violation: the prompt asks
-    # for one thread per entry and says why, and who is approached was decided
-    # before the model was asked. So an empty answer is retried once and only
-    # then reported — and reported as a provider failure, not as a judgement
-    # about the person, which is what sent a rep looking for their own mistake.
+    # opinionated: the same request minutes apart has returned a sound answer
+    # and one about nobody we asked for. Who is approached was decided before
+    # the model was asked, so an answer about nobody is a provider failure —
+    # retried once, then reported as one rather than as a judgement about the
+    # person, which is what sent a rep looking for their own mistake.
     wanted = {c.id: c for c in ordered}
 
     def answers_nobody(parsed) -> bool:
-        """Nothing here is about a person we asked about.
+        return not any(p.contact_id in wanted for p in parsed.people)
 
-        Used to be "the threads list is empty", which `StrategyProposal`'s
-        `min_length=1` now makes unreachable — the contract refuses that at
-        parse time. The useless answer that remains is one carrying threads for
-        somebody else entirely: it satisfies the schema, is discarded here, and
-        leaves the rep told that nothing came back for their person.
-        """
-        return not any(t.contact_id in wanted for t in parsed.threads)
-
-    result = await synthesise(account=account, context=context, threads=asked, contacts=ordered)
+    result = await synthesise(account=account, payload=payload, people=payload["people"])
     if answers_nobody(result.parsed):
         log.warning(
             "campaign_strategy.empty_proposal account=%s asked=%d returned=%d — retrying once",
-            account.id, len(asked), len(result.parsed.threads),
+            account.id, len(wanted), len(result.parsed.people),
         )
-        result = await synthesise(account=account, context=context, threads=asked, contacts=ordered)
+        result = await synthesise(account=account, payload=payload, people=payload["people"])
     proposal = result.parsed
-    accepted = []
     log.info(
         "campaign_strategy.proposal account=%s asked=%d returned=%d ids=%s",
-        account.id, len(asked), len(proposal.threads),
-        [str(t.contact_id) for t in proposal.threads],
+        account.id, len(wanted), len(proposal.people),
+        [str(p.contact_id) for p in proposal.people],
     )
-    for proposed in proposal.threads:
-        contact = wanted.get(proposed.contact_id)
+
+    # Each person's angles, best first, each one checked: cited signals must be
+    # live, cited proof approved. An angle that cites nothing live is dropped
+    # unless a rep allowed this person without a signal; a person left with no
+    # angle at all is excluded and told why.
+    accepted: list[tuple[Contact, list[tuple[object, list[str], list[str]]], str]] = []
+    for person in proposal.people:
+        contact = wanted.get(person.contact_id)
         if contact is None:
-            # The model may not add a person — but a thread dropped here is
-            # invisible, and the rep is told "the model returned nothing for
-            # them", which sends them looking at the person rather than at a
-            # `contact_id` that came back subtly wrong. Say which id arrived
-            # and which were sent.
+            # The model may not add a person — and a dropped answer is
+            # invisible, so say which id arrived and which were sent.
             log.warning(
                 "campaign_strategy.unknown_contact account=%s returned=%s sent=%s",
-                account.id, proposed.contact_id, sorted(str(k) for k in wanted),
+                account.id, person.contact_id, sorted(str(k) for k in wanted),
             )
             continue
-        cited = [s for s in proposed.trigger_signal_ids if s in live_ids]
-        if not cited and contact.id not in allow_without_signal:
+        kept = []
+        for angle in person.ordered():
+            cited = [s for s in angle.trigger_signal_ids if s in live_ids]
+            if not cited and contact.id not in allow_without_signal:
+                continue
+            proof = [p for p in angle.proof_point_ids if p in proof_ids]
+            kept.append((angle, cited, proof))
+        if not kept:
             out.excluded.append({"name": contact.full_name, "reason": "the strategy cited no live signal"})
             continue
-        accepted.append((contact, proposed, cited))
+        accepted.append((contact, kept, person.why_this_order))
+
     argued = {c.id for c, _, _ in accepted}
     named = {e["name"] for e in out.excluded}
     for contact in ordered:
@@ -524,7 +519,8 @@ async def build(
         out.note = "no usable strategy came back"
         return out
 
-    rules_service.assert_differentiated({c.id: p.problem_hypothesis for c, p, _ in accepted})
+    # What each person is pitched first must differ across the company.
+    rules_service.assert_differentiated({c.id: kept[0][0].problem_hypothesis for c, kept, _ in accepted})
 
     await session.execute(
         update(Strategy)
@@ -549,7 +545,7 @@ async def build(
     strategy = Strategy(
         account_id=account.id, campaign_id=campaign.id, service_id=t.service.id,
         icp_profile_id=t.icp_version.icp_profile_id, qualification_id=qual.id if qual else None,
-        version=version, status="draft",
+        version=version, status="draft", account_angle=proposal.account_angle,
     )
     session.add(strategy)
     await session.flush()
@@ -559,27 +555,40 @@ async def build(
             weight=cell.weight, rationale=cell.rationale, evidence_ids=cell.evidence_ids or None,
         ))
 
-    positions = {item["contact_id"]: item for item in plan}
-    for contact, proposed, cited in accepted:
-        item = positions[contact.id]
+    for contact, kept, why_order in accepted:
+        item = plan[contact.id]
+        top, top_cited, _ = kept[0]
+        # The thread mirrors the selected angle — the top-ranked one until a
+        # rep picks another — so approval, drafting and execution read it as
+        # they always have. Channels are the cadence's, chosen at promotion;
+        # strategy no longer invents a sequence drafting would have to ignore.
         thread = StrategyThread(
             strategy_id=strategy.id, contact_id=contact.id, service_id=t.service.id,
             weight=decisions[contact.id].weight, rank=item["rank"], thread_status=item["thread_status"],
-            problem_hypothesis=proposed.problem_hypothesis, trigger_summary=proposed.trigger_summary,
-            trigger_signal_ids=cited, positioning=proposed.positioning,
-            channel_sequence=list(proposed.channel_sequence), cta=proposed.cta,
-            avoid_list=list(proposed.avoid_list) or None, confidence=proposed.confidence,
+            problem_hypothesis=top.problem_hypothesis, trigger_summary=top.why_now,
+            trigger_signal_ids=top_cited, positioning=top.positioning,
+            channel_sequence=[], cta=top.cta,
+            avoid_list=list(top.avoid) or None, confidence=top.confidence,
             start_offset_days=item["start_offset_days"],
-            chosen_by_rep=item["chosen_by_rep"], without_live_trigger=not cited,
+            chosen_by_rep=item["chosen_by_rep"], without_live_trigger=not top_cited,
         )
         session.add(thread)
         await session.flush()
+        for rank, (angle, cited, proof) in enumerate(kept, start=1):
+            session.add(StrategyAngle(
+                thread_id=thread.id, rank=rank, angle=angle.angle,
+                problem_hypothesis=angle.problem_hypothesis, why_now=angle.why_now,
+                trigger_signal_ids=cited, positioning=angle.positioning, proof_point_ids=proof,
+                cta=angle.cta, avoid=list(angle.avoid) or None, confidence=angle.confidence,
+                why_this_order=why_order if rank == 1 else None,
+                is_selected=rank == 1, selected_by="auto" if rank == 1 else None,
+            ))
         for sequence in sequences_of.get(contact.id, []):
             sequence.thread_id = thread.id
         out.pursued.append(contact.full_name)
         if item["chosen_by_rep"]:
             out.overridden.append(contact.full_name)
-        if not cited:
+        if not top_cited:
             out.without_trigger.append(contact.full_name)
 
     out.built = True
@@ -589,6 +598,102 @@ async def build(
         campaign.id, account.id, version, len(out.pursued), len(out.excluded),
     )
     return out
+
+
+class AngleRefused(NotReadyError):
+    """Picking this angle is refused, with the reason."""
+
+
+async def select_angle(
+    session: AsyncSession, campaign: OutreachCampaign, contact_id: uuid.UUID, angle_id: uuid.UUID,
+) -> dict:
+    """A rep picks which of a person's angles to pitch (`docs/18`).
+
+    The thread is re-pointed at it — its argument fields mirror the selected
+    angle, which is what drafting writes from. Drafts already written argued
+    the previous angle, so saved drafts go back to `draft` and the rep is
+    told to rewrite them. Refused once anything is enrolled: content is
+    frozen on the LGM lead (invariant 4).
+    """
+    sequence = (
+        await session.execute(
+            select(OutreachSequence).where(
+                OutreachSequence.campaign_id == campaign.id, OutreachSequence.contact_id == contact_id
+            )
+        )
+    ).scalar_one_or_none()
+    if sequence is None or sequence.thread_id is None:
+        raise AngleRefused("this person has no strategy in this campaign yet — build it first")
+    thread = await session.get(StrategyThread, sequence.thread_id)
+    angle = await session.get(StrategyAngle, angle_id)
+    if angle is None or angle.thread_id != thread.id:
+        raise AngleRefused("that angle does not belong to this person's current strategy")
+
+    arc = await campaign_drafts.arc_of(session, sequence.id)
+    try:
+        campaign_drafts._refuse_if_enrolled(sequence, arc)
+    except campaign_drafts.DraftingRefusedError as exc:
+        raise AngleRefused(str(exc)) from exc
+
+    if angle.is_selected:
+        return {"changed": False, "drafts_need_rewriting": False}
+
+    await session.execute(
+        update(StrategyAngle)
+        .where(StrategyAngle.thread_id == thread.id, StrategyAngle.is_selected.is_(True))
+        .values(is_selected=False, selected_by=None)
+        .execution_options(synchronize_session="fetch")
+    )
+    await session.flush()
+    angle.is_selected, angle.selected_by = True, "rep"
+    thread.problem_hypothesis = angle.problem_hypothesis
+    thread.trigger_summary = angle.why_now
+    thread.trigger_signal_ids = list(angle.trigger_signal_ids or [])
+    thread.positioning = angle.positioning
+    thread.cta = angle.cta
+    thread.avoid_list = list(angle.avoid or []) or None
+    thread.confidence = angle.confidence
+    thread.without_live_trigger = not angle.trigger_signal_ids
+    campaign_drafts._reopen(sequence)
+    await session.flush()
+    return {"changed": True, "drafts_need_rewriting": bool(arc)}
+
+
+async def angles_of(session: AsyncSession, thread_id) -> list[dict]:
+    """A person's angles, best first, with the titles of the proof each cites."""
+    from app.models.config import ProofPoint
+
+    rows = (
+        await session.execute(
+            select(StrategyAngle).where(StrategyAngle.thread_id == thread_id).order_by(StrategyAngle.rank)
+        )
+    ).scalars().all()
+    proof_ids = {uuid.UUID(str(p)) for r in rows for p in (r.proof_point_ids or [])}
+    titles = {
+        str(p.id): p.title
+        for p in (
+            await session.execute(select(ProofPoint).where(ProofPoint.id.in_(proof_ids)))
+        ).scalars()
+    } if proof_ids else {}
+    return [
+        {
+            "id": str(r.id),
+            "rank": r.rank,
+            "angle": r.angle,
+            "problem_hypothesis": r.problem_hypothesis,
+            "why_now": r.why_now,
+            "positioning": r.positioning,
+            "cta": r.cta,
+            "avoid": list(r.avoid or []),
+            "confidence": float(r.confidence) if r.confidence is not None else None,
+            "signals_cited": len(r.trigger_signal_ids or []),
+            "proof": [titles.get(str(p), "proof point") for p in (r.proof_point_ids or [])],
+            "why_this_order": r.why_this_order,
+            "is_selected": r.is_selected,
+            "selected_by": r.selected_by,
+        }
+        for r in rows
+    ]
 
 
 async def person_detail(session: AsyncSession, campaign: OutreachCampaign, contact_id) -> dict:
@@ -614,6 +719,7 @@ async def person_detail(session: AsyncSession, campaign: OutreachCampaign, conta
         )
     ).all()
     current = next((th for s, th in history if s.status != "superseded"), None)
+    current_strategy = next((s for s, _ in history if s.status != "superseded"), None)
 
     signals: list[dict] = []
     if current is not None and current.trigger_signal_ids:
@@ -655,6 +761,8 @@ async def person_detail(session: AsyncSession, campaign: OutreachCampaign, conta
             "without_live_trigger": current.without_live_trigger,
         },
         "trigger_signals": signals,
+        "angles": await angles_of(session, current.id) if current is not None else [],
+        "account_angle": current_strategy.account_angle if current_strategy is not None else None,
         "versions": [
             {
                 "version": s.version,

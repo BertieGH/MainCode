@@ -66,6 +66,9 @@ class Strategy(Base):
     icp_profile_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("icp_profile.id", ondelete="SET NULL")
     )
+    #: The one-sentence read of the company every angle hangs off. Written by
+    #: the model with the angles and handed to drafting (`docs/18`).
+    account_angle: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         CheckConstraint(
@@ -179,4 +182,51 @@ class StrategyThread(Base):
         # about the same account is the failure this whole layer prevents.
         UniqueConstraint("strategy_id", "contact_id", name="one_thread_per_contact"),
         Index("ix_strategy_thread_strategy", "strategy_id", "rank"),
+    )
+
+
+class StrategyAngle(Base):
+    """One ranked way to pitch the service to one person (`docs/18`).
+
+    Every angle the model proposed is kept, ranked. Exactly one per thread is
+    **selected**: the top-ranked one, unless a rep picked another. The thread's
+    own fields (`problem_hypothesis`, `positioning`, …) mirror the selected
+    angle, so approval, drafting and execution read the thread as before.
+    """
+
+    __tablename__ = "strategy_angle"
+
+    thread_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("strategy_thread.id", ondelete="CASCADE"), nullable=False
+    )
+    #: 1 is the model's recommendation.
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    angle: Mapped[str] = mapped_column(Text, nullable=False)
+    problem_hypothesis: Mapped[str] = mapped_column(Text, nullable=False)
+    why_now: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger_signal_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    positioning: Mapped[str] = mapped_column(Text, nullable=False)
+    proof_point_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    cta: Mapped[str] = mapped_column(Text, nullable=False)
+    avoid: Mapped[list | None] = mapped_column(JSONB)
+    confidence: Mapped[float | None] = mapped_column(Numeric(4, 3))
+    #: The model's one-line reason for the order, on the rank-1 angle only.
+    why_this_order: Mapped[str | None] = mapped_column(Text)
+    is_selected: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    #: `auto` (the top-ranked, chosen by the app) or `rep` (picked by a person).
+    selected_by: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        CheckConstraint("rank > 0", name="rank_positive"),
+        CheckConstraint(
+            "confidence IS NULL OR confidence BETWEEN 0 AND 1", name="confidence_is_a_proportion"
+        ),
+        CheckConstraint(
+            "selected_by IS NULL OR selected_by IN ('auto','rep')", name="selected_by_valid"
+        ),
+        CheckConstraint("NOT is_selected OR selected_by IS NOT NULL", name="selection_says_by_whom"),
+        UniqueConstraint("thread_id", "rank", name="one_angle_per_rank"),
+        # One pitch per person: the selected angle is what drafting writes from.
+        Index("uq_strategy_angle_one_selected", "thread_id", unique=True,
+              postgresql_where=text("is_selected")),
     )

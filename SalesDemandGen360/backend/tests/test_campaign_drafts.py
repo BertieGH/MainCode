@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -32,7 +32,7 @@ from app.models.context import AccountContext, Qualification
 from app.models.governance import Approval
 from app.schemas.draft import DraftSet, TouchDraft
 from app.schemas.qualification import DIMENSIONS
-from app.schemas.strategy import ProposedThread, StrategyProposal
+from app.schemas.strategy import PersonAngles, StrategyAngle, StrategyProposal
 from app.services import approval, campaign_drafts, campaign_strategy, icp_scores, promotion
 from app.services.campaign_drafts import DraftingRefusedError
 from app.services.campaign_strategy import Rules
@@ -61,7 +61,11 @@ def rules_and_signals(monkeypatch):
         return Rules(threshold=20, cap=2, offset=3, role_weights={"technical_buyer": 60, "influencer": 10})
 
     async def signals(_session, _account_id, **_):
-        return [SimpleNamespace(id=SIGNAL, strength="high", contact_id=None)]
+        return [SimpleNamespace(
+            id=SIGNAL, strength="high", contact_id=None, confidence=0.8, observed_at=date.today(),
+            signal_type="funding_growth_milestone", summary="Raised a Series B",
+            business_implication="Hiring ahead of the roadmap", is_hypothesis=False,
+        )]
 
     monkeypatch.setattr(campaign_strategy, "sales_rules", fixed)
     monkeypatch.setattr(campaign_strategy.context_service, "live_signals", signals)
@@ -103,14 +107,17 @@ async def world(session):
         await promotion.add_contact(session, queue_id=queue.id, contact_id=c.id)
     campaign = await promotion.promote(session, queue_ids=[queue.id], label="EIA", cadence_shape_id=shape.id)
 
-    async def propose(*, account, context, threads, contacts):
-        return SimpleNamespace(parsed=StrategyProposal(threads=[
-            ProposedThread(
-                contact_id=t["contact_id"], service_id=t["service_id"], problem_hypothesis="IT is stretched",
-                trigger_summary="Series B", trigger_signal_ids=[str(SIGNAL)], positioning="p",
-                channel_sequence=["email"], cta="15 minutes",
+    async def propose(*, account, payload, people):
+        return SimpleNamespace(parsed=StrategyProposal(people=[
+            PersonAngles(
+                contact_id=p["contact_id"],
+                angles=[StrategyAngle(
+                    angle="stretched IT", problem_hypothesis="IT is stretched",
+                    why_now="Series B", trigger_signal_ids=[str(SIGNAL)], positioning="p", cta="15 minutes",
+                )],
+                recommended_order=[0], why_this_order="the only angle",
             )
-            for t in threads
+            for p in people
         ]))
 
     await campaign_strategy.build(session, campaign, account, synthesise=propose)

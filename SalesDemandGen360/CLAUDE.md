@@ -113,6 +113,7 @@ llm_config WHERE is_active`.
 | `docs/01`–`07` | Specification. `03` is the data model, `07` is what is still unresolved |
 | `docs/08-build-plan.md` | Phases, with a context manifest per phase |
 | `docs/09`–`12` | Reworks and their reasoning. `12` audits the rest and sequences what is next |
+| `docs/18-strategy-redraft.md` | How strategy is built: the context, signal ranking, ranked angles and who picks one |
 | `docs/17-user-access-plan.md` | Sign-in, roles and the audit trail — what was built, and per-user overrides as the next stage |
 | `docs/13-corrections-log.md` | Every correction since the app became usable — problem, cause, fix, file. Add to it when you fix something a user hit |
 | `docs/schema/full-schema.sql` | **Generated** dump of all 62 tables — faster to read than the migrations, but a convenience, not the source of truth. The models and migrations are. Regenerate it rather than editing it |

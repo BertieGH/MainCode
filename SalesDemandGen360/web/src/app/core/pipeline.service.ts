@@ -638,6 +638,24 @@ export interface DraftVersion {
   created_at: string | null;
 }
 
+/** One ranked way to pitch the service to one person (docs/18). */
+export interface StrategyAngleView {
+  id: string;
+  rank: number;
+  angle: string;
+  problem_hypothesis: string;
+  why_now: string;
+  positioning: string;
+  cta: string;
+  avoid: string[];
+  confidence: number | null;
+  signals_cited: number;
+  proof: string[];
+  why_this_order: string | null;
+  is_selected: boolean;
+  selected_by: 'auto' | 'rep' | null;
+}
+
 export interface PersonDetail {
   person: CampaignPerson;
   service_code: string | null;
@@ -670,6 +688,8 @@ export interface PersonDetail {
   } | null;
   trigger_signals: { id: string; summary: string; observed_at: string | null; expires_at: string | null }[];
   versions: { version: number; status: string; built_at: string | null; argued_for_this_person: boolean }[];
+  angles: StrategyAngleView[];
+  account_angle: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -716,6 +736,13 @@ export class PipelineService {
   }
   personDetail(campaignId: string, contactId: string): Observable<PersonDetail> {
     return this.http.get<PersonDetail>(`/api/campaigns/${campaignId}/people/${contactId}`);
+  }
+
+  /** Pitch a different one of this person's angles. */
+  selectAngle(campaignId: string, contactId: string, angleId: string) {
+    return this.http.post<{ changed: boolean; drafts_need_rewriting: boolean }>(
+      `/api/campaigns/${campaignId}/people/${contactId}/angle`, { angle_id: angleId },
+    );
   }
 
   // --- cadence drafts ---

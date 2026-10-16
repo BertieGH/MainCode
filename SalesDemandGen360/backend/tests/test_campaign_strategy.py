@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -20,11 +20,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.account import Account, Contact
 from app.models.campaign import CadenceShape, CampaignQueue, OutreachSequence
-from app.models.config import IcpProfile, IcpProfileVersion, ServiceCatalog, service_icp_link
+from app.models.config import IcpProfile, IcpProfileVersion, ProofPoint, ServiceCatalog, service_icp_link
 from app.models.context import AccountContext
 from app.models.strategy import Strategy, StrategyThread
-from app.schemas.strategy import ProposedThread, StrategyProposal
-from app.services import approval, campaign_strategy, promotion
+from app.models.strategy import StrategyAngle as StrategyAngle_
+from app.schemas.strategy import PersonAngles, StrategyAngle, StrategyProposal
+from app.services import approval, campaign_drafts, campaign_strategy, promotion
 from app.services.campaign_strategy import NotReadyError, Rules
 
 pytestmark = [
@@ -57,10 +58,20 @@ def rules(monkeypatch):
     monkeypatch.setattr(campaign_strategy, "sales_rules", fixed)
 
 
+def fake_signal(signal_id=None, *, contact_id=None):
+    """A live signal as `context.live_signals` returns it — enough fields for
+    `strategy_context` to rank and describe it."""
+    return SimpleNamespace(
+        id=signal_id or uuid.uuid4(), strength="high", contact_id=contact_id, confidence=0.8,
+        observed_at=date.today(), signal_type="funding_growth_milestone", summary="Raised a Series B",
+        business_implication="Hiring ahead of the roadmap", is_hypothesis=False,
+    )
+
+
 @pytest.fixture
 def live(monkeypatch):
     """A live company signal by default; set `.signals = []` for none."""
-    state = SimpleNamespace(signals=[SimpleNamespace(id=SIGNAL, strength="high", contact_id=None)])
+    state = SimpleNamespace(signals=[fake_signal(SIGNAL)])
 
     async def signals(_session, _account_id, **_):
         return state.signals
@@ -124,19 +135,27 @@ async def campaign_world(session):
     return SimpleNamespace(service=service, profile=profile, account=account, cto=cto, user=user, campaign=campaign)
 
 
+def angles_for(people, *, hypothesis=lambda p: f"hurts differently for {p['contact_id']}"):
+    """The model's answer, shaped as the contract wants it: one angle each."""
+    return StrategyProposal(people=[
+        PersonAngles(
+            contact_id=p["contact_id"],
+            angles=[StrategyAngle(
+                angle="the obvious way in", problem_hypothesis=hypothesis(p), why_now="Series B",
+                trigger_signal_ids=[] if p["may_cite_no_live_signal"] else [str(SIGNAL)],
+                positioning="p", cta="15 minutes",
+            )],
+            recommended_order=[0], why_this_order="the only angle",
+        )
+        for p in people
+    ], account_angle="A company in a hurry.")
+
+
 def proposer(calls=None):
-    async def synthesise(*, account, context, threads, contacts):
+    async def synthesise(*, account, payload, people):
         if calls is not None:
-            calls.append(threads)
-        return SimpleNamespace(parsed=StrategyProposal(threads=[
-            ProposedThread(
-                contact_id=t["contact_id"], service_id=t["service_id"],
-                problem_hypothesis=f"hurts differently for {t['contact_id']}", trigger_summary="Series B",
-                trigger_signal_ids=[] if t["may_cite_no_live_signal"] else [str(SIGNAL)],
-                positioning="p", channel_sequence=["email"], cta="15 minutes",
-            )
-            for t in threads
-        ]))
+            calls.append(payload)
+        return SimpleNamespace(parsed=angles_for(people))
     return synthesise
 
 
@@ -149,14 +168,10 @@ def _about_a_stranger() -> StrategyProposal:
     failure rather than silently dropping it and telling the rep nothing came
     back for their person.
     """
-    return StrategyProposal(threads=[
-        ProposedThread(
-            contact_id=uuid.uuid4(), service_id=uuid.uuid4(),
-            problem_hypothesis="about somebody else entirely", trigger_summary="Series B",
-            trigger_signal_ids=[str(SIGNAL)],
-            positioning="p", channel_sequence=["email"], cta="15 minutes",
-        )
-    ])
+    return angles_for(
+        [{"contact_id": str(uuid.uuid4()), "may_cite_no_live_signal": False}],
+        hypothesis=lambda _p: "about somebody else entirely",
+    )
 
 
 def reasons(out) -> dict[str, str]:
@@ -438,8 +453,12 @@ class TestBuilding:
         await campaign_strategy.build(
             session, w.campaign, w.account, pursue_anyway={w.user.id}, synthesise=proposer(calls))
         [asked] = calls
-        assert {t["contact_id"] for t in asked} == {w.cto.id, w.user.id}, "everyone chosen is argued"
-        assert all("chosen_by_rep" not in t for t in asked)
+        people = asked["people"]
+        assert {p["contact_id"] for p in people} == {str(w.cto.id), str(w.user.id)}, "everyone chosen is argued"
+        # The gates decide who proceeds and stop there (docs/18): no override,
+        # no weight, no rank, no thread status reaches the model.
+        for gate in ("chosen_by_rep", "weight", "rank", "thread_status", "start_offset_days"):
+            assert all(gate not in p for p in people), gate
         assert (await thread_of(session, w, w.user)).chosen_by_rep, "still recorded on the thread"
 
     async def test_without_a_live_signal_nobody_is_built_unless_allowed(self, session, live):
@@ -456,7 +475,7 @@ class TestBuilding:
 
     async def test_a_cited_trigger_that_is_not_live_is_not_accepted(self, session, live):
         w = await campaign_world(session)
-        live.signals = [SimpleNamespace(id=uuid.uuid4(), strength="high", contact_id=None)]
+        live.signals = [fake_signal()]
         out = await campaign_strategy.build(session, w.campaign, w.account, synthesise=proposer())
         assert not out.built and "cited no live signal" in reasons(out)["Enrico Bergamo"]
 
@@ -488,3 +507,182 @@ class TestBuilding:
         current = await promotion.pursued_thread_for(session, w.cto, campaign_id=w.campaign.id)
         assert current.id != old.id and current.problem_hypothesis.startswith("hurts")
         assert (await promotion.pursued_thread_for(session, w.cto)).id == old.id
+
+
+# ---------------------------------------------------------------------------
+# ranked angles (docs/18)
+# ---------------------------------------------------------------------------
+def _angle(name, *, signal=SIGNAL, proof=(), confidence=0.5):
+    return StrategyAngle(
+        angle=name, problem_hypothesis=f"h-{name}", why_now=f"w-{name}",
+        trigger_signal_ids=[str(signal)], positioning=f"p-{name}", cta="c",
+        proof_point_ids=[str(p) for p in proof], confidence=confidence,
+    )
+
+
+def _answer(people, angles, order, account_angle=None):
+    return SimpleNamespace(parsed=StrategyProposal(people=[PersonAngles(
+        contact_id=people[0]["contact_id"], angles=angles, recommended_order=order,
+        why_this_order="the fresher signal leads",
+    )], account_angle=account_angle))
+
+
+async def _sequence_of(session, w, contact):
+    return (await session.execute(select(OutreachSequence).where(
+        OutreachSequence.campaign_id == w.campaign.id, OutreachSequence.contact_id == contact.id,
+    ))).scalar_one()
+
+
+class TestRankedAngles:
+    async def test_every_angle_is_kept_ranked_and_the_top_one_is_pitched(self, session, live):
+        """The thread mirrors the selected angle, so everything downstream reads it as before."""
+        w = await campaign_world(session)
+        approved = ProofPoint(service_id=w.service.id, kind="case_study", title="Approved win", body="b",
+                              is_approved=True)
+        unapproved = ProofPoint(service_id=w.service.id, kind="case_study", title="Not approved", body="b",
+                                is_approved=False)
+        session.add_all([approved, unapproved])
+        await session.flush()
+
+        async def synthesise(*, account, payload, people):
+            return _answer(people, [
+                _angle("second best", proof=[unapproved.id], confidence=0.6),
+                _angle("best", proof=[approved.id, unapproved.id], confidence=0.9),
+                _angle("stale", signal=uuid.uuid4()),
+            ], [1, 0, 2], account_angle="Scaling fast.")
+
+        out = await campaign_strategy.build(session, w.campaign, w.account, synthesise=synthesise)
+        assert out.built
+        thread = await thread_of(session, w, w.cto)
+        angles = (await session.execute(
+            select(StrategyAngle_).where(StrategyAngle_.thread_id == thread.id).order_by(StrategyAngle_.rank)
+        )).scalars().all()
+        # The angle citing a signal that is not live is dropped; the rest keep the model's order.
+        assert [a.angle for a in angles] == ["best", "second best"]
+        assert [a.is_selected for a in angles] == [True, False]
+        assert angles[0].selected_by == "auto"
+        assert angles[0].why_this_order == "the fresher signal leads"
+        # Unapproved proof never reaches storage (invariant 8).
+        assert angles[0].proof_point_ids == [str(approved.id)]
+        assert angles[1].proof_point_ids == []
+        assert (thread.problem_hypothesis, thread.positioning, thread.trigger_summary) == (
+            "h-best", "p-best", "w-best",
+        )
+        assert thread.channel_sequence == [], "channels are the cadence's, not strategy's"
+        assert (await session.get(Strategy, thread.strategy_id)).account_angle == "Scaling fast."
+
+    async def test_a_rep_can_pitch_another_angle_and_saved_drafts_reopen(self, session, live):
+        w = await campaign_world(session)
+
+        async def synthesise(*, account, payload, people):
+            return _answer(people, [_angle("first"), _angle("second")], [0, 1])
+
+        await campaign_strategy.build(session, w.campaign, w.account, synthesise=synthesise)
+        thread = await thread_of(session, w, w.cto)
+        sequence = await _sequence_of(session, w, w.cto)
+        sequence.status = "pending_approval"  # drafts saved for approval
+        second = (await session.execute(select(StrategyAngle_).where(
+            StrategyAngle_.thread_id == thread.id, StrategyAngle_.rank == 2,
+        ))).scalar_one()
+
+        r = await campaign_strategy.select_angle(session, w.campaign, w.cto.id, second.id)
+        assert r["changed"] is True
+        await session.refresh(thread)
+        assert (thread.problem_hypothesis, thread.trigger_summary) == ("h-second", "w-second")
+        assert second.is_selected and second.selected_by == "rep"
+        assert sequence.status == "draft", "drafts argued the old angle and need saving again"
+
+        with pytest.raises(campaign_strategy.AngleRefused):
+            await campaign_strategy.select_angle(session, w.campaign, w.cto.id, uuid.uuid4())
+
+    async def test_drafting_is_given_the_pitched_angle_and_its_proof(self, session, live):
+        w = await campaign_world(session)
+        approved = ProofPoint(service_id=w.service.id, kind="case_study", title="Approved win", body="body",
+                              is_approved=True)
+        session.add(approved)
+        await session.flush()
+        seen = {}
+
+        async def synthesise(*, account, payload, people):
+            seen.update(payload)
+            return _answer(people, [_angle("the way in", proof=[approved.id])], [0], account_angle="One read.")
+
+        await campaign_strategy.build(session, w.campaign, w.account, synthesise=synthesise)
+        # The whole picture reached the model: the campaign's ICP, its service, its proof.
+        assert seen["icp"]["personas"] and seen["service"]["code"] == w.service.code
+        assert [p["title"] for p in seen["proof_points"]] == ["Approved win"]
+
+        thread = await thread_of(session, w, w.cto)
+        payload = await campaign_drafts._thread_payload(session, thread)
+        assert payload["angle"] == "the way in"
+        assert [p["title"] for p in payload["proof_to_use"]] == ["Approved win"]
+        assert payload["account_angle"] == "One read."
+        assert "channel_sequence" not in payload
+
+
+class TestSignalRanking:
+    def test_fresh_beats_stale_and_the_icp_and_the_person_count(self):
+        from app.services.strategy_context import ranked
+
+        today = date.today()
+
+        def sig(days, kind="product_launch"):
+            s = fake_signal()
+            s.observed_at, s.signal_type = today - timedelta(days=days), kind
+            return s
+
+        fresh, stale = sig(2), sig(180)
+        order = [s for _, _, _, s in ranked([stale, fresh], matters=set(), about_person=False, today=today)]
+        assert order == [fresh, stale]
+
+        listed, unlisted = sig(30, "m_and_a_integration"), sig(30, "product_launch")
+        order = [s for _, _, _, s in ranked(
+            [unlisted, listed], matters={"m_and_a_integration"}, about_person=False, today=today,
+        )]
+        assert order[0] is listed, "a type the ICP lists outranks an equal one it does not"
+
+        [(_, alone, _, _)] = ranked([sig(10)], matters=set(), about_person=False, today=today)
+        [(_, mine, _, _)] = ranked([sig(10)], matters=set(), about_person=True, today=today)
+        assert mine > alone
+
+
+class TestAngleOrder:
+    def test_a_malformed_order_keeps_every_angle_once(self):
+        angles = [StrategyAngle(angle=n, problem_hypothesis="h", why_now="w", positioning="p", cta="c")
+                  for n in "abc"]
+        person = PersonAngles(contact_id=uuid.uuid4(), angles=angles, recommended_order=[2, 2, 9],
+                              why_this_order="o")
+        assert [x.angle for x in person.ordered()] == ["c", "a", "b"]
+
+
+class TestTitlesAreClassifiedOnWrite:
+    async def test_a_new_contact_gets_a_role_and_a_set_one_is_kept(self, session):
+        account = Account(name=f"Acme {tag()}", domain=f"acme-{tag()}.example")
+        session.add(account)
+        await session.flush()
+        founder = Contact(account_id=account.id, full_name="F", title="Founder and CTO")
+        chosen = Contact(account_id=account.id, full_name="C", title="CTO", buying_role="champion")
+        session.add_all([founder, chosen])
+        await session.flush()
+        assert (founder.seniority, founder.buying_role) == ("c_level", "economic_buyer")
+        assert chosen.buying_role == "champion", "a role somebody set is not overwritten"
+
+
+class TestTheRealCallPath:
+    async def test_the_default_synthesiser_calls_the_stage_with_what_it_takes(self, session, live, monkeypatch):
+        """Every other test injects `synthesise`, so none exercised the default
+        one — which passed `people` on to a stage that does not take it. The
+        live rerun found that; this holds it."""
+        from app.services import stages
+
+        w = await campaign_world(session)
+        seen = {}
+
+        async def stage(_session, **kwargs):
+            seen.update(kwargs)
+            return _answer(kwargs["payload"]["people"], [_angle("the way in")], [0])
+
+        monkeypatch.setattr(stages, "synthesise_strategy", stage)
+        out = await campaign_strategy.build(session, w.campaign, w.account)
+        assert out.built
+        assert set(seen) == {"account", "payload"}

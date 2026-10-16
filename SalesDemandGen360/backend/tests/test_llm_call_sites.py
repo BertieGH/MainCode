@@ -37,7 +37,7 @@ from app.schemas.contact import ContactBatch, EnrichedContact
 from app.schemas.context import AccountContextPayload, Theme
 from app.schemas.evaluation import EvaluationIssue, EvaluationResult
 from app.schemas.evidence import EvidenceBatch, FoundEvidence
-from app.schemas.strategy import ProposedThread, StrategyProposal
+from app.schemas.strategy import PersonAngles, StrategyAngle, StrategyProposal
 from app.services import llm, stages
 from tests.conftest import LongLivedSignalType, is_signal_type_query
 
@@ -456,22 +456,17 @@ class TestContractsRefuseTheDangerousShapes:
     def test_two_threads_for_one_contact_are_rejected(self):
         """A person contacted twice about one account is the failure here."""
         contact = uuid.uuid4()
-        service = uuid.uuid4()
-        thread = dict(
+        angle = StrategyAngle(
+            angle="release quality",
             problem_hypothesis="Release quality is slipping.",
-            trigger_summary="Six QA roles opened.",
+            why_now="Six QA roles opened.",
             trigger_signal_ids=[str(uuid.uuid4())],
             positioning="Managed QA pods.",
-            channel_sequence=["linkedin_connect"],
             cta="Worth 20 minutes?",
         )
+        person = dict(contact_id=contact, angles=[angle], recommended_order=[0], why_this_order="only one")
         with pytest.raises(ValidationError):
-            StrategyProposal(
-                threads=[
-                    ProposedThread(contact_id=contact, service_id=service, **thread),
-                    ProposedThread(contact_id=contact, service_id=service, **thread),
-                ]
-            )
+            StrategyProposal(people=[PersonAngles(**person), PersonAngles(**person)])
 
     def test_a_contact_batch_may_legitimately_be_empty(self):
         """No decision maker found is a finding, not an error."""

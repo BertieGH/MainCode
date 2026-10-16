@@ -84,4 +84,5 @@ from app.models.strategy import (  # noqa: F401
     PersonaServiceScore,
     Strategy,
     StrategyThread,
+    StrategyAngle,
 )

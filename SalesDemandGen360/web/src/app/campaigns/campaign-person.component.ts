@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { ArcView, DraftVersion, PersonDetail, PipelineService, TouchView } from '../core/pipeline.service';
+import { ArcView, DraftVersion, PersonDetail, PipelineService, StrategyAngleView, TouchView } from '../core/pipeline.service';
 import { apiError } from '../shared/api-error';
 import {
   channelDisagrees,
@@ -155,26 +155,57 @@ function refusal(err: unknown, fallback: string): string {
         <ng-container *ngIf="d.strategy as st; else noStrategy">
           <p class="pd-flags">
             <span class="badge badge-warn" *ngIf="st.chosen_by_rep">pursued by your choice</span>
-            <span class="badge badge-warn" *ngIf="st.without_live_trigger">built without a live signal</span>
+            <span class="badge badge-warn" *ngIf="st.without_live_trigger">pitched without a live signal</span>
             <span class="badge badge-neutral">{{ st.thread_status.replace('_', ' ') }} · starts day {{ st.start_offset_days }}</span>
           </p>
-          <h4>Problem <span class="row-sub">(our hypothesis)</span></h4>
-          <p>{{ st.problem_hypothesis }}</p>
-          <h4>Trigger</h4>
-          <p>{{ st.trigger_summary }}</p>
-          <ul class="pd-signals" *ngIf="d.trigger_signals.length">
-            <li *ngFor="let sg of d.trigger_signals" class="row-sub">
-              {{ sg.summary }}<span *ngIf="sg.expires_at"> · live until {{ sg.expires_at | date: 'MMM d, y' }}</span>
-            </li>
-          </ul>
-          <h4>Positioning</h4>
-          <p>{{ st.positioning }}</p>
-          <h4>Ask</h4>
-          <p>{{ st.cta }}</p>
-          <p class="row-sub">
-            Channels: {{ st.channel_sequence.join(' → ') }}<span *ngIf="st.confidence != null"> · confidence {{ st.confidence }}</span>
+          <p class="pd-account" *ngIf="d.account_angle">
+            <span class="k">The read on {{ d.person.account_name }}</span> {{ d.account_angle }}
           </p>
-          <p class="row-sub" *ngIf="st.avoid_list.length">Avoid: {{ st.avoid_list.join('; ') }}</p>
+
+          <!-- Ranked ways in (docs/18). The app pitches the top-ranked angle;
+               a rep can pitch another. Drafting writes from whichever is
+               selected, so picking one re-opens saved drafts. -->
+          <h4>Angles <span class="row-sub">ranked — drafting writes from the one being pitched</span></h4>
+          <p class="row-sub" *ngIf="whyOrder(d) as why">Why this order: {{ why }}</p>
+          <div class="pd-angle" *ngFor="let a of d.angles" [class.on]="a.is_selected">
+            <div class="pd-angle-head">
+              <span class="badge" [ngClass]="a.is_selected ? 'badge-accent' : 'badge-neutral'">
+                {{ a.is_selected ? 'Pitching' : (a.rank === 1 ? 'Recommended' : 'Alternative') }}
+              </span>
+              <strong>{{ a.angle }}</strong>
+              <span class="spacer"></span>
+              <span class="row-sub" *ngIf="a.is_selected">
+                {{ a.selected_by === 'rep' ? 'picked by a rep' : 'top-ranked, picked automatically' }}
+              </span>
+              <button class="btn" *ngIf="!a.is_selected" (click)="pickAngle(d, a)"
+                      [class.busy]="busy() === 'angle-' + a.id" [disabled]="!!busy() || frozen(d)"
+                      [title]="frozen(d) ? 'Frozen at enrolment' : 'Pitch this angle instead'">
+                {{ busy() === 'angle-' + a.id ? 'Switching…' : 'Pitch this angle' }}
+              </button>
+            </div>
+            <p class="row-sub">
+              #{{ a.rank }}<span *ngIf="a.confidence != null"> · confidence {{ a.confidence }}</span>
+              · {{ a.signals_cited }} signal{{ a.signals_cited === 1 ? '' : 's' }} cited
+              <span *ngIf="a.proof.length"> · proof: {{ a.proof.join(', ') }}</span>
+            </p>
+            <ng-container *ngIf="a.is_selected; else brief">
+              <h5>Problem <span class="row-sub">(our hypothesis)</span></h5>
+              <p>{{ a.problem_hypothesis }}</p>
+              <h5>Why now</h5>
+              <p>{{ a.why_now }}</p>
+              <ul class="pd-signals" *ngIf="d.trigger_signals.length">
+                <li *ngFor="let sg of d.trigger_signals" class="row-sub">
+                  {{ sg.summary }}<span *ngIf="sg.expires_at"> · live until {{ sg.expires_at | date: 'MMM d, y' }}</span>
+                </li>
+              </ul>
+              <h5>Positioning</h5>
+              <p>{{ a.positioning }}</p>
+              <h5>Ask</h5>
+              <p>{{ a.cta }}</p>
+              <p class="row-sub" *ngIf="a.avoid.length">Avoid: {{ a.avoid.join('; ') }}</p>
+            </ng-container>
+            <ng-template #brief><p class="row-sub">{{ a.problem_hypothesis }}</p></ng-template>
+          </div>
           <p class="row-sub" *ngIf="d.versions.length > 1">
             Versions:
             <span *ngFor="let v of d.versions; let last = last">v{{ v.version }} {{ v.status }}{{ v.argued_for_this_person ? '' : ' (not argued for them)' }}{{ last ? '' : ' · ' }}</span>
@@ -300,6 +331,16 @@ function refusal(err: unknown, fallback: string): string {
       </section>
     </aside>
   `,
+  styles: [`
+    .pd-account { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: .85rem; margin: 6px 0 12px; }
+    .k { font-family: 'IBM Plex Mono', monospace; font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin-right: 6px; }
+    .pd-angle { border: 1px solid var(--border); border-radius: 9px; padding: 9px 11px; margin: 8px 0; }
+    .pd-angle.on { border-color: var(--accent); background: var(--accent-soft); }
+    .pd-angle-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pd-angle-head .spacer { flex: 1; }
+    .pd-angle h5 { font-size: .8rem; margin: 10px 0 2px; }
+    .pd-angle p { margin: 2px 0; }
+  `],
 })
 export class CampaignPersonComponent implements OnChanges {
   @Input({ required: true }) campaignId = '';
@@ -367,6 +408,33 @@ export class CampaignPersonComponent implements OnChanges {
 
   decision(key: string): string {
     return DECISION[key] ?? key;
+  }
+
+  /** The model's reason for the order, carried on the top-ranked angle. */
+  whyOrder(d: PersonDetail): string | null {
+    return d.angles.find((a) => a.rank === 1)?.why_this_order ?? null;
+  }
+
+  /** Pitch a different angle. Saved drafts argued the old one and re-open. */
+  pickAngle(d: PersonDetail, a: StrategyAngleView): void {
+    this.busy.set('angle-' + a.id);
+    this.api.selectAngle(this.campaignId, this.contactId, a.id).subscribe({
+      next: (r) => {
+        this.busy.set(null);
+        this.load();
+        this.changed.emit();
+        this.notify.success(
+          `Pitching “${a.angle}” to ${d.person.full_name}.`,
+          r.drafts_need_rewriting
+            ? 'Their drafts argued the previous angle — rewrite them on the Cadence drafts tab.'
+            : 'Drafting will write from this angle.',
+        );
+      },
+      error: (err) => {
+        this.busy.set(null);
+        this.notify.error('The angle was not changed.', apiError(err, 'The server refused.'));
+      },
+    });
   }
 
   // --- building the strategy from here ---------------------------------

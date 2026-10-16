@@ -150,6 +150,32 @@ class ThreadOut(BaseModel):
     strategy_confidence: float | None
     without_live_trigger: bool = False
     avoid_list: list = []
+    #: The angle being pitched, by name (`docs/18`).
+    angle: str | None = None
+    #: The person's other angles — fall-back talk tracks for the call if the
+    #: pitched one does not land.
+    alternative_angles: list[dict] = []
+    #: The one-sentence read of the company every angle hangs off.
+    account_angle: str | None = None
+
+
+async def _angles_for_prep(session: AsyncSession, thread: StrategyThread) -> dict:
+    """The pitched angle's name, the others as talk tracks, and the company read."""
+    from app.models.strategy import Strategy
+    from app.services.campaign_strategy import angles_of
+
+    angles = await angles_of(session, thread.id)
+    chosen = next((a for a in angles if a["is_selected"]), None)
+    strategy = await session.get(Strategy, thread.strategy_id)
+    return {
+        "angle": chosen["angle"] if chosen else None,
+        "alternative_angles": [
+            {k: a[k] for k in ("angle", "problem_hypothesis", "why_now", "positioning", "cta")}
+            for a in angles
+            if not a["is_selected"]
+        ],
+        "account_angle": strategy.account_angle if strategy else None,
+    }
 
 
 class DimensionOut(BaseModel):
@@ -760,6 +786,7 @@ async def prep_for_contact(
                 ),
                 without_live_trigger=bool(thread.without_live_trigger),
                 avoid_list=thread.avoid_list or [],
+                **(await _angles_for_prep(session, thread)),
             )
             if thread is not None
             else None

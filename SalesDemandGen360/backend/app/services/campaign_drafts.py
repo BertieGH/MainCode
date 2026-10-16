@@ -287,16 +287,52 @@ async def rows(session: AsyncSession, campaign: OutreachCampaign) -> list[dict]:
     return out
 
 
-def _thread_payload(thread) -> dict:
+async def _thread_payload(session: AsyncSession, thread) -> dict:
+    """The argument drafting writes from: the selected angle (`docs/18`).
+
+    The thread's fields mirror whichever angle is selected — the top-ranked
+    one, or the one a rep picked. Added here: the angle's name, the approved
+    proof it cites (the full text, since drafting may only use approved
+    claims — invariant 8) and the company read every angle hangs off.
+
+    No channel list: the cadence's channels are fixed by LGM and arrive as
+    `cadence`; a second, invented sequence here only gave the model two
+    answers to reconcile.
+    """
+    from app.models.config import ProofPoint
+    from app.models.strategy import Strategy, StrategyAngle
+
+    angle = (
+        await session.execute(
+            select(StrategyAngle).where(
+                StrategyAngle.thread_id == thread.id, StrategyAngle.is_selected.is_(True)
+            )
+        )
+    ).scalar_one_or_none()
+    strategy = await session.get(Strategy, thread.strategy_id)
+    proof = []
+    if angle is not None and angle.proof_point_ids:
+        ids = [uuid.UUID(str(p)) for p in angle.proof_point_ids]
+        proof = [
+            {"id": str(p.id), "title": p.title, "body": p.body, "metrics": p.metrics or {}}
+            for p in (
+                await session.execute(
+                    select(ProofPoint)
+                    .where(ProofPoint.id.in_(ids), ProofPoint.is_approved.is_(True))
+                    .order_by(ProofPoint.title)
+                )
+            ).scalars()
+        ]
     return {
+        **({"angle": angle.angle} if angle is not None else {}),
         "problem_hypothesis": thread.problem_hypothesis,
-        "trigger_summary": thread.trigger_summary,
+        "why_now": thread.trigger_summary,
         "trigger_signal_ids": list(thread.trigger_signal_ids or []),
         "positioning": thread.positioning,
-        "channel_sequence": list(thread.channel_sequence or []),
         "cta": thread.cta,
         "avoid_list": list(thread.avoid_list or []),
-        "start_offset_days": thread.start_offset_days,
+        "proof_to_use": proof,
+        **({"account_angle": strategy.account_angle} if strategy and strategy.account_angle else {}),
         "built_without_a_live_signal": bool(thread.without_live_trigger),
     }
 
@@ -380,7 +416,7 @@ async def write(session: AsyncSession, sequence: OutreachSequence, *, draft=None
         scope="campaign",
     ):
         result = await draft(
-            account=account, contact=contact, thread=_thread_payload(thread), shape=cadence, signals=signals,
+            account=account, contact=contact, thread=await _thread_payload(session, thread), shape=cadence, signals=signals,
         )
     draft_set: DraftSet = result.parsed
     model = getattr(result, "model", "") or None

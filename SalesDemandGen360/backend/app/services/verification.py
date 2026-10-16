@@ -185,7 +185,17 @@ def matches_persona(contact: Contact, targets: tuple[str, ...]) -> bool | None:
 
     # Compared by meaning, not spelling — phrases, functions and rank. See
     # `personas` for the two versions this replaced and what each got wrong.
-    return any(personas.matches_any(v, titles) for v in known)
+    #
+    # Seniority matches only a target that names that seniority exactly
+    # ("c_level"). Read fuzzily against job titles, "vp" matched any of them by
+    # rank alone, so every VP — of Sales as much as of Engineering — read as in
+    # persona. It never fired while seniority was always `unknown`; classifying
+    # titles on write (`docs/18`) exposed it. Rank says nothing about function,
+    # the same reason a buying role is never read as a title above.
+    rank = contact.seniority if contact.seniority != "unknown" else None
+    if rank and rank in titles:
+        return True
+    return any(personas.matches_any(v, titles) for v in known if v != rank)
 
 
 @dataclass

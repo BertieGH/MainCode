@@ -19,11 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import current_user
 from app.api.deps import requires
 from app.database import get_session
 from app.models.account import Account
 from app.models.campaign import OutreachCampaign
-from app.services import campaign_strategy
+from app.models.identity import User
+from app.services import access, campaign_strategy
 from app.services.strategy import DifferentiationError
 
 log = logging.getLogger(__name__)
@@ -287,6 +289,10 @@ class PersonDetailOut(BaseModel):
     strategy: dict | None = None
     trigger_signals: list[dict] = Field(default_factory=list)
     versions: list[dict] = Field(default_factory=list)
+    #: Every angle for this person, best first; one is selected (`docs/18`).
+    angles: list[dict] = Field(default_factory=list)
+    #: The one-sentence read of the company the angles hang off.
+    account_angle: str | None = None
 
 
 @router.get("/campaigns/{campaign_id}/people/{contact_id}", response_model=PersonDetailOut)
@@ -298,3 +304,31 @@ async def person_detail(
         return PersonDetailOut(**await campaign_strategy.person_detail(session, campaign, contact_id))
     except campaign_strategy.NotReadyError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+class AngleIn(BaseModel):
+    angle_id: uuid.UUID
+
+
+@router.post("/campaigns/{campaign_id}/people/{contact_id}/angle")
+async def select_angle(
+    campaign_id: uuid.UUID,
+    contact_id: uuid.UUID,
+    payload: AngleIn,
+    session: AsyncSession = Depends(get_session),
+    user: User | None = Depends(current_user),
+):
+    """Pitch a different one of this person's angles. Saved drafts reopen —
+    they argued the previous angle — and the answer says whether to rewrite."""
+    campaign = await _campaign(session, campaign_id)
+    try:
+        outcome = await campaign_strategy.select_angle(session, campaign, contact_id, payload.angle_id)
+    except campaign_strategy.AngleRefused as exc:
+        raise _refused(exc) from exc
+    if outcome["changed"]:
+        await access.record(
+            session, user, "strategy.angle_selected", "outreach_sequence", str(contact_id),
+            {"campaign_id": str(campaign_id), "angle_id": str(payload.angle_id)},
+        )
+    await session.commit()
+    return outcome

@@ -5578,3 +5578,55 @@ window and checks the campaign is listed under its name. It fails on the old
 line and passes on the new one.
 
 `api/monitoring.py`, `tests/test_cost_attribution.py`.
+
+## §124 — Strategy argues from the whole picture, in ranked angles (2026-10-15)
+
+**Problem.** Tracing the stage that cadence drafts and sales prep are both
+written from (`docs/18`) turned up five faults:
+- **Nobody was being chosen.** 216 of 218 contacts had no buying role and
+  seniority `unknown`, because the CSV and Apollo imports never ran the title
+  classifier. Every founder, CEO and CTO weighed 7 against a threshold of 50,
+  so every thread was a "pursue anyway" override.
+- **The model was not told the campaign's ICP**, though its instructions
+  turned on the ICP's track.
+- **It got signal summaries without the evidence**, and no ranking. One CTO
+  was pitched on a 177-day-old acquisition over a same-day AI hire.
+- **One argument per person**, with no proof field.
+- **`account_angle`** was generated, paid for and discarded.
+
+**Fix.**
+- Titles are classified on every contact write, and the book was backfilled.
+- The model gets the company with **ranked** signals and their evidence, the
+  campaign's ICP and service, approved proof, and each person's role,
+  matching persona and profile — and **none of the gates**. Weight, rank,
+  score and override decide who proceeds, then stop.
+- It returns 2–3 angles per person, ranked. All are stored, the top one is
+  pitched automatically, a rep can pitch another, and drafting writes from
+  whichever is selected.
+
+**Measured before building it**, on 6 contacts with the live model:
+- every cited signal live and every cited proof approved;
+- the freshest relevant signal led every time;
+- confidence with no signal fell from 0.65–0.72 to 0.30–0.40;
+- the cost stayed about the same.
+
+The live rerun found one wiring bug the injected tests could not reach, now
+covered.
+
+**Two things classifying titles exposed**, both caught by existing tests:
+- **Persona matching let every VP in.** It compared a contact's bare
+  seniority word with the ICP's titles, and "vp" matches by rank alone. It
+  never fired while seniority was always `unknown`. Seniority now matches
+  only a target that names that exact seniority (`verification.matches_persona`).
+- **`persona_role` means "recorded on the contact"** to sales prep, which
+  infers from the title itself when it is empty. The write hook therefore
+  fills only seniority and buying role. The persona keys an early backfill
+  had written were cleared, except the 2 that came from contact suggestions,
+  which store them on purpose.
+
+`models/account.py`, `models/strategy.py`, `schemas/strategy.py`,
+`services/strategy_context.py` (new), `services/campaign_strategy.py`,
+`services/campaign_drafts.py`, `services/stages.py`, `services/instructions.py`,
+`api/campaign_strategy.py`, `api/prep.py`, `alembic/d7e2a9c4f1b8` (new),
+`scripts/classify_contacts.py` (new), tests; `web/.../campaign-person.component.ts`,
+`core/pipeline.service.ts`.

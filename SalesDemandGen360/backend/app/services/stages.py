@@ -1148,48 +1148,27 @@ async def synthesise_strategy(
     session: AsyncSession,
     *,
     account: Account,
-    context: AccountContext,
-    threads: list[dict[str, Any]],
-    contacts: list[Contact],
+    payload: dict[str, Any],
     client: Any | None = None,
 ) -> llm.CallResult[StrategyProposal]:
-    """Argue every active thread at one account, in one call.
+    """Ranked angles for every chosen person at one company, in one call.
 
-    One call for the whole account rather than one per thread, because
-    `assert_differentiated` needs the arguments to have been written in sight
-    of each other. Per-thread calls cannot differ from threads they never saw,
-    and the check would then reject work that had no way to comply.
+    One call for the company rather than one per person, because
+    `assert_differentiated` needs the top angles to have been written in sight
+    of each other. `payload` is `strategy_context.build`'s: the company, its
+    ranked signals with evidence, the campaign's ICP and service, approved
+    proof, and the people — never the gates that chose them (`docs/18`).
+
+    Wrapped as untrusted: evidence excerpts and profiles are retrieved text,
+    and the boundary is what lets the model tell quoted pages from instructions
+    (invariant 10).
     """
     prefix = await load_prefix(session, "strategy_synthesis")
-    by_id = {c.id: c for c in contacts}
-    payload = {
-        "account": _account_facts(account),
-        "context": context.payload,
-        # Stated as a number as well as implied by the list, because the array
-        # it governs cannot be bounded in the schema: `maxItems` on
-        # `StrategyProposal.threads` reaches Gemini and comes back HTTP 400
-        # (§52, measured). The prompt is the only lever left, and a model
-        # writing threads until the output budget runs out is what happens
-        # without it — 7,986 tokens of answer for a single asked-for thread,
-        # with zero tokens of thinking.
-        "thread_count": len(threads),
-        "threads_to_argue": [
-            {
-                **t,
-                "contact": (
-                    _contact_facts(by_id[t["contact_id"]])
-                    if uuid.UUID(str(t["contact_id"])) in by_id
-                    else None
-                ),
-            }
-            for t in threads
-        ],
-    }
     return await _run(
         session,
         "strategy_synthesis",
         prefix=prefix,
-        user_content=stable_json(payload),
+        user_content=_untrusted("company_material", stable_json(payload)),
         output_model=StrategyProposal,
         client=client,
     )
@@ -1223,12 +1202,10 @@ async def draft_arc(
     prefix = await load_prefix(session, "outreach_drafting", with_writing_samples=True)
     payload = {
         "account": _account_facts(account),
-        "contact": {
-            "full_name": contact.full_name,
-            "title": contact.title,
-            "seniority": contact.seniority,
-            "buying_role": contact.buying_role,
-        },
+        # Who they are as well as their title — the same profile strategy
+        # argued from. Drafting had only the four columns, so the words were
+        # addressed to a role while the argument was addressed to a person.
+        "contact": _contact_facts(contact),
         "thread": thread,
         # Fixed by LGM. Not a suggestion, and there is no step editor anywhere.
         "cadence": shape,
